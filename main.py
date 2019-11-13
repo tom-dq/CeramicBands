@@ -1,4 +1,3 @@
-import itertools
 import random
 import typing
 import enum
@@ -10,12 +9,14 @@ import st7
 import pathlib
 import bisect
 import math
-import numpy
-import matplotlib
 import shutil
 
 
 # To make reproducible
+from averaging import Averaging, NoAveraging
+from common_types import T_Elem, T_ScaleKey, T_FactVal
+from scaling import Scaling, SpacedStepScaling
+
 random.seed(123)
 
 fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 8SD7.st7")
@@ -107,12 +108,6 @@ class Table:
 
     def min_val(self) -> float:
         return self.data[0].y
-
-T_Elem = typing.TypeVar("T_Elem")
-T_Direction = int
-T_ScaleKey = typing.Tuple[T_Elem, T_Direction]
-
-T_FactVal = typing.Tuple[float, float]
 
 
 # Relaxation controls some "backoff" when a big jump in dilation is encountered.
@@ -218,273 +213,6 @@ class LimitedIncreaseRelaxation(Relaxation):
         self._set_current_val(scale_key, relaxed_value)
 
         return relaxed_value
-
-
-class Scaling:
-    """Scales the "Yield Stress" according to some criterion."""
-    @abc.abstractmethod
-    def get_x_scale_factor(self, scale_key: T_ScaleKey) -> float:
-        raise NotImplementedError
-
-    def __str__(self):
-        return self.__class__.__name__
-
-    def assign_centroids(self, elem_centroid: typing.Dict[int, st7.Vector3]):
-        """This is not used by all the methods."""
-        pass
-
-
-class NoScaling(Scaling):
-    def __init__(self):
-        pass
-
-    def get_x_scale_factor(self, scale_key: T_ScaleKey) -> float:
-        return 1.0
-
-
-class RandomScaling(Scaling):
-    """Scales each element+direction randomly, making up the numbers as the elements turn up."""
-    _x_scaler: dict
-    _random_spread: float
-
-    def __init__(self, random_spread: float):
-        # We can scale the x requirements by a small amount to distribute the starting point.
-        self._x_scaler = dict()
-        self._random_spread = random_spread
-
-
-    def get_x_scale_factor(self, scale_key: T_ScaleKey) -> float:
-        if scale_key not in self._x_scaler:
-            self._x_scaler[scale_key] = 1.0 + random.uniform(-1 * self._random_spread, self._random_spread)
-
-        return self._x_scaler[scale_key]
-
-    def __str__(self):
-        return f"{self.__class__.__name__}(random_spread={self._random_spread})"
-
-
-class CentroidAwareScaling(Scaling):
-    """Keeps track of where the elements are."""
-
-    _elem_scale_fact: dict
-    _spacing: float
-    _amplitude: float
-    _y_min: float
-    _y_max: float
-    _y_depth: float
-
-    def assign_centroids(self, elem_centroid: typing.Dict[int, st7.Vector3]):
-        # Find out how deep the elements go.
-        self._y_max = max(xyz.y for xyz in elem_centroid.values())
-        self._y_min = self._y_max - self._y_depth
-
-        for elem_num, elem_cent in elem_centroid.items():
-            self._elem_scale_fact[elem_num] = self._scale_factor_one_elem(elem_cent)
-
-    def get_x_scale_factor(self, scale_key: T_ScaleKey) -> float:
-        elem_num, _ = scale_key[:]
-        return self._elem_scale_fact[elem_num]
-
-
-class CosineScaling(CentroidAwareScaling):
-    """Does a cosine based on the element position."""
-
-    def __init__(self, y_depth: float, spacing: float, amplitude: float):
-        self._elem_scale_fact = dict()
-        self._y_depth = y_depth
-        self._spacing = spacing
-        self._amplitude = amplitude
-
-    def _scale_factor_one_elem(self, cent: st7.Vector3):
-        x, y, _ = cent[:]
-        if y < self._y_min:
-            real_amplitude = 0.0
-
-        elif y < self._y_max:
-            real_amplitude = self._amplitude * (y-self._y_min) / (self._y_max - self._y_min)
-
-        else:
-            real_amplitude = self._amplitude
-
-        a = self._spacing / (math.pi * 2)
-        raw_cosine = math.cos(a * x)
-
-        return 1.0 + real_amplitude * raw_cosine
-
-    def __str__(self):
-        return f"{self.__class__.__name__}(spacing={self._spacing}, amplitude={self._amplitude}, y_depth={self._y_depth})"
-
-
-class SpacedStepScaling(CentroidAwareScaling):
-    """Mimic the regular spacing of the holes drilled in the surface."""
-
-    _hole_width: float
-
-    def __init__(self, y_depth: float, spacing: float, amplitude: float, hole_width: float):
-        self._elem_scale_fact = dict()
-        self._y_depth = y_depth
-        self._spacing = spacing
-        self._amplitude = amplitude
-        self._hole_width = hole_width
-
-    def _scale_factor_one_elem(self, cent: st7.Vector3):
-        x, y, _ = cent[:]
-
-        if y < self._y_min:
-            real_amplitude = 0.0
-
-        elif y < self._y_max:
-            real_amplitude = self._amplitude * (y-self._y_min) / (self._y_max - self._y_min)
-
-        else:
-            real_amplitude = self._amplitude
-
-        # See how close we are to a "hole"
-        closest_hole = 0.0
-        working_hole_distance = abs(x - closest_hole)
-        while working_hole_distance > 0.5*self._spacing:
-            if x > closest_hole:
-                closest_hole += self._spacing
-
-            elif x < closest_hole:
-                closest_hole -= self._spacing
-
-            working_hole_distance = abs(x - closest_hole)
-
-        hole_centre_distance = abs(x - closest_hole)
-        in_hole = hole_centre_distance*2 < self._hole_width
-
-        if in_hole:
-            return 1.0 + real_amplitude
-
-        else:
-            return 1.0
-
-    def __str__(self):
-        return f"{self.__class__.__name__}(spacing={self._spacing}, amplitude={self._amplitude}, y_depth={self._y_depth}, hole_width={self._hole_width})"
-
-
-T_Result = typing.TypeVar("T_Result")
-class Averaging:
-    @abc.abstractmethod
-    def populate_radius(
-            self,
-            node_positions: typing.Dict[int, st7.Vector3],
-            element_connections: typing.Dict[T_Elem, typing.Tuple[int, ...]]
-    ):
-        """Called once at the start."""
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def average_results(self, unaveraged: typing.Dict[T_Elem, T_Result]) -> typing.Dict[T_Elem, T_Result]:
-        """Called at every iteration."""
-        raise NotImplementedError
-
-    def __str__(self):
-        return f"{self.__class__.__name__}()"
-
-
-class NoAveraging(Averaging):
-    def __init__(self):
-        pass
-
-    def populate_radius(
-            self,
-            node_positions: typing.Dict[int, st7.Vector3],
-            element_connections: typing.Dict[T_Elem, typing.Tuple[int, ...]]
-    ):
-        pass
-
-    def average_results(self, unaveraged: typing.Dict[T_Elem, T_Result]) -> typing.Dict[T_Elem, T_Result]:
-        return unaveraged.copy()
-
-
-
-class AverageInRadius(Averaging):
-    _radius: float
-    _element_connections: typing.Dict[T_Elem, typing.Tuple[int, ...]]
-    _elem_nodal_contributions: typing.Dict[T_Elem, dict]  # The value in this is the relative contributions of all the nodes
-
-    def __init__(self, radius: float):
-        self._radius = radius
-
-    def __str__(self):
-        return f"{self.__class__.__name__}(radius={self._radius})"
-
-    def populate_radius(
-            self,
-            node_positions: typing.Dict[int, st7.Vector3],
-            element_connections: typing.Dict[T_Elem, typing.Tuple[int, ...]]
-    ):
-
-        self._element_connections = element_connections
-
-        # Get the element centroids
-        def get_cent(elem_conn):
-            all_coords = [node_positions[iNode] for iNode in elem_conn]
-            return sum(all_coords) / len(all_coords)
-
-        elem_cents = {elem_id: get_cent(elem_conn) for elem_id, elem_conn in self._element_connections.items()}
-
-        # Sort the nodes by x, y and z so we can find the candidates quickly(ish).
-        idx_to_sorted_list = dict()
-        for idx in range(3):
-            node_num_to_ordinate = {node_num: node_pos[idx] for node_num, node_pos in node_positions.items()}
-            idx_to_sorted_list[idx] = sorted( (ordinate, node_num) for node_num, ordinate in node_num_to_ordinate.items())
-
-        def candidate_nodes(elem_cent):
-            """Get the candidate node numbers which could be close to a given element (but may not be within the radius)"""
-
-            def nodes_with_range_of(idx):
-                lower_val = elem_cent[idx] - self._radius
-                upper_val = elem_cent[idx] + self._radius
-
-                lower_idx = bisect.bisect_left(idx_to_sorted_list[idx], (lower_val, math.inf))
-                upper_idx = bisect.bisect_right(idx_to_sorted_list[idx], (upper_val, 0))
-
-                ordinates_and_node_nums = idx_to_sorted_list[idx][lower_idx:upper_idx]
-                return {node_num for _, node_num in ordinates_and_node_nums}
-
-            set_list = [nodes_with_range_of(idx) for idx in range(3)]
-            all_candidate_nodes = set.intersection(*set_list)
-            return all_candidate_nodes
-
-        # Get the contributions of each node to each element.
-        elem_nodal_contributions_raw = collections.defaultdict(dict)
-        for elem_id, elem_xyz in elem_cents.items():
-            for iNode in candidate_nodes(elem_xyz):
-                dist = abs(node_positions[iNode] - elem_xyz)
-                if dist < self._radius:
-                    elem_nodal_contributions_raw[elem_id][iNode] = self._radius - dist
-
-        # Normalise the contributions so they sum to one.
-        self._elem_nodal_contributions = dict()
-        for elem_id, contrib_dict in elem_nodal_contributions_raw.items():
-            total = sum(contrib_dict.values())
-            self._elem_nodal_contributions[elem_id] = {iNode: raw/total for iNode, raw in contrib_dict.items()}
-
-        # If there are no nodal contributions to an element, that will cause problems later on.
-        missing_elements = [elem_id for elem_id in self._element_connections if elem_id not in self._elem_nodal_contributions]
-        if missing_elements:
-            raise ValueError(f"Missing {len(missing_elements)} elements... {missing_elements[0:3]}")
-
-    def _nodal_to_elem(self, nodal_results, elem_id: T_Elem) -> T_Result:
-        these_contribs = self._elem_nodal_contributions[elem_id]
-        components = [factor * nodal_results[iNode] for iNode, factor in these_contribs.items()]
-        return sum(components)
-
-    def average_results(self, unaveraged: typing.Dict[T_Elem, T_Result]) -> typing.Dict[T_Elem, T_Result]:
-        # Accumulate the nodal contributions of the elements.
-        nodal_result_list = collections.defaultdict(list)
-        for elem_id, result in unaveraged.items():
-            for iNode in self._element_connections[elem_id]:
-                nodal_result_list[iNode].append(result)
-
-        nodal_results = {iNode: sum(results)/len(results) for iNode, results in nodal_result_list.items()}
-
-        # Distribute the nodal results to the elements according to the pre-computed radius functions.
-        averaged_results = {elem_id: self._nodal_to_elem(nodal_results, elem_id) for elem_id in unaveraged}
-        return averaged_results
 
 
 class Ratchet:
