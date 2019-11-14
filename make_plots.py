@@ -5,10 +5,10 @@ from main import Table
 from common_types import XY
 
 
-def make_example_table()-> Table:
+def make_example_table() -> Table:
     STRESS_START = 400
-    stress_end = 410
-    dilation_ratio = 0.01
+    stress_end = 450
+    dilation_ratio = 0.008
 
     prestrain_table = Table([
         XY(0.0, 0.0),
@@ -34,7 +34,7 @@ def show_table(table: Table):
     plt.xlabel("Stress (MPa)")
     plt.ylabel("Dilation")
 
-    plt.xlim((380, 430))
+    plt.xlim((380, 470))
     plt.show()
 
 

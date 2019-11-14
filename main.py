@@ -10,20 +10,19 @@ import bisect
 import math
 import shutil
 
-
-# To make reproducible
 from averaging import Averaging, NoAve
 from common_types import T_Elem, XY, XYZ, ElemVectorDict
 from relaxation import Relaxation, PropRelax
-from scaling import Scaling, SpacedStepScaling
+from scaling import Scaling, SpacedStepScaling, CosineScaling
 import directories
 
+# To make reproducible
 random.seed(123)
 
 RATCHET_AT_INCREMENTS = True
 DEBUG_CASE_FOR_EVERY_INCREMENT = True
 
-fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD1.st7")
+fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact.st7")
 fn_working_image_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3-pics")
 
 class Actuator(enum.Enum):
@@ -589,10 +588,10 @@ def create_load_case(model, stage, case_name):
 
 if __name__ == "__main__":
 
-    #scaling = CosineScaling(y_depth=0.5, spacing=1.0, amplitude=0.1)
     #relaxation = LimitedIncreaseRelaxation(0.01)
-    relaxation = PropRelax(1.0)
-    scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.5, hole_width=0.051)
+    relaxation = PropRelax(0.5)
+    #scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.5, hole_width=0.051)
+    scaling = CosineScaling(y_depth=0.25, spacing=0.6, amplitude=0.2)
     #averaging = AverageInRadius(0.25)
     averaging = NoAve()
 
@@ -603,8 +602,8 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
-        n_steps_major=25,
-        elem_ratio_per_iter=0.0002,
+        n_steps_major=15,
+        elem_ratio_per_iter=0.0005,
     )
 
 
