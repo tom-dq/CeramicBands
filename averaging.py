@@ -27,7 +27,7 @@ class Averaging:
         return f"{self.__class__.__name__}()"
 
 
-class NoAveraging(Averaging):
+class NoAve(Averaging):
     def __init__(self):
         pass
 
@@ -42,7 +42,7 @@ class NoAveraging(Averaging):
         return unaveraged.copy()
 
 
-class AverageInRadius(Averaging):
+class AveInRadius(Averaging):
     _radius: float
     _element_connections: typing.Dict[T_Elem, typing.Tuple[int, ...]]
     _elem_nodal_contributions: typing.Dict[T_Elem, dict]  # The value in this is the relative contributions of all the nodes

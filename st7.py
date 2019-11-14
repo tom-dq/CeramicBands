@@ -494,6 +494,9 @@ class St7Model:
     def St7CreateModelWindow(self):
         chk(St7API.St7CreateModelWindow(self.uID))
 
+    def St7ShowModelWindow(self):
+        chk(St7API.St7ShowModelWindow(self.uID))
+
     def St7DestroyModelWindow(self):
         chk(St7API.St7DestroyModelWindow(self.uID))
 

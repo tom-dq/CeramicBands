@@ -1,7 +1,8 @@
 import matplotlib.pyplot as plt
 import matplotlib.ticker
 
-from main import Table, XY
+from main import Table
+from common_types import XY
 
 
 def make_example_table()-> Table:

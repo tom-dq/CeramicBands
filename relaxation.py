@@ -46,16 +46,16 @@ class Relaxation:
             del self._history[key]
 
 
-class ProportionalRelaxation(Relaxation):
+class PropRelax(Relaxation):
     """Applies some relaxation to the ramp-up of the pre-strain, for example, limit it to 50% of the raw increase."""
     _incremental_ratio: float = None
 
-    def __init__(self, incremental_ratio: float):
-        self._incremental_ratio = incremental_ratio
+    def __init__(self, inc_ratio: float):
+        self._incremental_ratio = inc_ratio
         self._history = dict()
 
     def __str__(self):
-        return f"{self.__class__.__name__}(incremental_ratio={self._incremental_ratio})"
+        return f"{self.__class__.__name__}(inc_ratio={self._incremental_ratio})"
 
     def relaxed(self, scale_key, new_value) -> float:
         """prev_factor and new_factor are the load case / freedom case factor.
@@ -71,7 +71,7 @@ class ProportionalRelaxation(Relaxation):
         return relaxed_value
 
 
-class LimitedIncreaseRelaxation(Relaxation):
+class LimIncRelax(Relaxation):
     """Clip the new value if it's gone up to much."""
     _strain_change_limit: float = None
 
