@@ -16,15 +16,15 @@ from averaging import Averaging, NoAve
 from common_types import T_Elem, XY, XYZ, ElemVectorDict
 from relaxation import Relaxation, PropRelax
 from scaling import Scaling, SpacedStepScaling
+import directories
 
 random.seed(123)
 
 RATCHET_AT_INCREMENTS = True
 DEBUG_CASE_FOR_EVERY_INCREMENT = True
-SHOW_WINDOW_IN_PROGRESS = True
 
-fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9B-Contact.st7")
-
+fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD1.st7")
+fn_working_image_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3-pics")
 
 class Actuator(enum.Enum):
     """The value used to ratchet up the prestrain."""
@@ -107,7 +107,7 @@ class Ratchet:
     """Ratchets up a table, keeping track of which element is up to where."""
     _table: Table = None
     _relaxation: Relaxation
-    _scaling: Scaling
+    scaling: Scaling
     _averaging: Averaging
     min_y_so_far: dict
     max_stress_ever: float
@@ -115,7 +115,7 @@ class Ratchet:
     def __init__(self, table: Table, scaling: Scaling, relaxation: Relaxation, averaging: Averaging):
         self._table = table
         self._relaxation = relaxation
-        self._scaling = scaling
+        self.scaling = scaling
         self._averaging = averaging
         self.min_y_so_far = dict()
         self.max_stress_ever = -1 * math.inf
@@ -125,7 +125,7 @@ class Ratchet:
 
         working_copy = Ratchet(
             table=self._table,
-            scaling=self._scaling,
+            scaling=self.scaling,
             relaxation=self._relaxation,
             averaging=self._averaging
         )
@@ -150,7 +150,7 @@ class Ratchet:
 
             # Apply scaling
             scale_key = (elem_id, idx)
-            stress_scaled = self._scaling.get_x_scale_factor(scale_key) * stress_raw
+            stress_scaled = self.scaling.get_x_scale_factor(scale_key) * stress_raw
 
             # Do the stress-to-prestrain lookup
             strain_raw = self._table.interp(stress_scaled)
@@ -191,7 +191,7 @@ class Ratchet:
         self.max_stress_ever = max(self.max_stress_ever, x_unscaled)
 
         # Apply the scaling.
-        x_scaled = self._scaling.get_x_scale_factor(scale_key) * x_unscaled
+        x_scaled = self.scaling.get_x_scale_factor(scale_key) * x_unscaled
 
         # Look up the table value
         y_val_unrelaxed = self._table.interp(x_scaled)
@@ -233,24 +233,19 @@ def apply_prestrain(model: st7.St7Model, case_num: int, elem_to_ratio: typing.Di
         model.St7SetPlatePreLoad3(plate_num, case_num, st7.PreLoadType.plPlatePreStrain, prestrain)
 
 
-def setup_model_window(results: st7.St7Results, case_num: int):
-    model = results.model
-    model.St7SetPlateResultDisplay_None()
-    model.St7SetWindowResultCase(case_num)
-    model.St7SetEntityContourIndex(st7.Entity.tyPLATE, st7.PlateContour.ctPlatePreStrainMagnitude)
+def setup_model_window(model_window: st7.St7ModelWindow, results: st7.St7Results, case_num: int):
+    model_window.St7SetPlateResultDisplay_None()
+    model_window.St7SetWindowResultCase(case_num)
+    model_window.St7SetEntityContourIndex(st7.Entity.tyPLATE, st7.PlateContour.ctPlatePreStrainMagnitude)
     results.St7SetDisplacementScale(5.0, st7.ScaleType.dsAbsolute)
-    model.St7RedrawModel(True)
+    model_window.St7RedrawModel(True)
 
-def write_out_screenshot(results: st7.St7Results, case_num: int, fn: str):
-    model = results.model
 
-    model.St7CreateModelWindow()
-
-    setup_model_window(results, case_num)
-
-    draw_area = model.St7GetDrawAreaSize()
-    model.St7ExportImage(fn, st7.ImageType.itPNG, 2*draw_area.width, 2*draw_area.height)
-    model.St7DestroyModelWindow()
+def write_out_screenshot(model_window: st7.St7ModelWindow, results: st7.St7Results, case_num: int, fn: str):
+    EXPORT_FACT = 1
+    setup_model_window(model_window, results, case_num)
+    draw_area = model_window.St7GetDrawAreaSize()
+    model_window.St7ExportImage(fn, st7.ImageType.itPNG, EXPORT_FACT * draw_area.width, EXPORT_FACT * draw_area.height)
 
 
 def get_stress_results(phase_change_actuator: Actuator, results: st7.St7Results, case_num: int) -> ElemVectorDict:
@@ -336,10 +331,11 @@ def incremental_element_update_list(
         all_res = ratchet.get_all_values(lock_in=lock_in, elem_results=res_dict)
         return {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_res.as_single_values()}
 
-    old_prestrains = candidate_strains(False, minor_prev_stress)
+    #old_prestrains = candidate_strains(False, minor_prev_stress)
     new_prestrains_all = candidate_strains(RATCHET_AT_INCREMENTS, minor_current_stress)
 
-    increased_prestrains = {key: val for key, val in new_prestrains_all.items() if abs(val) > abs(old_prestrains[key])}
+    old_prestrains = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_prev_strain.as_single_values()}
+    increased_prestrains = {key: val for key, val in new_prestrains_all.items() if abs(val) > abs(old_prestrains.get(key, 0.0))}
 
     # Use the current stress results to choose the new elements.
     minor_current_stress = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_current_stress.as_single_values()}
@@ -347,8 +343,9 @@ def incremental_element_update_list(
     def priority(elem_idx_val):
         """Takes in a prestrain item. This decides which prestrains get updated this round."""
         elem_idx = (elem_idx_val[0], elem_idx_val[1])
-        current_stress = minor_current_stress[elem_idx]
-        return abs(current_stress)
+        current_stress_unscaled = minor_current_stress[elem_idx]
+        current_stress_scaled = current_stress_unscaled * ratchet.scaling.get_x_scale_factor(elem_idx)
+        return abs(current_stress_scaled)
 
     # Get the top N elements.
     all_new = ( (elem_idx[0], elem_idx[1], val) for elem_idx, val in increased_prestrains.items())
@@ -410,7 +407,7 @@ def main(
         relaxation: Relaxation,
         dilation_ratio: float,
         n_steps_major: int,
-        n_steps_minor_max: int,
+        #n_steps_minor_max: int,
         elem_ratio_per_iter: float
 ):
 
@@ -430,6 +427,10 @@ def main(
     #relaxation_param_dimensionless = 80/n_steps * relaxation_param
     ratchet = Ratchet(prestrain_table, scaling=scaling, averaging=averaging, relaxation=relaxation)
 
+    # Allow a maximum of 10% of the elements to yield in a given step.
+    n_steps_minor_max = int(0.2 / elem_ratio_per_iter)
+    print(f"Limiting to {n_steps_minor_max} steps per load increment - only {elem_ratio_per_iter:%} can yield.")
+
     fn_st7 = make_fn(actuator, n_steps_major, scaling, averaging, STRESS_START, stress_end, dilation_ratio, relaxation, elem_ratio_per_iter)
     shutil.copy2(fn_st7_base, fn_st7)
 
@@ -441,7 +442,19 @@ def main(
     fn_png_full = fn_append(fn_png, "FullLoad")
     fn_png_unloaded = fn_append(fn_png, "Unloaded")
 
-    with st7.St7Model(fn_st7, r"E:\Temp") as model:
+    if DEBUG_CASE_FOR_EVERY_INCREMENT:
+        working_image_dir = directories.get_unique_sub_dir(fn_working_image_base)
+        dont_make_model_window = False
+        with open(working_image_dir / "Meta.txt", "w") as f_meta:
+            f_meta.write(str(fn_st7))
+
+        print(f"Saving images here: {working_image_dir}")
+
+    else:
+        working_image_dir = ""
+        dont_make_model_window = True
+
+    with st7.St7Model(fn_st7, r"C:\Temp") as model, model.St7CreateModelWindow(dont_make_model_window) as model_window:
 
         elem_centroid = {
             elem_num: model.St7GetElementCentroid(st7.Entity.tyPLATE, elem_num, 0)
@@ -454,7 +467,6 @@ def main(
         scaling.assign_centroids(elem_centroid)
         averaging.populate_radius(node_xyz, elem_conns)
 
-        #print(actuator, str(scaling), str(averaging), stress_end, relaxation_param)
         print(fn_st7.stem)
 
         # Assume the elements are evenly sized. Factor of 2 is for x and y.
@@ -480,10 +492,6 @@ def main(
 
         previous_load_factor = 0.0
 
-        if SHOW_WINDOW_IN_PROGRESS:
-            model.St7CreateModelWindow()
-            model.St7ShowModelWindow()
-
         old_prestrain_values = ElemVectorDict()
         for step_num_major in range(n_steps_major):
 
@@ -491,6 +499,7 @@ def main(
             with model.open_results(fn_res) as results:
                 last_case = results.primary_cases[-1]
                 this_case_results_major = get_stress_results(actuator, results, last_case)
+                write_out_screenshot(model_window, results, last_case, working_image_dir / f"Case-{last_case:04}.png")
 
             # Update the model with the new load
             this_load_factor = (step_num_major+1) / n_steps_major
@@ -521,11 +530,10 @@ def main(
                 with model.open_results(fn_res) as results:
                     last_case = results.primary_cases[-1]
                     minor_current_stress = get_stress_results(actuator, results, last_case)
+                    write_out_screenshot(model_window, results, last_case, working_image_dir / f"Case-{last_case:04}.png")
 
-                    if SHOW_WINDOW_IN_PROGRESS:
-                        write_out_screenshot(results, last_case, fr"E:\TEMP\pic\AF-{last_case:04}.png")
-                        # setup_model_window(results, last_case)
-
+                #TEMP!
+                model.St7SaveFile()
 
                 new_prestrain_values, new_count, total_count = incremental_element_update_list(
                     num_allowed=n_updates_per_iter,
@@ -550,8 +558,6 @@ def main(
 
                 apply_prestrain(model, new_case_num, new_prestrain_values)
 
-
-
                 # Keep track of the old results...
                 step_num_minor = next(minor_step_iter)
                 old_prestrain_values = new_prestrain_values
@@ -568,13 +574,10 @@ def main(
 
         model.St7SaveFile()
 
-        if SHOW_WINDOW_IN_PROGRESS:
-            model.St7DestroyModelWindow()
-
         # Save the image of pre-strain results from the maximum load step.
-        with model.open_results(fn_res) as results:
+        with model.open_results(fn_res) as results, model.St7CreateModelWindow(dont_really_make=False) as model_window:
             final_prestrain_case_num = results.primary_cases[-1]
-            write_out_screenshot(results, final_prestrain_case_num, fn_png_full)
+            write_out_screenshot(model_window, results, final_prestrain_case_num, fn_png_full)
 
 
 def create_load_case(model, stage, case_name):
@@ -589,20 +592,19 @@ if __name__ == "__main__":
     #scaling = CosineScaling(y_depth=0.5, spacing=1.0, amplitude=0.1)
     #relaxation = LimitedIncreaseRelaxation(0.01)
     relaxation = PropRelax(1.0)
-    scaling = SpacedStepScaling(y_depth=0.5, spacing=0.6, amplitude=0.1, hole_width=0.25)
+    scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.5, hole_width=0.051)
     #averaging = AverageInRadius(0.25)
     averaging = NoAve()
-    for n_steps in [20]:
-        main(
-            Actuator.local,
-            stress_end=410.0,
-            scaling=scaling,
-            averaging=averaging,
-            relaxation=relaxation,
-            dilation_ratio=0.015,
-            n_steps_major=n_steps,
-            n_steps_minor_max=200,
-            elem_ratio_per_iter=0.0002,
-        )
+
+    main(
+        Actuator.local,
+        stress_end=450.0,
+        scaling=scaling,
+        averaging=averaging,
+        relaxation=relaxation,
+        dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
+        n_steps_major=25,
+        elem_ratio_per_iter=0.0002,
+    )
 
 

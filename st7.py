@@ -491,44 +491,6 @@ class St7Model:
     def St7SaveFileCopy(self, fn_st7: str):
         chk(St7API.St7SaveFileCopy(self.uID, str(fn_st7).encode()))
 
-    def St7CreateModelWindow(self):
-        chk(St7API.St7CreateModelWindow(self.uID))
-
-    def St7ShowModelWindow(self):
-        chk(St7API.St7ShowModelWindow(self.uID))
-
-    def St7DestroyModelWindow(self):
-        chk(St7API.St7DestroyModelWindow(self.uID))
-
-    def St7GetDrawAreaSize(self) -> CanvasSize:
-        ct_width, ct_height = ctypes.c_long(), ctypes.c_long()
-        chk(St7API.St7GetDrawAreaSize(self.uID, ct_width, ct_height))
-        return CanvasSize(width=ct_width.value, height=ct_height.value)
-
-    def St7PositionModelWindow(self, left: int, top: int, width: int, height: int):
-        chk(St7API.St7PositionModelWindow(self.uID, left, top, width, height))
-
-    def St7SetEntityContourIndex(self, entity: Entity, index: typing.Union[BeamContour, PlateContour, BrickContour]):
-        chk(St7API.St7SetEntityContourIndex(self.uID, entity.value, index.value))
-
-    def St7ExportImage(self, fn: str, image_type: ImageType, width: int, height: int):
-        chk(St7API.St7ExportImage(self.uID, str(fn).encode(), image_type.value, width, height))
-
-    def St7SetPlateResultDisplay_None(self):
-        integers = [0] * 15
-        integers[St7API.ipResultType] = St7API.rtAsNone
-        self.St7SetPlateResultDisplay(integers)
-
-    def St7SetPlateResultDisplay(self, integers: typing.Tuple[int]):
-        ct_ints = (ctypes.c_long*20)()
-        ct_ints[:len(integers)] = integers[:]
-
-    def St7SetWindowResultCase(self, case_num: int):
-        chk(St7API.St7SetWindowResultCase(self.uID, case_num))
-
-    def St7RedrawModel(self, rescale: bool):
-        chk(St7API.St7RedrawModel(self.uID, rescale))
-
     def St7GetElementCentroid(self, entity: Entity, elem_num: int, face_edge_num: int) -> Vector3:
         ct_xyz = (ctypes.c_double * 3)()
         chk(St7API.St7GetElementCentroid(self.uID, entity.value, elem_num, face_edge_num, ct_xyz))
@@ -544,6 +506,13 @@ class St7Model:
         chk(St7API.St7GetElementConnection(self.uID, entity.value, elem_num, ct_conn))
         n = ct_conn[0]
         return tuple(ct_conn[1: 1+n])
+
+    def St7CreateModelWindow(self, dont_really_make: bool) -> "St7ModelWindow":
+        if dont_really_make:
+            return St7ModelWindowDummy(model=self)
+
+        else:
+            return St7ModelWindow(model=self)
 
 
 class St7Results:
@@ -622,4 +591,99 @@ class St7Results:
         chk(St7API.St7SetDisplacementScale(self.uID, disp_scale, scale_type.value))
 
 
+class St7ModelWindow:
+    model: St7Model = None
+    uID: int = None
 
+    def __init__(self, model: St7Model):
+        self.model = model
+        self.uID = self.model.uID
+        chk(St7API.St7CreateModelWindow(self.uID))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Don't check for an error here.
+        St7API.St7DestroyModelWindow(self.uID)
+
+    def close(self):
+        chk(St7API.St7DestroyModelWindow(self.uID))
+
+    def St7ShowModelWindow(self):
+        chk(St7API.St7ShowModelWindow(self.uID))
+
+    def St7DestroyModelWindow(self):
+        chk(St7API.St7DestroyModelWindow(self.uID))
+
+    def St7GetDrawAreaSize(self) -> CanvasSize:
+        ct_width, ct_height = ctypes.c_long(), ctypes.c_long()
+        chk(St7API.St7GetDrawAreaSize(self.uID, ct_width, ct_height))
+        return CanvasSize(width=ct_width.value, height=ct_height.value)
+
+    def St7PositionModelWindow(self, left: int, top: int, width: int, height: int):
+        chk(St7API.St7PositionModelWindow(self.uID, left, top, width, height))
+
+    def St7SetEntityContourIndex(self, entity: Entity, index: typing.Union[BeamContour, PlateContour, BrickContour]):
+        chk(St7API.St7SetEntityContourIndex(self.uID, entity.value, index.value))
+
+    def St7ExportImage(self, fn: str, image_type: ImageType, width: int, height: int):
+        chk(St7API.St7ExportImage(self.uID, str(fn).encode(), image_type.value, width, height))
+
+    def St7SetPlateResultDisplay_None(self):
+        integers = [0] * 15
+        integers[St7API.ipResultType] = St7API.rtAsNone
+        self.St7SetPlateResultDisplay(integers)
+
+    def St7SetPlateResultDisplay(self, integers: typing.Tuple[int]):
+        ct_ints = (ctypes.c_long*20)()
+        ct_ints[:len(integers)] = integers[:]
+
+    def St7SetWindowResultCase(self, case_num: int):
+        chk(St7API.St7SetWindowResultCase(self.uID, case_num))
+
+    def St7RedrawModel(self, rescale: bool):
+        chk(St7API.St7RedrawModel(self.uID, rescale))
+
+
+def _DummyClassFactory(name, BaseClass):
+    """Utility function to make a class with no-op methods for everything, but the same signature."""
+    def make_no_op_function(func_returns_self: bool) -> typing.Callable:
+        # Factory to make
+        if func_returns_self:
+            def f(self, *args, **kwargs):
+                return self
+
+        else:
+            def f(*args, **kwargs):
+                pass
+
+        return f
+
+    # Build a new dictionary of no-op functions for all the user-defined things in the base class.
+    attribute_dict = {}
+    for attr_name in dir(BaseClass):
+        attr = getattr(BaseClass, attr_name)
+
+        is_dunder = attr_name.startswith("__")
+        is_callable = callable(attr)
+        if not is_dunder:
+            if is_callable:
+                # For methods
+                attribute_dict[attr_name] = make_no_op_function(func_returns_self=False)
+
+            else:
+                # For other attributes
+                attribute_dict[attr_name] = None
+
+    # Add the special cases.
+    attribute_dict["__init__"] = make_no_op_function(func_returns_self=False)
+    attribute_dict["__enter__"] = make_no_op_function(func_returns_self=True)
+    attribute_dict["__exit__"] = make_no_op_function(func_returns_self=False)
+
+    # The rest can be inherited.
+    NewClass = type(name, (BaseClass,), attribute_dict)
+    return NewClass
+
+
+St7ModelWindowDummy = _DummyClassFactory("St7ModelWindowDummy", St7ModelWindow)
