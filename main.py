@@ -22,7 +22,7 @@ random.seed(123)
 RATCHET_AT_INCREMENTS = True
 DEBUG_CASE_FOR_EVERY_INCREMENT = True
 
-fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD1.st7")
+fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD3.st7")
 fn_working_image_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3-pics")
 
 SCREENSHOT_RES = st7.CanvasSize(1920, 1200)
@@ -703,7 +703,7 @@ if __name__ == "__main__":
     relaxation = PropRelax(1.0)
     scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
-    averaging = AveInRadius(0.1)
+    averaging = AveInRadius(0.05)
     #averaging = NoAve()
 
     main(
@@ -714,7 +714,7 @@ if __name__ == "__main__":
         relaxation=relaxation,
         dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
         n_steps_major=15,
-        elem_ratio_per_iter=0.0025,
+        elem_ratio_per_iter=0.0008,
         existing_prestrain_priority_factor=1.0,
     )
 
