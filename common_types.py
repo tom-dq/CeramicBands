@@ -1,22 +1,18 @@
 import typing
 import collections
+import st7
 
 class XY(typing.NamedTuple):
     x: float
     y: float
 
 
-class XYZ(typing.NamedTuple):
-    x: float
-    y: float
-    z: float
-
 T_Elem = typing.TypeVar("T_Elem")
 T_Direction = int
 T_ScaleKey = typing.Tuple[T_Elem, T_Direction]
 T_FactVal = typing.Tuple[float, float]
 T_Result = typing.TypeVar("T_Result")
-T_ResultDict = typing.Dict[int, XYZ]
+T_ResultDict = typing.Dict[int, st7.Vector3]
 
 
 class ElemVectorDict(dict):
@@ -37,14 +33,14 @@ class ElemVectorDict(dict):
             elem_to_idx_to_val[elem][idx] = val
 
         def make_xyz_full(idx_to_val):
-            return XYZ(
+            return st7.Vector3(
                 x=idx_to_val[0],
                 y=idx_to_val[1],
                 z=idx_to_val[2],
             )
 
         def make_xyz_incomplete(idx_to_val):
-            return XYZ(
+            return st7.Vector3(
                 x=idx_to_val.get(0, 0.0),
                 y=idx_to_val.get(1, 0.0),
                 z=idx_to_val.get(2, 0.0),
@@ -60,5 +56,5 @@ class ElemVectorDict(dict):
 
     @classmethod
     def zeros_from_element_ids(cls, elems: typing.Iterable[T_Elem]) -> "ElemVectorDict":
-        return ElemVectorDict( (elem, XYZ(x=0.0, y=0.0, z=0.0) ) for elem in elems)
+        return ElemVectorDict( (elem, st7.Vector3(x=0.0, y=0.0, z=0.0) ) for elem in elems)
 

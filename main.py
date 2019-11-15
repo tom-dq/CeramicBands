@@ -11,7 +11,7 @@ import math
 import shutil
 
 from averaging import Averaging, NoAve, AveInRadius
-from common_types import T_Elem, XY, XYZ, ElemVectorDict
+from common_types import T_Elem, XY, ElemVectorDict
 from relaxation import Relaxation, PropRelax
 from scaling import Scaling, SpacedStepScaling, CosineScaling
 import directories
@@ -22,7 +22,7 @@ random.seed(123)
 RATCHET_AT_INCREMENTS = True
 DEBUG_CASE_FOR_EVERY_INCREMENT = True
 
-fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD2.st7")
+fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD1.st7")
 fn_working_image_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3-pics")
 
 SCREENSHOT_RES = st7.CanvasSize(1920, 1200)
@@ -31,8 +31,9 @@ class Actuator(enum.Enum):
     """The value used to ratchet up the prestrain."""
     S11 = enum.auto()
     SvM = enum.auto()
-    XX = enum.auto()
-    local = enum.auto()
+    s_XX = enum.auto()
+    s_local = enum.auto()
+    e_local = enum.auto()
 
     def nice_name(self) -> str:
         if self == Actuator.S11:
@@ -41,11 +42,25 @@ class Actuator(enum.Enum):
         elif self == Actuator.SvM:
             return "vM Stress"
 
-        elif self == Actuator.XX:
-            return "XX Global"
+        elif self == Actuator.s_XX:
+            return "XX Global Stress"
 
-        elif self == Actuator.XX:
-            return "Local Directional"
+        elif self == Actuator.s_XX:
+            return "Local Directional Stress"
+
+        elif self == Actuator.e_local:
+            return "Local Directional Strain"
+
+        else:
+            raise ValueError(self)
+
+    @property
+    def input_result(self) -> st7.PlateResultType:
+        if self in (Actuator.S11, Actuator.SvM, Actuator.s_XX, Actuator.s_local):
+            return st7.PlateResultType.rtPlateStress
+
+        elif self == Actuator.e_local:
+            return st7.PlateResultType.rtPlateStrain
 
         else:
             raise ValueError(self)
@@ -227,7 +242,7 @@ class Ratchet:
         return f"Elem {max_elem}\tMaxStress {self.max_stress_ever}\tStrain {max_val}\tNonzero {proportion_non_zero:.3%}"
 
 
-def apply_prestrain(model: st7.St7Model, case_num: int, elem_to_ratio: typing.Dict[int, XYZ]):
+def apply_prestrain(model: st7.St7Model, case_num: int, elem_to_ratio: typing.Dict[int, st7.Vector3]):
     """Apply all the prestrains"""
 
     for plate_num, prestrain_val in elem_to_ratio.items():
@@ -251,11 +266,12 @@ def write_out_screenshot(model_window: st7.St7ModelWindow, results: st7.St7Resul
     #model_window.St7ExportImage(fn, st7.ImageType.itPNG, EXPORT_FACT * draw_area.width, EXPORT_FACT * draw_area.height)
 
 
-def get_stress_results(phase_change_actuator: Actuator, results: st7.St7Results, case_num: int) -> ElemVectorDict:
+def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_num: int) -> ElemVectorDict:
     """Get the results from the result file which will be used to re-apply the prestrain."""
 
+    res_type = phase_change_actuator.input_result
+
     if phase_change_actuator == Actuator.S11:
-        res_type = st7.PlateResultType.rtPlateStress
         res_sub_type = st7.PlateResultSubType.stPlateCombined
         index_list = [
             st7.St7API.ipPlateCombPrincipal11,
@@ -264,7 +280,6 @@ def get_stress_results(phase_change_actuator: Actuator, results: st7.St7Results,
         ]
 
     elif phase_change_actuator == Actuator.SvM:
-        res_type = st7.PlateResultType.rtPlateStress
         res_sub_type = st7.PlateResultSubType.stPlateCombined
         index_list = [
             st7.St7API.ipPlateCombVonMises,
@@ -272,8 +287,7 @@ def get_stress_results(phase_change_actuator: Actuator, results: st7.St7Results,
             st7.St7API.ipPlateCombVonMises,
         ]
 
-    elif phase_change_actuator == Actuator.XX:
-        res_type = st7.PlateResultType.rtPlateStress
+    elif phase_change_actuator == Actuator.s_XX:
         res_sub_type = st7.PlateResultSubType.stPlateGlobal
         index_list = [
             st7.St7API.ipPlateGlobalXX,
@@ -281,8 +295,7 @@ def get_stress_results(phase_change_actuator: Actuator, results: st7.St7Results,
             st7.St7API.ipPlateGlobalXX,
         ]
 
-    elif phase_change_actuator == Actuator.local:
-        res_type = st7.PlateResultType.rtPlateStress
+    elif phase_change_actuator in (Actuator.s_local, Actuator.e_local):
         res_sub_type = st7.PlateResultSubType.stPlateLocal
         index_list = [
             st7.St7API.ipPlateLocalxx,
@@ -307,10 +320,29 @@ def get_stress_results(phase_change_actuator: Actuator, results: st7.St7Results,
             raise ValueError()
 
         result_values = [res_array.results[index] for index in index_list]
-        return XYZ(*result_values)
+        return st7.Vector3(*result_values)
 
     raw_dict = {plate_num: one_plate_result(plate_num) for plate_num in results.model.entity_numbers(st7.Entity.tyPLATE)}
     return ElemVectorDict(raw_dict)
+
+
+def update_to_include_prestrains(
+        actuator: Actuator,
+        minor_acuator_input_current_raw: ElemVectorDict,
+        old_prestrain_values: ElemVectorDict
+) -> ElemVectorDict:
+    """Make sure we include the applied pre-strains..."""
+
+    if actuator == Actuator.e_local:
+        return ElemVectorDict({
+            plate_num: one_res + old_prestrain_values.get(plate_num, st7.Vector3(0.0, 0.0, 0.0)) for
+            plate_num, one_res in minor_acuator_input_current_raw.items()
+        })
+
+    else:
+        return minor_acuator_input_current_raw
+
+
 
 class PrestrainUpdate(typing.NamedTuple):
     elem_prestrains: ElemVectorDict
@@ -325,8 +357,9 @@ def incremental_element_update_list(
         existing_prestrain_priority_factor: float,
         elem_volume: typing.Dict[int, float],
         ratchet: Ratchet,
-        minor_prev_strain: ElemVectorDict,
-        minor_current_stress: ElemVectorDict,
+        minor_prev_prestrain: ElemVectorDict,
+        minor_acuator_input_current: ElemVectorDict,
+        #minor_current_strain: ElemVectorDict,
 ) -> PrestrainUpdate:
     """Gets the subset of elements which should be "yielded", based on the stress."""
 
@@ -342,36 +375,49 @@ def incremental_element_update_list(
         all_res = ratchet.get_all_values(lock_in=False, elem_results=res_dict)
         return {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_res.as_single_values()}
 
-    #old_prestrains = candidate_strains(False, minor_prev_stress)
-    new_prestrains_all = candidate_strains(minor_current_stress)
+    #old_prestrains = candidate_strains(minor_acuator_input_prev)
+    new_prestrains_all = candidate_strains(minor_acuator_input_current)
 
-    old_prestrains = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_prev_strain.as_single_values()}
+    old_prestrains = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_prev_prestrain.as_single_values()}
     increased_prestrains = {key: val for key, val in new_prestrains_all.items() if abs(val) > abs(old_prestrains.get(key, 0.0))}
 
     # Use the current stress results to choose the new elements.
-    minor_current_stress = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_current_stress.as_single_values()}
+    minor_acuator_input_current_flat = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_acuator_input_current.as_single_values()}
+    #minor_current_strain_flat = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_current_strain.as_single_values()}
 
-    def priority(elem_idx_val):
+    def priority_stress(elem_idx_val):
         """Takes in a prestrain item. This decides which prestrains get updated this round."""
         elem_idx = (elem_idx_val[0], elem_idx_val[1])
-        current_stress_unscaled = minor_current_stress[elem_idx]
+        current_stress_unscaled = minor_acuator_input_current_flat[elem_idx]
 
-        existing_scale_ratio = abs(old_prestrains.get(elem_idx_val, 0.0)) / ratchet.table.max_abs_y
-        scale_factor = 1.0 + existing_prestrain_priority_factor * existing_scale_ratio
+        existing_scale_ratio = abs(old_prestrains.get(elem_idx, 0.0)) / ratchet.table.max_abs_y
+        scale_factor = existing_prestrain_priority_factor * existing_scale_ratio
         current_stress_scaled = current_stress_unscaled * ratchet.scaling.get_x_scale_factor(elem_idx) * scale_factor
         return abs(current_stress_scaled)
 
+    def priority_strain(elem_idx_val):
+        elem_idx = (elem_idx_val[0], elem_idx_val[1])
+        current_strain_results_scaled = minor_current_strain_flat[elem_idx] * ratchet.scaling.get_x_scale_factor(elem_idx)
+        current_applied_strain = existing_prestrain_priority_factor * old_prestrains.get(elem_idx, 0.0)
+        return abs(current_strain_results_scaled + current_applied_strain)
+
+    def priorty_strain_simple(elem_idx_val):
+        elem_idx = (elem_idx_val[0], elem_idx_val[1])
+        # Assuming a strain actuation, the input is the true actuator value...
+        return abs(minor_acuator_input_current_flat[elem_idx] * ratchet.scaling.get_x_scale_factor(elem_idx))
+
+
     # Get the top N elements.
     all_new = ( (elem_idx[0], elem_idx[1], val) for elem_idx, val in increased_prestrains.items())
-    all_new_sorted = sorted(all_new, key=priority, reverse=True)
+    all_new_sorted = sorted(all_new, key=priorty_strain_simple, reverse=True)
 
     top_n_new = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_new_sorted[0:num_allowed]}
     new_count = len(top_n_new)
-    left_over_count = min(0, len(all_new_sorted) - new_count)
+    left_over_count = max(0, len(all_new_sorted) - new_count)
 
     # Build the new pre-strain dictionary out of old and new values.
-    old_strain_single_vals = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_prev_strain.as_single_values()}
-    combined_final_single_values = {**old_strain_single_vals, **top_n_new}
+    # old_strain_single_vals = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_prev_strain.as_single_values()}
+    combined_final_single_values = {**old_prestrains, **top_n_new}
     single_vals_out = [ (elem, idx, val) for (elem, idx), val in combined_final_single_values.items()]
     total_out = sum(1 for _, _, val in single_vals_out if abs(val))
 
@@ -381,7 +427,7 @@ def incremental_element_update_list(
 
     # Work out now much additional dilation has been introduced.
     extra_dilation = [
-        (elem_idx, val - old_strain_single_vals.get(elem_idx, 0.0))
+        (elem_idx, val - old_prestrains.get(elem_idx, 0.0))
         for elem_idx, val in top_n_new.items()
     ]
 
@@ -454,12 +500,26 @@ def main(
 
     STRESS_START = 400
 
-    prestrain_table = Table([
-        XY(0.0, 0.0),
-        XY(STRESS_START, 0.0),
-        XY(stress_end, -1 * dilation_ratio),
-        XY(stress_end + 200, -1 * dilation_ratio),
-    ])
+    if actuator.input_result == st7.PlateResultType.rtPlateStress:
+        prestrain_table = Table([
+            XY(0.0, 0.0),
+            XY(STRESS_START, 0.0),
+            XY(stress_end, -1 * dilation_ratio),
+            XY(stress_end + 200, -1 * dilation_ratio),
+        ])
+
+    elif actuator.input_result == st7.PlateResultType.rtPlateStrain:
+        youngs_mod = 220000  # Hacky way!
+        prestrain_table = Table([
+            XY(0.0, 0.0),
+            XY(STRESS_START / youngs_mod, 0.0),
+            XY(stress_end / youngs_mod, -1 * dilation_ratio),
+            XY((stress_end + 200) / youngs_mod, -1 * dilation_ratio),
+        ])
+
+    else:
+        raise ValueError(actuator.input_result)
+
 
     #relaxation_param_dimensionless = 80/n_steps * relaxation_param
     ratchet = Ratchet(prestrain_table, scaling=scaling, averaging=averaging, relaxation=relaxation)
@@ -537,7 +597,6 @@ def main(
             # Get the results from the last major step.
             with model.open_results(fn_res) as results:
                 last_case = results.primary_cases[-1]
-                this_case_results_major = get_stress_results(actuator, results, last_case)
                 write_out_screenshot(model_window, results, last_case, working_image_dir / f"Case-{last_case:04}.png")
 
             # Update the model with the new load
@@ -556,7 +615,6 @@ def main(
             relaxation.set_current_relaxation(previous_load_factor, this_load_factor)
 
             # Perform an iterative update in which only a certain proportion of the elements can "yield" at once.
-            minor_prev_stress = this_case_results_major.copy()
             minor_step_iter = itertools.count()
             step_num_minor = next(minor_step_iter)
             new_count = math.inf
@@ -568,20 +626,19 @@ def main(
                 # Get the results from the last minor step.
                 with model.open_results(fn_res) as results:
                     last_case = results.primary_cases[-1]
-                    minor_current_stress = get_stress_results(actuator, results, last_case)
+                    minor_acuator_input_current_raw = get_results(actuator, results, last_case)
+                    minor_acuator_input_current = update_to_include_prestrains(actuator, minor_acuator_input_current_raw, old_prestrain_values)
                     write_out_screenshot(model_window, results, last_case, working_image_dir / f"Case-{last_case:04}.png")
-
-                #TEMP!
-                model.St7SaveFile()
 
                 prestrain_update = incremental_element_update_list(
                     num_allowed=n_updates_per_iter,
                     existing_prestrain_priority_factor=existing_prestrain_priority_factor,
                     elem_volume=elem_volume,
                     ratchet=ratchet,
-                    minor_prev_strain=old_prestrain_values,
-                    minor_current_stress=minor_current_stress,
+                    minor_prev_prestrain=old_prestrain_values,
+                    minor_acuator_input_current=minor_acuator_input_current,
                 )
+
                 #new_prestrain_values, new_count, total_count
                 new_count = prestrain_update.updated_this_round
                 update_bits = [
@@ -646,18 +703,18 @@ if __name__ == "__main__":
     relaxation = PropRelax(1.0)
     scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
-    averaging = AveInRadius(0.05)
+    averaging = AveInRadius(0.1)
     #averaging = NoAve()
 
     main(
-        Actuator.local,
+        Actuator.e_local,
         stress_end=425.0,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
-        n_steps_major=24,
-        elem_ratio_per_iter=0.00035,
+        n_steps_major=15,
+        elem_ratio_per_iter=0.0025,
         existing_prestrain_priority_factor=1.0,
     )
 
