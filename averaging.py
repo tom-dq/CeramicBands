@@ -3,6 +3,7 @@ import bisect
 import collections
 import math
 import typing
+import time
 
 import st7
 from common_types import T_Elem, T_Result
@@ -51,7 +52,7 @@ class AveInRadius(Averaging):
         self._radius = radius
 
     def __str__(self):
-        return f"{self.__class__.__name__}(radius={self._radius})"
+        return f"{self.__class__.__name__}({self._radius})"
 
     def populate_radius(
             self,
@@ -59,19 +60,27 @@ class AveInRadius(Averaging):
             element_connections: typing.Dict[T_Elem, typing.Tuple[int, ...]]
     ):
 
+        t_start = time.time()
+
         self._element_connections = element_connections
+
+        relevant_ordinates = range(2)
+
+        # Only consider the nodes which are connected to the elements in question (to avoid contact element, for example).
+        all_connected_nodes = {iNode for connection in self._element_connections.values() for iNode in connection}
+        node_positions_relevant = {iNode: xyz for iNode, xyz in node_positions.items() if iNode in all_connected_nodes}
 
         # Get the element centroids
         def get_cent(elem_conn):
-            all_coords = [node_positions[iNode] for iNode in elem_conn]
+            all_coords = [node_positions_relevant[iNode] for iNode in elem_conn]
             return sum(all_coords) / len(all_coords)
 
         elem_cents = {elem_id: get_cent(elem_conn) for elem_id, elem_conn in self._element_connections.items()}
 
         # Sort the nodes by x, y and z so we can find the candidates quickly(ish).
         idx_to_sorted_list = dict()
-        for idx in range(3):
-            node_num_to_ordinate = {node_num: node_pos[idx] for node_num, node_pos in node_positions.items()}
+        for idx in relevant_ordinates:
+            node_num_to_ordinate = {node_num: node_pos[idx] for node_num, node_pos in node_positions_relevant.items()}
             idx_to_sorted_list[idx] = sorted( (ordinate, node_num) for node_num, ordinate in node_num_to_ordinate.items())
 
         def candidate_nodes(elem_cent):
@@ -87,7 +96,7 @@ class AveInRadius(Averaging):
                 ordinates_and_node_nums = idx_to_sorted_list[idx][lower_idx:upper_idx]
                 return {node_num for _, node_num in ordinates_and_node_nums}
 
-            set_list = [nodes_with_range_of(idx) for idx in range(3)]
+            set_list = [nodes_with_range_of(idx) for idx in relevant_ordinates]
             all_candidate_nodes = set.intersection(*set_list)
             return all_candidate_nodes
 
@@ -95,7 +104,7 @@ class AveInRadius(Averaging):
         elem_nodal_contributions_raw = collections.defaultdict(dict)
         for elem_id, elem_xyz in elem_cents.items():
             for iNode in candidate_nodes(elem_xyz):
-                dist = abs(node_positions[iNode] - elem_xyz)
+                dist = abs(node_positions_relevant[iNode] - elem_xyz)
                 if dist < self._radius:
                     elem_nodal_contributions_raw[elem_id][iNode] = self._radius - dist
 
@@ -109,6 +118,9 @@ class AveInRadius(Averaging):
         missing_elements = [elem_id for elem_id in self._element_connections if elem_id not in self._elem_nodal_contributions]
         if missing_elements:
             raise ValueError(f"Missing {len(missing_elements)} elements... {missing_elements[0:3]}")
+
+        t_end = time.time()
+        print(f"Took {t_end-t_start:.4g} seconds to calculate averaging contributions with {len(self._element_connections)} elements at radius of {self._radius}.")
 
     def _nodal_to_elem(self, nodal_results, elem_id: T_Elem) -> T_Result:
         these_contribs = self._elem_nodal_contributions[elem_id]

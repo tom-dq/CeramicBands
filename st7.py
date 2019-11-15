@@ -156,15 +156,16 @@ class Vector3(typing.NamedTuple):
     def __abs__(self):
         return (self.x**2 + self.y**2 + self.z**2)**0.5
 
+
 class CanvasSize(typing.NamedTuple):
     width: int
     height: int
+
 
 class ResultOutput(typing.NamedTuple):
     num_points: int
     num_cols: int
     results: typing.Tuple[float]
-
 
 
 class BeamContour(enum.Enum):
@@ -495,6 +496,11 @@ class St7Model:
         ct_xyz = (ctypes.c_double * 3)()
         chk(St7API.St7GetElementCentroid(self.uID, entity.value, elem_num, face_edge_num, ct_xyz))
         return Vector3(*ct_xyz)
+
+    def St7GetElementData(self, entity: Entity, elem_num: int) -> float:
+        ct_data = ctypes.c_double()
+        chk(St7API.St7GetElementData(self.uID, entity.value, elem_num, ct_data))
+        return ct_data.value
 
     def St7GetNodeXYZ(self, node_num: int) -> Vector3:
         ct_xyz = (ctypes.c_double * 3)()
