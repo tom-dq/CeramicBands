@@ -364,7 +364,7 @@ class St7Model:
         self._fn = str(fn_st7)
 
         if temp_dir:
-            self._temp_dir = temp_dir
+            self._temp_dir = str(temp_dir)
         else:
             self._temp_dir = tempfile.gettempdir()
 

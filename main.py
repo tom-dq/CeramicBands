@@ -9,6 +9,7 @@ import pathlib
 import bisect
 import math
 import shutil
+from config import config
 
 from averaging import Averaging, NoAve, AveInRadius
 from common_types import T_Elem, XY, ElemVectorDict
@@ -22,10 +23,10 @@ random.seed(123)
 RATCHET_AT_INCREMENTS = True
 DEBUG_CASE_FOR_EVERY_INCREMENT = True
 
-fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD3.st7")
-fn_working_image_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3-pics")
+#fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD2.st7")
+#fn_working_image_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3-pics")
 
-SCREENSHOT_RES = st7.CanvasSize(1920, 1200)
+#screenshot_res = st7.CanvasSize(1920, 1200)
 
 class Actuator(enum.Enum):
     """The value used to ratchet up the prestrain."""
@@ -262,7 +263,7 @@ def write_out_screenshot(model_window: st7.St7ModelWindow, results: st7.St7Resul
 
     setup_model_window(model_window, results, case_num)
     #draw_area = model_window.St7GetDrawAreaSize()
-    model_window.St7ExportImage(fn, st7.ImageType.itPNG, SCREENSHOT_RES.width, SCREENSHOT_RES.height)
+    model_window.St7ExportImage(fn, st7.ImageType.itPNG, config.screenshot_res.width, config.screenshot_res.height)
     #model_window.St7ExportImage(fn, st7.ImageType.itPNG, EXPORT_FACT * draw_area.width, EXPORT_FACT * draw_area.height)
 
 
@@ -530,7 +531,7 @@ def main(
     print(f"Limiting to {n_steps_minor_max} steps per load increment - only {elem_ratio_per_iter:%} can yield.")
 
     fn_st7 = make_fn(actuator, n_steps_major, scaling, averaging, STRESS_START, stress_end, dilation_ratio, relaxation, elem_ratio_per_iter, existing_prestrain_priority_factor)
-    shutil.copy2(fn_st7_base, fn_st7)
+    shutil.copy2(config.fn_st7_base, fn_st7)
 
     fn_res = fn_st7.with_suffix(".NLA")
     fn_restart = fn_st7.with_suffix(".SRF")
@@ -541,7 +542,7 @@ def main(
     fn_png_unloaded = fn_append(fn_png, "Unloaded")
 
     if DEBUG_CASE_FOR_EVERY_INCREMENT:
-        working_image_dir = directories.get_unique_sub_dir(fn_working_image_base)
+        working_image_dir = directories.get_unique_sub_dir(config.fn_working_image_base)
         dont_make_model_window = False
         with open(working_image_dir / "Meta.txt", "w") as f_meta:
             f_meta.write(str(fn_st7))
@@ -552,7 +553,7 @@ def main(
         working_image_dir = ""
         dont_make_model_window = True
 
-    with st7.St7Model(fn_st7, r"C:\Temp") as model, model.St7CreateModelWindow(dont_make_model_window) as model_window:
+    with st7.St7Model(fn_st7, config.scratch_dir) as model, model.St7CreateModelWindow(dont_make_model_window) as model_window:
 
         elem_centroid = {
             elem_num: model.St7GetElementCentroid(st7.Entity.tyPLATE, elem_num, 0)
@@ -703,7 +704,7 @@ if __name__ == "__main__":
     relaxation = PropRelax(1.0)
     scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
-    averaging = AveInRadius(0.05)
+    averaging = AveInRadius(0.03)
     #averaging = NoAve()
 
     main(
@@ -714,8 +715,9 @@ if __name__ == "__main__":
         relaxation=relaxation,
         dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
         n_steps_major=15,
-        elem_ratio_per_iter=0.0008,
+        elem_ratio_per_iter=0.0001,
         existing_prestrain_priority_factor=1.0,
     )
 
+# Combine to one video with "C:\Utilities\ffmpeg-20181212-32601fb-win64-static\bin\ffmpeg.exe -f image2 -r 12 -i Case-%04d.png -vcodec libx264 -profile:v high444 -refs 16 -crf 0 out.mp4"
 
