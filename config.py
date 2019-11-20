@@ -25,7 +25,7 @@ def _get_config():
 
     if this_env == Environment.uni_desktop:
         return Config(
-            fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD2.st7"),
+            fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact.st7"),
             fn_working_image_base=pathlib.Path(r"E:\Simulations\CeramicBands\v3-pics"),
             screenshot_res=st7.CanvasSize(1920, 1200),
             scratch_dir=pathlib.Path(r"C:\Temp"),

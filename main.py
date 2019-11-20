@@ -16,6 +16,8 @@ from common_types import T_Elem, XY, ElemVectorDict
 from relaxation import Relaxation, PropRelax
 from scaling import Scaling, SpacedStepScaling, CosineScaling
 import directories
+import state_tracker
+
 
 # To make reproducible
 random.seed(123)
@@ -456,12 +458,13 @@ def incremental_element_update_list(
 
 
 
-def make_fn(actuator: Actuator, n_steps: int, scaling, averaging, stress_start, stress_end, dilation_ratio, relaxation, elem_ratio_per_iter, existing_prestrain_priority_factor) -> pathlib.Path:
+def make_fn(working_dir: pathlib.Path, actuator: Actuator, n_steps: int, scaling, averaging, stress_start, stress_end, dilation_ratio, relaxation, elem_ratio_per_iter, existing_prestrain_priority_factor) -> pathlib.Path:
     """Makes the base Strand7 model name."""
     new_stem = config.fn_st7_base.stem + f" - {actuator.name} {stress_start} to {stress_end} DilRat={dilation_ratio} Steps={n_steps} {scaling} {averaging} {relaxation} ElemRatio={elem_ratio_per_iter} ExistingPriority={existing_prestrain_priority_factor}"
 
     new_name = new_stem + config.fn_st7_base.suffix
-    return config.fn_st7_base.with_name(new_name)
+    return working_dir / new_name
+    #return config.fn_st7_base.with_name(new_name)
 
 
 def fn_append(fn_orig: pathlib.Path, extra_bit) -> pathlib.Path:
@@ -539,7 +542,10 @@ def main(
     n_steps_minor_max = math.inf
     print(f"Limiting to {n_steps_minor_max} steps per load increment - only {elem_ratio_per_iter:%} can yield.")
 
-    fn_st7 = make_fn(actuator, n_steps_major, scaling, averaging, STRESS_START, stress_end, dilation_ratio, relaxation, elem_ratio_per_iter, existing_prestrain_priority_factor)
+    working_dir = directories.get_unique_sub_dir(config.fn_working_image_base)
+
+
+    fn_st7 = make_fn(working_dir, actuator, n_steps_major, scaling, averaging, STRESS_START, stress_end, dilation_ratio, relaxation, elem_ratio_per_iter, existing_prestrain_priority_factor)
     shutil.copy2(config.fn_st7_base, fn_st7)
 
     fn_res = fn_st7.with_suffix(".NLA")
@@ -550,19 +556,21 @@ def main(
     fn_png_full = fn_append(fn_png, "FullLoad")
     fn_png_unloaded = fn_append(fn_png, "Unloaded")
 
-    if DEBUG_CASE_FOR_EVERY_INCREMENT:
-        working_image_dir = directories.get_unique_sub_dir(config.fn_working_image_base)
-        dont_make_model_window = False
-        with open(working_image_dir / "Meta.txt", "w") as f_meta:
-            f_meta.write(str(fn_st7))
+    with open(working_dir / "Meta.txt", "w") as f_meta:
+        f_meta.write(str(fn_st7))
 
-        print(f"Saving images here: {working_image_dir}")
+    print(f"Working directory: {working_dir}")
+    print()
 
-    else:
-        working_image_dir = ""
-        dont_make_model_window = True
+    state = state_tracker.default_state
+    print("Signal files:")
+    state.print_signal_file_names(working_dir)
 
+
+    dont_make_model_window = not DEBUG_CASE_FOR_EVERY_INCREMENT
     with st7.St7Model(fn_st7, config.scratch_dir) as model, model.St7CreateModelWindow(dont_make_model_window) as model_window:
+
+
 
         model.St7SetUseSolverDLL(False)
 
@@ -609,7 +617,7 @@ def main(
             # Get the results from the last major step.
             with model.open_results(fn_res) as results:
                 last_case = results.primary_cases[-1]
-                write_out_screenshot(model_window, results, last_case, working_image_dir / f"Case-{last_case:04}.png")
+                write_out_screenshot(model_window, results, last_case, working_dir / f"Case-{last_case:04}.png")
 
             # Update the model with the new load
             this_load_factor = (step_num_major+1) / n_steps_major
@@ -640,7 +648,7 @@ def main(
                     last_case = results.primary_cases[-1]
                     minor_acuator_input_current_raw = get_results(actuator, results, last_case)
                     minor_acuator_input_current = update_to_include_prestrains(actuator, minor_acuator_input_current_raw, old_prestrain_values)
-                    write_out_screenshot(model_window, results, last_case, working_image_dir / f"Case-{last_case:04}.png")
+                    write_out_screenshot(model_window, results, last_case, working_dir / f"Case-{last_case:04}.png")
 
                 prestrain_update = incremental_element_update_list(
                     num_allowed=n_updates_per_iter,
@@ -682,13 +690,22 @@ def main(
                     step_num_minor = next(minor_step_iter)
                     old_prestrain_values = prestrain_update.elem_prestrains
 
+                # Update the state.
+                state = state.update_from_fn(working_dir)
+                if state.need_to_write_st7():
+                    model.St7SaveFile()
+
+                if state.execution == state_tracker.Execution.pause:
+                    _ = input("Press enter to carry on...")
+                    state = state.unpause()
+
+                elif state.execution == state_tracker.Execution.stop:
+                    return
 
             # Update the ratchet with the equilibrated results.
             for elem, idx, val in prestrain_update.elem_prestrains.as_single_values():
                 scale_key = (elem, idx)
                 ratchet.update_minimum(True, scale_key, val)
-
-            model.St7SaveFile()
 
             previous_load_factor = this_load_factor
 
