@@ -520,6 +520,10 @@ class St7Model:
         else:
             return St7ModelWindow(model=self)
 
+    def St7SetUseSolverDLL(self, use_dll: bool):
+        ct_int = ctypes.c_long(use_dll)
+        chk(St7API.St7SetUseSolverDLL(ct_int))
+
 
 class St7Results:
     model: St7Model = None

@@ -405,7 +405,16 @@ def incremental_element_update_list(
     def priorty_strain_simple(elem_idx_val):
         elem_idx = (elem_idx_val[0], elem_idx_val[1])
         # Assuming a strain actuation, the input is the true actuator value...
-        return abs(minor_acuator_input_current_flat[elem_idx] * ratchet.scaling.get_x_scale_factor(elem_idx))
+
+        proposed_new_prestrain = minor_acuator_input_current_flat[elem_idx] * ratchet.scaling.get_x_scale_factor(elem_idx)
+
+        # Previous pre-strain will be zero if the element is:
+        # - zero if the element is undialated.
+        # - negative if the element is dialated.
+        strain_previous = old_prestrains.get(elem_idx, 0.0)
+
+        # Give a boost to the already-strained elements
+        return abs(proposed_new_prestrain) + existing_prestrain_priority_factor * abs(strain_previous)
 
 
     # Get the top N elements.
@@ -449,10 +458,10 @@ def incremental_element_update_list(
 
 def make_fn(actuator: Actuator, n_steps: int, scaling, averaging, stress_start, stress_end, dilation_ratio, relaxation, elem_ratio_per_iter, existing_prestrain_priority_factor) -> pathlib.Path:
     """Makes the base Strand7 model name."""
-    new_stem = fn_st7_base.stem + f" - {actuator.name} {stress_start} to {stress_end} DilRat={dilation_ratio} Steps={n_steps} {scaling} {averaging} {relaxation} ElemRatio={elem_ratio_per_iter} ExistingPriority={existing_prestrain_priority_factor}"
+    new_stem = config.fn_st7_base.stem + f" - {actuator.name} {stress_start} to {stress_end} DilRat={dilation_ratio} Steps={n_steps} {scaling} {averaging} {relaxation} ElemRatio={elem_ratio_per_iter} ExistingPriority={existing_prestrain_priority_factor}"
 
-    new_name = new_stem + fn_st7_base.suffix
-    return fn_st7_base.with_name(new_name)
+    new_name = new_stem + config.fn_st7_base.suffix
+    return config.fn_st7_base.with_name(new_name)
 
 
 def fn_append(fn_orig: pathlib.Path, extra_bit) -> pathlib.Path:
@@ -554,6 +563,8 @@ def main(
         dont_make_model_window = True
 
     with st7.St7Model(fn_st7, config.scratch_dir) as model, model.St7CreateModelWindow(dont_make_model_window) as model_window:
+
+        model.St7SetUseSolverDLL(False)
 
         elem_centroid = {
             elem_num: model.St7GetElementCentroid(st7.Entity.tyPLATE, elem_num, 0)
@@ -701,10 +712,10 @@ def create_load_case(model, stage, case_name):
 if __name__ == "__main__":
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
-    relaxation = PropRelax(1.0)
+    relaxation = PropRelax(0.5)
     scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
-    averaging = AveInRadius(0.03)
+    averaging = AveInRadius(0.15)
     #averaging = NoAve()
 
     main(
@@ -714,9 +725,9 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
-        n_steps_major=15,
-        elem_ratio_per_iter=0.0001,
-        existing_prestrain_priority_factor=1.0,
+        n_steps_major=5,
+        elem_ratio_per_iter=0.0002,
+        existing_prestrain_priority_factor=5.0,
     )
 
 # Combine to one video with "C:\Utilities\ffmpeg-20181212-32601fb-win64-static\bin\ffmpeg.exe -f image2 -r 12 -i Case-%04d.png -vcodec libx264 -profile:v high444 -refs 16 -crf 0 out.mp4"
