@@ -80,7 +80,7 @@ class State(typing.NamedTuple):
         for field_name, field_type in self._field_types.items():
             for one_val in field_type:
                 signal_file = os.path.join(look_dir, one_val.name)
-                print(signal_file, one_val.nice_text())
+                print(signal_file, one_val.nice_text(), sep='\t')
 
     def unpause(self) -> "State":
         return self._replace(execution=Execution.running)

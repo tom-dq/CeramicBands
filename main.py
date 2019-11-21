@@ -545,7 +545,9 @@ def main(
     working_dir = directories.get_unique_sub_dir(config.fn_working_image_base)
 
 
-    fn_st7 = make_fn(working_dir, actuator, n_steps_major, scaling, averaging, STRESS_START, stress_end, dilation_ratio, relaxation, elem_ratio_per_iter, existing_prestrain_priority_factor)
+    fn_st7_full = make_fn(working_dir, actuator, n_steps_major, scaling, averaging, STRESS_START, stress_end, dilation_ratio, relaxation, elem_ratio_per_iter, existing_prestrain_priority_factor)
+
+    fn_st7 = working_dir / "Model.st7"
     shutil.copy2(config.fn_st7_base, fn_st7)
 
     fn_res = fn_st7.with_suffix(".NLA")
@@ -557,8 +559,9 @@ def main(
     fn_png_unloaded = fn_append(fn_png, "Unloaded")
 
     with open(working_dir / "Meta.txt", "w") as f_meta:
-        f_meta.write(str(fn_st7))
+        f_meta.write(str(fn_st7_full))
 
+    print(fn_st7_full)
     print(f"Working directory: {working_dir}")
     print()
 
@@ -570,9 +573,8 @@ def main(
     dont_make_model_window = not DEBUG_CASE_FOR_EVERY_INCREMENT
     with st7.St7Model(fn_st7, config.scratch_dir) as model, model.St7CreateModelWindow(dont_make_model_window) as model_window:
 
-
-
-        model.St7SetUseSolverDLL(False)
+        model.St7EnableSaveRestart()
+        model.St7EnableSaveLastRestartStep()
 
         elem_centroid = {
             elem_num: model.St7GetElementCentroid(st7.Entity.tyPLATE, elem_num, 0)
@@ -732,7 +734,7 @@ if __name__ == "__main__":
     relaxation = PropRelax(0.5)
     scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
-    averaging = AveInRadius(0.15)
+    averaging = AveInRadius(0.10)
     #averaging = NoAve()
 
     main(
@@ -742,8 +744,8 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
-        n_steps_major=5,
-        elem_ratio_per_iter=0.0002,
+        n_steps_major=20,
+        elem_ratio_per_iter=0.0005,
         existing_prestrain_priority_factor=5.0,
     )
 

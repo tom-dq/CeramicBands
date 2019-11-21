@@ -467,6 +467,12 @@ class St7Model:
         chk(St7API.St7GetNumNLAIncrements(self.uID, stage, ct_incs))
         return ct_incs.value
 
+    def St7EnableSaveRestart(self):
+        chk(St7API.St7EnableSaveRestart(self.uID))
+
+    def St7EnableSaveLastRestartStep(self):
+        chk(St7API.St7EnableSaveLastRestartStep(self.uID))
+
     def St7SetNLAInitial(self, fn_restart: str, case_num: int):
         chk(St7API.St7SetNLAInitial(
             self.uID,
