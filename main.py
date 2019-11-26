@@ -18,6 +18,10 @@ from scaling import Scaling, SpacedStepScaling, CosineScaling
 import directories
 import state_tracker
 
+# TODO:
+#   - Use QSA so I can do multi-part result files
+#   - Chain the restarts, file by file, say, 50 steps per file.
+
 
 # To make reproducible
 random.seed(123)
