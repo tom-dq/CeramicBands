@@ -6,15 +6,17 @@ import collections
 
 import st7
 import pathlib
-import bisect
 import math
 import shutil
-from config import config
 
-from averaging import Averaging, NoAve, AveInRadius
-from common_types import T_Elem, XY, ElemVectorDict
+import config
+
+from averaging import Averaging, AveInRadius
+from common_types import XY, ElemVectorDict
 from relaxation import Relaxation, PropRelax
-from scaling import Scaling, SpacedStepScaling, CosineScaling
+from scaling import Scaling, SpacedStepScaling
+from tables import Table
+
 import directories
 import state_tracker
 
@@ -28,6 +30,13 @@ random.seed(123)
 
 RATCHET_AT_INCREMENTS = True
 DEBUG_CASE_FOR_EVERY_INCREMENT = True
+
+LOAD_CASE_BENDING = 1
+FREEDOM_CASE = 1
+STAGE = 0
+TABLE_BENDING_ID = 5
+
+STRESS_START = 400
 
 #fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD2.st7")
 #fn_working_image_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3-pics")
@@ -71,60 +80,6 @@ class Actuator(enum.Enum):
 
         else:
             raise ValueError(self)
-
-
-class Table:
-    data: typing.Tuple[XY] = None
-    _data_x: typing.Tuple[float] = None
-    max_abs_y: float
-
-    """Keeps track of some xy data"""
-
-    def __init__(self, data: typing.Sequence[XY]):
-
-        # Fail if it's not sorted, or if any compare equal.
-        if not all(data[i].x < data[i+1].x for i in range(len(data)-1)):
-            raise ValueError("Expecting the data to be sorted and unique.")
-
-
-        self.data = tuple(data)
-        self._data_x = tuple(xy.x for xy in self.data)
-        self.max_abs_y = max(abs(xy.y) for xy in self.data)
-
-    def interp(self, x: float) -> float:
-
-        # If we're off the botton or top, just return the final value.
-        if x <= self._data_x[0]:
-            return self.data[0].y
-
-        elif self._data_x[-1] <= x:
-            return self.data[-1].y
-
-        # Actually have to look up / interpolate.
-        index_lower_or_equal = bisect.bisect_right(self._data_x, x) - 1
-
-        # Off the end.
-        if index_lower_or_equal == len(self.data)-1:
-            return self.data[-1].y
-
-        low = self.data[index_lower_or_equal]
-
-        high = self.data[index_lower_or_equal + 1]
-
-        # If we're right on the point, return it!
-        if math.isclose(x, low.x):
-            return low.y
-
-        x_range = high.x - low.x
-        y_range = high.y - low.y
-        grad = y_range / x_range
-        delta_x = x - low.x
-
-        return low.y + delta_x * grad
-
-
-    def min_val(self) -> float:
-        return self.data[0].y
 
 
 class Ratchet:
@@ -265,11 +220,11 @@ def setup_model_window(model_window: st7.St7ModelWindow, results: st7.St7Results
     model_window.St7RedrawModel(True)
 
 
-def write_out_screenshot(model_window: st7.St7ModelWindow, results: st7.St7Results, case_num: int, fn: str):
+def write_out_screenshot(model_window: st7.St7ModelWindow, results: st7.St7Results, current_result_frame: "ResultFrame"):
 
-    setup_model_window(model_window, results, case_num)
+    setup_model_window(model_window, results, current_result_frame.result_case_num)
     #draw_area = model_window.St7GetDrawAreaSize()
-    model_window.St7ExportImage(fn, st7.ImageType.itPNG, config.screenshot_res.width, config.screenshot_res.height)
+    model_window.St7ExportImage(current_result_frame.image_file, st7.ImageType.itPNG, config.active_config.screenshot_res.width, config.active_config.screenshot_res.height)
     #model_window.St7ExportImage(fn, st7.ImageType.itPNG, EXPORT_FACT * draw_area.width, EXPORT_FACT * draw_area.height)
 
 
@@ -464,9 +419,9 @@ def incremental_element_update_list(
 
 def make_fn(working_dir: pathlib.Path, actuator: Actuator, n_steps: int, scaling, averaging, stress_start, stress_end, dilation_ratio, relaxation, elem_ratio_per_iter, existing_prestrain_priority_factor) -> pathlib.Path:
     """Makes the base Strand7 model name."""
-    new_stem = config.fn_st7_base.stem + f" - {actuator.name} {stress_start} to {stress_end} DilRat={dilation_ratio} Steps={n_steps} {scaling} {averaging} {relaxation} ElemRatio={elem_ratio_per_iter} ExistingPriority={existing_prestrain_priority_factor}"
+    new_stem = config.active_config.fn_st7_base.stem + f" - {actuator.name} {stress_start} to {stress_end} DilRat={dilation_ratio} Steps={n_steps} {scaling} {averaging} {relaxation} ElemRatio={elem_ratio_per_iter} ExistingPriority={existing_prestrain_priority_factor}"
 
-    new_name = new_stem + config.fn_st7_base.suffix
+    new_name = new_stem + config.active_config.fn_st7_base.suffix
     return working_dir / new_name
     #return config.fn_st7_base.with_name(new_name)
 
@@ -477,26 +432,264 @@ def fn_append(fn_orig: pathlib.Path, extra_bit) -> pathlib.Path:
     return fn_orig.with_name(new_name)
 
 
-def add_increment(model: st7.St7Model, stage, inc_name) -> int:
-    model.St7AddNLAIncrement(stage, inc_name)
-    this_inc = model.St7GetNumNLAIncrements(stage)
-    return this_inc
+class ResultFrame(typing.NamedTuple):
+    """Encapsulates the data associated with a single result case, in a specified result file."""
+    st7_file: pathlib.Path
+    configuration: config.Config
+    result_file_index: int
+    result_case_num: int  # Result case number in the current file.
+    global_result_case_num: int   # Case number which is unique across all files (if result files are split).
+    load_time_table: typing.Optional[Table]
 
+    def get_next_result_frame(self, bending_load_factor: float) -> "ResultFrame":
+        if self.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+            return self._replace(
+                result_case_num=self.result_case_num + 1,
+                global_result_case_num=self.global_result_case_num + 1
+            )
 
-def set_load_increment_table(model: st7.St7Model, stage, freedom_case, load_case_bending, this_load_factor, this_inc, new_case_num):
-    # Set the load and freedom case - can use either method. Don't use both though!
-    model.St7SetNLAFreedomIncrementFactor(stage, this_inc, freedom_case, this_load_factor)
-    for iLoadCase in range(1, model.St7GetNumLoadCase() + 1):
-        if iLoadCase == load_case_bending:
-            factor = this_load_factor
+        elif self.configuration.solver == st7.SolverType.stQuasiStaticSolver:
+            need_new_result_file = self.result_case_num == self.configuration.qsa_steps_per_file
 
-        elif iLoadCase == new_case_num:
-            factor = 1.0
+            if need_new_result_file:
+                working_new_frame = self._replace(
+                    result_case_num=1,
+                    result_file_index=self.result_file_index + 1,
+                    global_result_case_num=self.global_result_case_num + 1,
+                )
+
+            else:
+                working_new_frame = self._replace(
+                    result_case_num=self.result_case_num + 1,
+                    global_result_case_num=self.global_result_case_num + 1,
+                )
+
+            # Add the new datapoint on the end. And an extra one, for the whole time step.
+            final_table_datapoint_A = XY(x=self.total_time_at_step_end, y=bending_load_factor)
+            final_table_datapoint_B = XY(x=self.total_time_at_step_end + self.configuration.qsa_time_step_size, y=bending_load_factor)
+
+            new_table_working = self.load_time_table.with_appended_datapoint(final_table_datapoint_A)
+            new_table = new_table_working.with_appended_datapoint(final_table_datapoint_B)
+            return working_new_frame._replace(load_time_table=new_table)
 
         else:
-            factor = 0.0
+            raise ValueError(self.configuration.solver)
 
-        model.St7SetNLALoadIncrementFactor(stage, this_inc, iLoadCase, factor)
+    def get_previous_result_frame(self) -> "ResultFrame":
+        if self.global_result_case_num < 2:
+            raise ValueError("This is the first one!")
+
+        if self.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+            return self._replace(
+                result_case_num=self.result_case_num - 1,
+                global_result_case_num=self.global_result_case_num - 1,
+            )
+
+        elif self.configuration.solver == st7.SolverType.stQuasiStaticSolver:
+            need_previous_result_file = self.result_case_num == 1
+
+            if need_previous_result_file:
+                return self._replace(
+                    result_case_num=self.configuration.qsa_steps_per_file,
+                    result_file_index=self.result_file_index - 1,
+                    global_result_case_num=self.global_result_case_num - 1,
+                )
+
+            else:
+                return self._replace(
+                    result_case_num=self.result_case_num - 1,
+                    global_result_case_num=self.global_result_case_num - 1,
+                )
+
+        else:
+            raise ValueError(self.configuration.solver)
+
+
+    @property
+    def result_file(self) -> pathlib.Path:
+        if self.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+            return self.st7_file.with_suffix(".NLA")
+
+        elif self.configuration.solver == st7.SolverType.stQuasiStaticSolver:
+            number_suffix = f"{self.result_file_index:04}"
+            new_name = f"{self.st7_file.stem}_{number_suffix}.QSA"
+            return self.st7_file.with_name(new_name)
+
+        else:
+            raise ValueError(self.configuration.solver)
+
+    @property
+    def restart_file(self) -> pathlib.Path:
+        if self.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+            return self.result_file.with_suffix(".SRF")
+
+        elif self.configuration.solver == st7.SolverType.stQuasiStaticSolver:
+            return self.result_file.with_suffix(".QRF")
+
+        else:
+            raise ValueError(self.configuration.solver)
+
+    @property
+    def working_dir(self) -> pathlib.Path:
+        return self.st7_file.parent
+
+    @property
+    def image_file(self) -> pathlib.Path:
+        return self.working_dir / f"Case-{self.global_result_case_num:04}.png"
+
+    @property
+    def total_time_at_step_end(self) -> float:
+        return self.configuration.qsa_time_step_size * self.global_result_case_num
+
+
+def add_increment(model: st7.St7Model, result_frame: ResultFrame, this_load_factor, inc_name) -> ResultFrame:
+    next_result_frame = result_frame.get_next_result_frame(this_load_factor)
+
+    if result_frame.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+        model.St7AddNLAIncrement(STAGE, inc_name)
+        this_inc = model.St7GetNumNLAIncrements(STAGE)
+        if next_result_frame.global_result_case_num != this_inc:
+            raise ValueError(f"Got {this_inc} from St7GetNumNLAIncrements but {next_result_frame.global_result_case_num} from the ResultFrame...")
+
+    elif result_frame.configuration.solver == st7.SolverType.stQuasiStaticSolver:
+        # For QSA, we roll over the result files. So sometimes this will have changed.
+        model.St7SetResultFileName(next_result_frame.result_file)
+        model.St7SetStaticRestartFile(next_result_frame.restart_file)
+
+    else:
+        raise ValueError("sovler type")
+
+    return next_result_frame
+
+
+def set_restart_for(model: st7.St7Model, result_frame: ResultFrame):
+    previous_result_frame = result_frame.get_previous_result_frame()
+    if result_frame.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+        model.St7SetNLAInitial(previous_result_frame.result_file, previous_result_frame.result_case_num)
+
+    elif result_frame.configuration.solver == st7.SolverType.stQuasiStaticSolver:
+        model.St7SetQSAInitial(previous_result_frame.result_file, previous_result_frame.result_case_num)
+
+    else:
+        raise ValueError(result_frame.configuration.solver)
+
+
+def set_load_increment_table(model: st7.St7Model, result_frame: ResultFrame, this_bending_load_factor, prestrain_load_case_num):
+    # Set the load and freedom case - can use either method. Don't use both though!
+
+    if result_frame.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+        model.St7SetNLAFreedomIncrementFactor(STAGE, result_frame.result_case_num, FREEDOM_CASE, this_bending_load_factor)
+        for iLoadCase in range(1, model.St7GetNumLoadCase() + 1):
+            if iLoadCase == LOAD_CASE_BENDING:
+                factor = this_bending_load_factor
+
+            elif iLoadCase == prestrain_load_case_num:
+                factor = 1.0
+
+            else:
+                factor = 0.0
+
+            model.St7SetNLALoadIncrementFactor(STAGE, result_frame.result_case_num, iLoadCase, factor)
+
+    elif result_frame.configuration.solver == st7.SolverType.stQuasiStaticSolver:
+        # Enable / disable the load and freedom cases.
+        model.St7EnableTransientFreedomCase(FREEDOM_CASE)
+        for iLoadCase in range(1, model.St7GetNumLoadCase() + 1):
+            should_be_enabled = iLoadCase in (LOAD_CASE_BENDING, prestrain_load_case_num)
+            if should_be_enabled:
+                model.St7EnableTransientLoadCase(iLoadCase)
+
+            else:
+                model.St7DisableTransientLoadCase(iLoadCase)
+
+        # Update the tables so we get the right bending factor.
+        model.St7SetTableTypeData(
+            st7.TableType.ttVsTime,
+            TABLE_BENDING_ID,
+            len(result_frame.load_time_table.data),
+            result_frame.load_time_table.as_flat_doubles(),
+        )
+
+    else:
+        raise ValueError(result_frame.configuration.solver)
+
+class InitialSetupModelData(typing.NamedTuple):
+    node_xyz: typing.Dict[int, st7.Vector3]
+    elem_centroid: typing.Dict[int, st7.Vector3]
+    elem_conns: typing.Dict[int, typing.Tuple[int, ...]]
+    elem_volume: typing.Dict[int, float]
+
+
+def initial_setup(model: st7.St7Model, initial_result_frame: ResultFrame) -> InitialSetupModelData:
+
+    model.St7EnableSaveRestart()
+    model.St7EnableSaveLastRestartStep()
+
+    elem_centroid = {
+        elem_num: model.St7GetElementCentroid(st7.Entity.tyPLATE, elem_num, 0)
+        for elem_num in model.entity_numbers(st7.Entity.tyPLATE)
+    }
+
+    node_xyz = {node_num: model.St7GetNodeXYZ(node_num) for node_num in model.entity_numbers(st7.Entity.tyNODE)}
+
+    elem_conns = {
+        plate_num: model.St7GetElementConnection(st7.Entity.tyPLATE, plate_num) for
+        plate_num in model.entity_numbers(st7.Entity.tyPLATE)
+    }
+
+    elem_volume = {
+        plate_num: model.St7GetElementData(st7.Entity.tyPLATE, plate_num) for
+        plate_num in model.entity_numbers(st7.Entity.tyPLATE)
+    }
+
+    if initial_result_frame.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+        # If there's no first increment, create one.
+        starting_incs = model.St7GetNumNLAIncrements(STAGE)
+        if starting_incs == 0:
+            model.St7AddNLAIncrement(STAGE, "Initial")
+
+        elif starting_incs == 1:
+            pass
+
+        else:
+            raise Exception("Already had increments?")
+
+        model.St7EnableNLALoadCase(STAGE, LOAD_CASE_BENDING)
+        model.St7EnableNLAFreedomCase(STAGE, FREEDOM_CASE)
+
+    else:
+        # Make the time table a single row.
+        model.St7SetNumTimeStepRows(1)
+        model.St7SetTimeStepData(1, 1, 1, initial_result_frame.configuration.qsa_time_step_size)
+        model.St7SetSolverDefaultsLogical(st7.SolverDefaultLogical.spAppendRemainingTime, False)  # Whole table is always just one step.
+
+        model.St7EnableTransientLoadCase(LOAD_CASE_BENDING)
+        model.St7EnableTransientFreedomCase(FREEDOM_CASE)
+
+        # Set up the tables which will drive the bending load.
+        model.St7NewTableType(
+            st7.TableType.ttVsTime,
+            TABLE_BENDING_ID,
+            len(initial_result_frame.load_time_table.data),
+            "Bending Load Factor",
+            initial_result_frame.load_time_table.as_flat_doubles(),
+        )
+
+        model.St7SetTransientLoadTimeTable(LOAD_CASE_BENDING, TABLE_BENDING_ID, False)
+        model.St7SetTransientFreedomTimeTable(FREEDOM_CASE, TABLE_BENDING_ID, False)
+
+
+    # For all solvers.
+    model.St7SetResultFileName(initial_result_frame.result_file)
+    model.St7SetStaticRestartFile(initial_result_frame.restart_file)
+
+    return InitialSetupModelData(
+        node_xyz=node_xyz,
+        elem_centroid=elem_centroid,
+        elem_conns=elem_conns,
+        elem_volume=elem_volume,
+    )
+
 
 def main(
         actuator: Actuator,
@@ -510,12 +703,6 @@ def main(
         elem_ratio_per_iter: float,
         existing_prestrain_priority_factor: float,
 ):
-
-    LOAD_CASE_BENDING = 1
-    FREEDOM_CASE = 1
-    STAGE = 0
-
-    STRESS_START = 400
 
     if actuator.input_result == st7.PlateResultType.rtPlateStress:
         prestrain_table = Table([
@@ -537,7 +724,6 @@ def main(
     else:
         raise ValueError(actuator.input_result)
 
-
     #relaxation_param_dimensionless = 80/n_steps * relaxation_param
     ratchet = Ratchet(prestrain_table, scaling=scaling, averaging=averaging, relaxation=relaxation)
 
@@ -546,21 +732,21 @@ def main(
     n_steps_minor_max = math.inf
     print(f"Limiting to {n_steps_minor_max} steps per load increment - only {elem_ratio_per_iter:%} can yield.")
 
-    working_dir = directories.get_unique_sub_dir(config.fn_working_image_base)
-
+    working_dir = directories.get_unique_sub_dir(config.active_config.fn_working_image_base)
 
     fn_st7_full = make_fn(working_dir, actuator, n_steps_major, scaling, averaging, STRESS_START, stress_end, dilation_ratio, relaxation, elem_ratio_per_iter, existing_prestrain_priority_factor)
 
     fn_st7 = working_dir / "Model.st7"
-    shutil.copy2(config.fn_st7_base, fn_st7)
+    shutil.copy2(config.active_config.fn_st7_base, fn_st7)
 
-    fn_res = fn_st7.with_suffix(".NLA")
-    fn_restart = fn_st7.with_suffix(".SRF")
-
-    # Image file names
-    fn_png = fn_st7.with_suffix(".png")
-    fn_png_full = fn_append(fn_png, "FullLoad")
-    fn_png_unloaded = fn_append(fn_png, "Unloaded")
+    current_result_frame = ResultFrame(
+        st7_file=fn_st7,
+        configuration=config.active_config,
+        result_file_index=0,
+        result_case_num=1,
+        global_result_case_num=1,
+        load_time_table=Table([XY(0.0, 0.0), XY(config.active_config.qsa_time_step_size, 0.0)])
+    )
 
     with open(working_dir / "Meta.txt", "w") as f_meta:
         f_meta.write(str(fn_st7_full))
@@ -573,47 +759,20 @@ def main(
     print("Signal files:")
     state.print_signal_file_names(working_dir)
 
-
     dont_make_model_window = not DEBUG_CASE_FOR_EVERY_INCREMENT
-    with st7.St7Model(fn_st7, config.scratch_dir) as model, model.St7CreateModelWindow(dont_make_model_window) as model_window:
+    with st7.St7Model(fn_st7, config.active_config.scratch_dir) as model, model.St7CreateModelWindow(dont_make_model_window) as model_window:
 
-        model.St7EnableSaveRestart()
-        model.St7EnableSaveLastRestartStep()
+        init_data = initial_setup(model, current_result_frame)
 
-        elem_centroid = {
-            elem_num: model.St7GetElementCentroid(st7.Entity.tyPLATE, elem_num, 0)
-            for elem_num in model.entity_numbers(st7.Entity.tyPLATE)
-            }
-
-        node_xyz = {node_num: model.St7GetNodeXYZ(node_num) for node_num in model.entity_numbers(st7.Entity.tyNODE)}
-        elem_conns = {plate_num: model.St7GetElementConnection(st7.Entity.tyPLATE, plate_num) for plate_num in model.entity_numbers(st7.Entity.tyPLATE)}
-        elem_volume = {plate_num: model.St7GetElementData(st7.Entity.tyPLATE, plate_num) for plate_num in model.entity_numbers(st7.Entity.tyPLATE)}
-
-        scaling.assign_centroids(elem_centroid)
-        averaging.populate_radius(node_xyz, elem_conns)
+        scaling.assign_centroids(init_data.elem_centroid)
+        averaging.populate_radius(init_data.node_xyz, init_data.elem_conns)
 
         print(fn_st7.stem)
 
         # Assume the elements are evenly sized. Factor of 2 is for x and y.
         n_updates_per_iter = round(2 * elem_ratio_per_iter * len(model.entity_numbers(st7.Entity.tyPLATE)))
 
-        # If there's no first increment, create one.
-        starting_incs = model.St7GetNumNLAIncrements(STAGE)
-        if starting_incs == 0:
-            model.St7AddNLAIncrement(STAGE, "Initial")
-
-        elif starting_incs == 1:
-            pass
-
-        else:
-            raise Exception("Already had increments?")
-
-        model.St7EnableNLALoadCase(STAGE, LOAD_CASE_BENDING)
-        model.St7EnableNLAFreedomCase(STAGE, FREEDOM_CASE)
-
-        model.St7SetResultFileName(fn_res)
-        model.St7SetStaticRestartFile(fn_restart)
-        model.St7RunSolver(st7.SolverType.stNonlinearStaticSolver, st7.SolverMode.smBackgroundRun, True)
+        model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
 
         previous_load_factor = 0.0
 
@@ -621,22 +780,21 @@ def main(
         for step_num_major in range(n_steps_major):
 
             # Get the results from the last major step.
-            with model.open_results(fn_res) as results:
-                last_case = results.primary_cases[-1]
-                write_out_screenshot(model_window, results, last_case, working_dir / f"Case-{last_case:04}.png")
+            with model.open_results(current_result_frame.result_file) as results:
+                write_out_screenshot(model_window, results, current_result_frame)
 
             # Update the model with the new load
             this_load_factor = (step_num_major+1) / n_steps_major
 
-            new_case_num = create_load_case(model, STAGE, f"Prestrain at Step {step_num_major + 1}")
-            apply_prestrain(model, new_case_num, old_prestrain_values)
+            prestrain_load_case_num = create_load_case(model, f"Prestrain at Step {step_num_major + 1}")
+            apply_prestrain(model, prestrain_load_case_num, old_prestrain_values)
 
             # Add the NLA increment
-            this_inc = add_increment(model, STAGE, f"Step {step_num_major+1}")
-            set_load_increment_table(model, STAGE, FREEDOM_CASE, LOAD_CASE_BENDING, this_load_factor, this_inc, new_case_num)
+            current_result_frame = add_increment(model, current_result_frame, this_load_factor, f"Step {step_num_major+1}")
+            set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
 
             # Make sure we're starting from the last case
-            model.St7SetNLAInitial(fn_res, last_case)
+            set_restart_for(model, current_result_frame)
 
             relaxation.set_current_relaxation(previous_load_factor, this_load_factor)
 
@@ -647,25 +805,23 @@ def main(
             while (new_count > 0) and (step_num_minor < n_steps_minor_max):
 
                 model.St7SaveFile()
-                model.St7RunSolver(st7.SolverType.stNonlinearStaticSolver, st7.SolverMode.smBackgroundRun, True)
+                model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
 
                 # Get the results from the last minor step.
-                with model.open_results(fn_res) as results:
-                    last_case = results.primary_cases[-1]
-                    minor_acuator_input_current_raw = get_results(actuator, results, last_case)
+                with model.open_results(current_result_frame.result_file) as results:
+                    minor_acuator_input_current_raw = get_results(actuator, results, current_result_frame.result_case_num)
                     minor_acuator_input_current = update_to_include_prestrains(actuator, minor_acuator_input_current_raw, old_prestrain_values)
-                    write_out_screenshot(model_window, results, last_case, working_dir / f"Case-{last_case:04}.png")
+                    write_out_screenshot(model_window, results, current_result_frame)
 
                 prestrain_update = incremental_element_update_list(
                     num_allowed=n_updates_per_iter,
                     existing_prestrain_priority_factor=existing_prestrain_priority_factor,
-                    elem_volume=elem_volume,
+                    elem_volume=init_data.elem_volume,
                     ratchet=ratchet,
                     minor_prev_prestrain=old_prestrain_values,
                     minor_acuator_input_current=minor_acuator_input_current,
                 )
 
-                #new_prestrain_values, new_count, total_count
                 new_count = prestrain_update.updated_this_round
                 update_bits = [
                     f"{step_num_major + 1}.{step_num_minor + 1}/{n_steps_major}",
@@ -680,17 +836,16 @@ def main(
                 # Only continue if there is updating to do.
                 if prestrain_update.updated_this_round > 0:
                     if DEBUG_CASE_FOR_EVERY_INCREMENT:
-                        new_case_num = create_load_case(model, STAGE, f"Prestrain at Step {step_num_major + 1}.{step_num_minor}")
+                        prestrain_load_case_num = create_load_case(model, f"Prestrain at Step {step_num_major + 1}.{step_num_minor}")
 
-                        # Add the NLA increment
-                        this_inc = add_increment(model, STAGE, f"Step {step_num_major + 1}.{step_num_minor}")
-                        set_load_increment_table(model, STAGE, FREEDOM_CASE, LOAD_CASE_BENDING, this_load_factor, this_inc,
-                                                 new_case_num)
+                        # Add the next step
+                        current_result_frame = add_increment(model, current_result_frame, this_load_factor, f"Step {step_num_major + 1}.{step_num_minor}")
+                        set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
 
                         # Make sure we're starting from the last case
-                        model.St7SetNLAInitial(fn_res, last_case)
+                        set_restart_for(model, current_result_frame)
 
-                    apply_prestrain(model, new_case_num, prestrain_update.elem_prestrains)
+                    apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains)
 
                     # Keep track of the old results...
                     step_num_minor = next(minor_step_iter)
@@ -720,15 +875,14 @@ def main(
         model.St7SaveFile()
 
         # Save the image of pre-strain results from the maximum load step.
-        with model.open_results(fn_res) as results, model.St7CreateModelWindow(dont_really_make=False) as model_window:
-            final_prestrain_case_num = results.primary_cases[-1]
-            write_out_screenshot(model_window, results, final_prestrain_case_num, fn_png_full)
+        with model.open_results(current_result_frame.result_file) as results, model.St7CreateModelWindow(dont_really_make=False) as model_window:
+            write_out_screenshot(model_window, results, current_result_frame)
 
 
-def create_load_case(model, stage, case_name):
+def create_load_case(model, case_name):
     model.St7NewLoadCase(case_name)
     new_case_num = model.St7GetNumLoadCase()
-    model.St7EnableNLALoadCase(stage, new_case_num)
+    model.St7EnableNLALoadCase(STAGE, new_case_num)
     return new_case_num
 
 
@@ -743,13 +897,13 @@ if __name__ == "__main__":
 
     main(
         Actuator.e_local,
-        stress_end=425.0,
+        stress_end=401.0,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
-        n_steps_major=20,
-        elem_ratio_per_iter=0.0005,
+        n_steps_major=4,
+        elem_ratio_per_iter=0.005,
         existing_prestrain_priority_factor=5.0,
     )
 

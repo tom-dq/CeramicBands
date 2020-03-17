@@ -4,6 +4,7 @@ import enum
 import typing
 import os
 
+
 class WriteSt7(enum.Enum):
     every_iter = enum.auto()
     equi_step = enum.auto()
@@ -28,6 +29,7 @@ class Execution(enum.Enum):
             Execution.stop: "Write the .st7 file out and exit.",
         }
         return d[self]
+
 
 class State(typing.NamedTuple):
     write_st7: WriteSt7

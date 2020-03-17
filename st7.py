@@ -5,6 +5,9 @@ import tempfile
 import enum
 import typing
 import ctypes
+import pathlib
+
+T_Path = typing.Union[pathlib.Path, str]
 
 def chk(iErr):
     if iErr != 0:
@@ -98,6 +101,76 @@ class PlateSurface(enum.Enum):
     psPlateMidPlane = St7API.psPlateMidPlane
     psPlateZMinus = St7API.psPlateZMinus
     psPlateZPlus = St7API.psPlateZPlus
+
+
+class SolverDefaultLogical(enum.Enum):
+    spDoSturm = St7API.spDoSturm
+    spNonlinearMaterial = St7API.spNonlinearMaterial
+    spNonlinearGeometry = St7API.spNonlinearGeometry
+    spAddKg = St7API.spAddKg
+    spCalcDampingRatios = St7API.spCalcDampingRatios
+    spIncludeLinkReactions = St7API.spIncludeLinkReactions
+    spFullSystemTransient = St7API.spFullSystemTransient
+    spNonlinearHeat = St7API.spNonlinearHeat
+    spLumpedLoadBeam = St7API.spLumpedLoadBeam
+    spLumpedLoadPlate = St7API.spLumpedLoadPlate
+    spLumpedLoadBrick = St7API.spLumpedLoadBrick
+    spLumpedMassBeam = St7API.spLumpedMassBeam
+    spLumpedMassPlate = St7API.spLumpedMassPlate
+    spLumpedMassBrick = St7API.spLumpedMassBrick
+    spForceDrillCheck = St7API.spForceDrillCheck
+    spSaveRestartFile = St7API.spSaveRestartFile
+    spSaveIntermediate = St7API.spSaveIntermediate
+    spExcludeMassX = St7API.spExcludeMassX
+    spExcludeMassY = St7API.spExcludeMassY
+    spExcludeMassZ = St7API.spExcludeMassZ
+    spSaveSRSSSpectral = St7API.spSaveSRSSSpectral
+    spSaveCQCSpectral = St7API.spSaveCQCSpectral
+    spDoResidualsCheck = St7API.spDoResidualsCheck
+    spSuppressAllSingularities = St7API.spSuppressAllSingularities
+    spSaveModalResults = St7API.spSaveModalResults
+    spReducedLogFile = St7API.spReducedLogFile
+    spIncludeRotationalMass = St7API.spIncludeRotationalMass
+    spIgnoreCompressiveBeamKg = St7API.spIgnoreCompressiveBeamKg
+    spAutoScaleKg = St7API.spAutoScaleKg
+    spScaleSupports = St7API.spScaleSupports
+    spAutoShift = St7API.spAutoShift
+    spSaveTableInsertedSteps = St7API.spSaveTableInsertedSteps
+    spSaveLastRestartStep = St7API.spSaveLastRestartStep
+    spDoInstantNTA = St7API.spDoInstantNTA
+    spAllowExtraIterations = St7API.spAllowExtraIterations
+    spPredictImpact = St7API.spPredictImpact
+    spAutoWorkingSet = St7API.spAutoWorkingSet
+    spDampingForce = St7API.spDampingForce
+    spLimitDisplacementNLA = St7API.spLimitDisplacementNLA
+    spLimitRotationNLA = St7API.spLimitRotationNLA
+    spSaveFinalSubStep = St7API.spSaveFinalSubStep
+    spCablesAsMultiCase = St7API.spCablesAsMultiCase
+    spShowMessages = St7API.spShowMessages
+    spShowProgress = St7API.spShowProgress
+    spShowConvergenceGraph = St7API.spShowConvergenceGraph
+    spTimeScaleAbsoluteTemperature = St7API.spTimeScaleAbsoluteTemperature
+    spSpectralBaseExcitation = St7API.spSpectralBaseExcitation
+    spSpectralLoadExcitation = St7API.spSpectralLoadExcitation
+    spCheckEigenvector = St7API.spCheckEigenvector
+    spAppendRemainingTime = St7API.spAppendRemainingTime
+    spIncludeFollowerLoadKG = St7API.spIncludeFollowerLoadKG
+    spInertiaForce = St7API.spInertiaForce
+    spSolverGeneratesCombinations = St7API.spSolverGeneratesCombinations
+
+
+class TableType(enum.Enum):
+    ttVsTime = St7API.ttVsTime
+    ttVsTemperature = St7API.ttVsTemperature
+    ttVsFrequency = St7API.ttVsFrequency
+    ttStressStrain = St7API.ttStressStrain
+    ttForceDisplacement = St7API.ttForceDisplacement
+    ttMomentCurvature = St7API.ttMomentCurvature
+    ttMomentRotation = St7API.ttMomentRotation
+    ttAccVsTime = St7API.ttAccVsTime
+    ttForceVelocity = St7API.ttForceVelocity
+    ttVsPosition = St7API.ttVsPosition
+    ttStrainTime = St7API.ttStrainTime
 
 
 
@@ -360,7 +433,7 @@ class St7Model:
     _temp_dir: str = None
     uID: int = 1
 
-    def __init__(self, fn_st7: str, temp_dir=None):
+    def __init__(self, fn_st7: T_Path, temp_dir=None):
         self._fn = str(fn_st7)
 
         if temp_dir:
@@ -381,7 +454,7 @@ class St7Model:
         chk(St7API.St7CloseFile(self.uID))
         chk(St7API.St7Release())
 
-    def open_results(self, fn_res: str) -> "St7Results":
+    def open_results(self, fn_res: T_Path) -> "St7Results":
         return St7Results(self, fn_res)
 
     def entity_numbers(self, entity: Entity) -> range:
@@ -473,24 +546,46 @@ class St7Model:
     def St7EnableSaveLastRestartStep(self):
         chk(St7API.St7EnableSaveLastRestartStep(self.uID))
 
-    def St7SetNLAInitial(self, fn_restart: str, case_num: int):
+    def St7SetNLAInitial(self, fn_res: T_Path, case_num: int):
         chk(St7API.St7SetNLAInitial(
             self.uID,
-            str(fn_restart).encode(),
+            str(fn_res).encode(),
             case_num
         ))
 
-    def St7SetResultFileName(self, fn_res: str):
+    def St7SetQSAInitial(self, fn_res: T_Path, case_num: int):
+        chk(St7API.St7SetQSAInitial(
+            self.uID,
+            str(fn_res).encode(),
+            case_num
+        ))
+
+    def St7SetResultFileName(self, fn_res: T_Path):
         chk(St7API.St7SetResultFileName(
             self.uID,
             str(fn_res).encode(),
         ))
 
-    def St7SetStaticRestartFile(self, fn_restart: str):
+    def St7SetStaticRestartFile(self, fn_restart: T_Path):
         chk(St7API.St7SetStaticRestartFile(
             self.uID,
             str(fn_restart).encode(),
         ))
+
+    def St7EnableTransientLoadCase(self, case_num: int):
+        chk(St7API.St7EnableTransientLoadCase(self.uID, case_num))
+
+    def St7DisableTransientLoadCase(self, case_num: int):
+        chk(St7API.St7DisableTransientLoadCase(self.uID, case_num))
+
+    def St7EnableTransientFreedomCase(self, case_num: int):
+        chk(St7API.St7EnableTransientFreedomCase(self.uID, case_num))
+
+    def St7SetTransientLoadTimeTable(self, case_num: int, table_num: int, add_time_steps: bool):
+        chk(St7API.St7SetTransientLoadTimeTable(self.uID, case_num, table_num, add_time_steps))
+
+    def St7SetTransientFreedomTimeTable(self, case_num: int, table_num: int, add_time_steps: bool):
+        chk(St7API.St7SetTransientFreedomTimeTable(self.uID, case_num, table_num, add_time_steps))
 
     def St7SaveFile(self):
         chk(St7API.St7SaveFile(self.uID))
@@ -531,13 +626,41 @@ class St7Model:
         chk(St7API.St7SetUseSolverDLL(ct_int))
 
 
+    def St7SetNumTimeStepRows(self, num_rows: int):
+        chk(St7API.St7SetNumTimeStepRows(self.uID, num_rows))
+
+    def St7SetTimeStepData(self, row: int, num_steps: int, save_every: int, time_step: float):
+        chk(St7API.St7SetTimeStepData(self.uID, row, num_steps, save_every, time_step))
+
+    def St7SetSolverDefaultsLogical(self, solver_def_logical: SolverDefaultLogical, value: bool):
+        chk(St7API.St7SetSolverDefaultsLogical(self.uID, solver_def_logical.value, value))
+
+    def _make_table_data_and_validate(self, num_entries: int, doubles: typing.Sequence[float]):
+        data = list(doubles)
+        if len(data) != num_entries*2:
+            raise ValueError("Mismatch!")
+
+        ct_doubles_type = (ctypes.c_double * (2 * num_entries))
+        ct_doubles = ct_doubles_type(*data)
+        return ct_doubles
+
+    def St7NewTableType(self, table_type: TableType, table_id: int, num_entries: int, table_name: str, doubles: typing.Sequence[float]):
+        ct_doubles = self._make_table_data_and_validate(num_entries, doubles)
+        chk(St7API.St7NewTableType(self.uID, table_type.value, table_id, num_entries, table_name.encode(), ct_doubles))
+
+    def St7SetTableTypeData(self, table_type: TableType, table_id: int, num_entries: int, doubles: typing.Sequence[float]):
+        ct_doubles = self._make_table_data_and_validate(num_entries, doubles)
+        chk(St7API.St7SetTableTypeData(self.uID, table_type.value, table_id, num_entries, ct_doubles))
+
+
+
 class St7Results:
     model: St7Model = None
     fn_res: str = None
     uID: int = None
     primary_cases: range = None
 
-    def __init__(self, model: St7Model, fn_res: str):
+    def __init__(self, model: St7Model, fn_res: T_Path):
 
         self.model = model
         self.fn_res = str(fn_res)
@@ -643,7 +766,7 @@ class St7ModelWindow:
     def St7SetEntityContourIndex(self, entity: Entity, index: typing.Union[BeamContour, PlateContour, BrickContour]):
         chk(St7API.St7SetEntityContourIndex(self.uID, entity.value, index.value))
 
-    def St7ExportImage(self, fn: str, image_type: ImageType, width: int, height: int):
+    def St7ExportImage(self, fn: T_Path, image_type: ImageType, width: int, height: int):
         chk(St7API.St7ExportImage(self.uID, str(fn).encode(), image_type.value, width, height))
 
     def St7SetPlateResultDisplay_None(self):
