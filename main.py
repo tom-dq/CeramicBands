@@ -3,6 +3,7 @@ import random
 import typing
 import enum
 import collections
+import datetime
 
 import st7
 import pathlib
@@ -29,7 +30,7 @@ import state_tracker
 random.seed(123)
 
 RATCHET_AT_INCREMENTS = True
-DEBUG_CASE_FOR_EVERY_INCREMENT = True
+DEBUG_CASE_FOR_EVERY_INCREMENT = False
 
 LOAD_CASE_BENDING = 1
 FREEDOM_CASE = 1
@@ -312,9 +313,23 @@ class PrestrainUpdate(typing.NamedTuple):
     not_updated_this_round: int
     prestrained_overall: int
     update_ratio: float
+    this_update_time: datetime.timedelta
+    update_completed_at_time: datetime.datetime
 
+    @staticmethod
+    def zero() -> "PrestrainUpdate":
+        return PrestrainUpdate(
+            elem_prestrains=ElemVectorDict(),
+            updated_this_round=0,
+            not_updated_this_round=0,
+            prestrained_overall=0,
+            update_ratio=0.0,
+            this_update_time=datetime.timedelta(seconds=0),
+            update_completed_at_time=datetime.datetime.now(),
+        )
 
 def incremental_element_update_list(
+        previous_prestrain_update: PrestrainUpdate,
         num_allowed: int,
         existing_prestrain_priority_factor: float,
         elem_volume: typing.Dict[int, float],
@@ -404,6 +419,8 @@ def incremental_element_update_list(
 
     extra_dilation_norm = sum(elem_volume[elem_idx[0]] * abs(val) for elem_idx, val in extra_dilation)
 
+    update_completed_at_time = datetime.datetime.now()
+    this_update_time = update_completed_at_time - previous_prestrain_update.update_completed_at_time
 
     return PrestrainUpdate(
         elem_prestrains=ElemVectorDict.from_single_values(True, single_vals_out),
@@ -411,9 +428,9 @@ def incremental_element_update_list(
         not_updated_this_round=left_over_count,
         prestrained_overall=total_out,
         update_ratio=extra_dilation_norm,
+        this_update_time=this_update_time,
+        update_completed_at_time=update_completed_at_time,
     )
-
-
 
 
 
@@ -437,19 +454,26 @@ class ResultFrame(typing.NamedTuple):
     st7_file: pathlib.Path
     configuration: config.Config
     result_file_index: int
-    result_case_num: int  # Result case number in the current file.
+    result_case_num: int  # Result case number in the current file - this may be reused.
     global_result_case_num: int   # Case number which is unique across all files (if result files are split).
     load_time_table: typing.Optional[Table]
 
-    def get_next_result_frame(self, bending_load_factor: float) -> "ResultFrame":
+    def get_next_result_frame(self, bending_load_factor: float, advance_result_case: bool) -> "ResultFrame":
+
+        if advance_result_case:
+            proposed_new_result_case_num = self.result_case_num + 1
+
+        else:
+            proposed_new_result_case_num = self.result_case_num
+
         if self.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
             return self._replace(
-                result_case_num=self.result_case_num + 1,
+                result_case_num=proposed_new_result_case_num,
                 global_result_case_num=self.global_result_case_num + 1
             )
 
         elif self.configuration.solver == st7.SolverType.stQuasiStaticSolver:
-            need_new_result_file = self.result_case_num == self.configuration.qsa_steps_per_file
+            need_new_result_file = proposed_new_result_case_num > self.configuration.qsa_steps_per_file
 
             if need_new_result_file:
                 working_new_frame = self._replace(
@@ -460,7 +484,7 @@ class ResultFrame(typing.NamedTuple):
 
             else:
                 working_new_frame = self._replace(
-                    result_case_num=self.result_case_num + 1,
+                    result_case_num=proposed_new_result_case_num,
                     global_result_case_num=self.global_result_case_num + 1,
                 )
 
@@ -542,8 +566,8 @@ class ResultFrame(typing.NamedTuple):
         return self.configuration.qsa_time_step_size * self.global_result_case_num
 
 
-def add_increment(model: st7.St7Model, result_frame: ResultFrame, this_load_factor, inc_name) -> ResultFrame:
-    next_result_frame = result_frame.get_next_result_frame(this_load_factor)
+def add_increment(model: st7.St7Model, result_frame: ResultFrame, this_load_factor, inc_name, advance_result_case) -> ResultFrame:
+    next_result_frame = result_frame.get_next_result_frame(this_load_factor, advance_result_case)
 
     if result_frame.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
         model.St7AddNLAIncrement(STAGE, inc_name)
@@ -759,13 +783,16 @@ def main(
     print("Signal files:")
     state.print_signal_file_names(working_dir)
 
-    dont_make_model_window = not DEBUG_CASE_FOR_EVERY_INCREMENT
+    dont_make_model_window = False
     with st7.St7Model(fn_st7, config.active_config.scratch_dir) as model, model.St7CreateModelWindow(dont_make_model_window) as model_window:
 
         init_data = initial_setup(model, current_result_frame)
 
         scaling.assign_centroids(init_data.elem_centroid)
         averaging.populate_radius(init_data.node_xyz, init_data.elem_conns)
+
+        # Dummy init values
+        prestrain_update = PrestrainUpdate.zero()
 
         print(fn_st7.stem)
 
@@ -789,8 +816,8 @@ def main(
             prestrain_load_case_num = create_load_case(model, f"Prestrain at Step {step_num_major + 1}")
             apply_prestrain(model, prestrain_load_case_num, old_prestrain_values)
 
-            # Add the NLA increment
-            current_result_frame = add_increment(model, current_result_frame, this_load_factor, f"Step {step_num_major+1}")
+            # Add the increment, or overwrite it
+            current_result_frame = add_increment(model, current_result_frame, this_load_factor, f"Step {step_num_major+1}", advance_result_case=True)
             set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
 
             # Make sure we're starting from the last case
@@ -814,6 +841,7 @@ def main(
                     write_out_screenshot(model_window, results, current_result_frame)
 
                 prestrain_update = incremental_element_update_list(
+                    previous_prestrain_update=prestrain_update,
                     num_allowed=n_updates_per_iter,
                     existing_prestrain_priority_factor=existing_prestrain_priority_factor,
                     elem_volume=init_data.elem_volume,
@@ -829,6 +857,7 @@ def main(
                     f"Left {prestrain_update.not_updated_this_round}",
                     f"Total {prestrain_update.prestrained_overall}",
                     f"Norm {prestrain_update.update_ratio}",
+                    f"TimeDelta {prestrain_update.this_update_time.total_seconds():1.3f}"
                     #str(ratchet.status_update()),
                 ]
                 print("\t".join(update_bits))
@@ -838,12 +867,12 @@ def main(
                     if DEBUG_CASE_FOR_EVERY_INCREMENT:
                         prestrain_load_case_num = create_load_case(model, f"Prestrain at Step {step_num_major + 1}.{step_num_minor}")
 
-                        # Add the next step
-                        current_result_frame = add_increment(model, current_result_frame, this_load_factor, f"Step {step_num_major + 1}.{step_num_minor}")
-                        set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
+                    # Add the next step
+                    current_result_frame = add_increment(model, current_result_frame, this_load_factor, f"Step {step_num_major + 1}.{step_num_minor}", advance_result_case=not DEBUG_CASE_FOR_EVERY_INCREMENT)
+                    set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
 
-                        # Make sure we're starting from the last case
-                        set_restart_for(model, current_result_frame)
+                    # Make sure we're starting from the last case
+                    set_restart_for(model, current_result_frame)
 
                     apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains)
 
@@ -902,8 +931,8 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
-        n_steps_major=4,
-        elem_ratio_per_iter=0.005,
+        n_steps_major=20,
+        elem_ratio_per_iter=0.0005,
         existing_prestrain_priority_factor=5.0,
     )
 
