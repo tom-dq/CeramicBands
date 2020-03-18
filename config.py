@@ -18,6 +18,15 @@ class Config(typing.NamedTuple):
     qsa_steps_per_file: int
     qsa_time_step_size: float
 
+    def summary_strings(self) -> typing.Iterable[str]:
+        yield "Config:\n"
+        for field_name, field_type in self._field_types.items():
+            field_val = getattr(self, field_name)
+            output_str = str(field_val)
+            yield f"{field_name}\t{output_str}\n"
+
+        yield "\n"
+
 
 def _get_env() -> Environment:
     return Environment.uni_desktop

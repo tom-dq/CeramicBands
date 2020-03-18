@@ -715,50 +715,66 @@ def initial_setup(model: st7.St7Model, initial_result_frame: ResultFrame) -> Ini
     )
 
 
-def main(
-        actuator: Actuator,
-        stress_end: float,
-        scaling: Scaling,
-        averaging: Averaging,
-        relaxation: Relaxation,
-        dilation_ratio: float,
-        n_steps_major: int,
-        #n_steps_minor_max: int,
-        elem_ratio_per_iter: float,
-        existing_prestrain_priority_factor: float,
-):
+class RunParams(typing.NamedTuple):
+    actuator: Actuator
+    stress_end: float
+    scaling: Scaling
+    averaging: Averaging
+    relaxation: Relaxation
+    dilation_ratio: float
+    n_steps_major: int
+    elem_ratio_per_iter: float
+    existing_prestrain_priority_factor: float
 
-    if actuator.input_result == st7.PlateResultType.rtPlateStress:
+    def summary_strings(self) -> typing.Iterable[str]:
+        yield "RunParams:\n"
+        for field_name, field_type in self._field_types.items():
+            field_val = getattr(self, field_name)
+            if field_type in (Actuator,):
+                output_str = field_val.nice_name()
+
+            else:
+                output_str = str(field_val)
+
+            yield f"{field_name}\t{output_str}\n"
+
+        yield "\n"
+
+
+def _make_prestrain_table(run_params: RunParams) -> Table:
+    if run_params.actuator.input_result == st7.PlateResultType.rtPlateStress:
         prestrain_table = Table([
             XY(0.0, 0.0),
             XY(STRESS_START, 0.0),
-            XY(stress_end, -1 * dilation_ratio),
-            XY(stress_end + 200, -1 * dilation_ratio),
+            XY(run_params.stress_end, -1 * run_params.dilation_ratio),
+            XY(run_params.stress_end + 200, -1 * run_params.dilation_ratio),
         ])
 
-    elif actuator.input_result == st7.PlateResultType.rtPlateStrain:
+    elif run_params.actuator.input_result == st7.PlateResultType.rtPlateStrain:
         youngs_mod = 220000  # Hacky way!
         prestrain_table = Table([
             XY(0.0, 0.0),
             XY(STRESS_START / youngs_mod, 0.0),
-            XY(stress_end / youngs_mod, -1 * dilation_ratio),
-            XY((stress_end + 200) / youngs_mod, -1 * dilation_ratio),
+            XY(run_params.stress_end / youngs_mod, -1 * run_params.dilation_ratio),
+            XY((run_params.stress_end + 200) / youngs_mod, -1 * run_params.dilation_ratio),
         ])
 
     else:
-        raise ValueError(actuator.input_result)
+        raise ValueError(run_params.actuator.input_result)
 
-    #relaxation_param_dimensionless = 80/n_steps * relaxation_param
-    ratchet = Ratchet(prestrain_table, scaling=scaling, averaging=averaging, relaxation=relaxation)
+    return prestrain_table
+
+
+def main(run_params: RunParams):
+
+    prestrain_table = _make_prestrain_table(run_params)
+    ratchet = Ratchet(prestrain_table, scaling=run_params.scaling, averaging=run_params.averaging, relaxation=run_params.relaxation)
 
     # Allow a maximum of 10% of the elements to yield in a given step.
-    #n_steps_minor_max = int(0.2 / elem_ratio_per_iter)
     n_steps_minor_max = math.inf
-    print(f"Limiting to {n_steps_minor_max} steps per load increment - only {elem_ratio_per_iter:%} can yield.")
+    print(f"Limiting to {n_steps_minor_max} steps per load increment - only {run_params.elem_ratio_per_iter:%} can yield.")
 
     working_dir = directories.get_unique_sub_dir(config.active_config.fn_working_image_base)
-
-    fn_st7_full = make_fn(working_dir, actuator, n_steps_major, scaling, averaging, STRESS_START, stress_end, dilation_ratio, relaxation, elem_ratio_per_iter, existing_prestrain_priority_factor)
 
     fn_st7 = working_dir / "Model.st7"
     shutil.copy2(config.active_config.fn_st7_base, fn_st7)
@@ -773,9 +789,9 @@ def main(
     )
 
     with open(working_dir / "Meta.txt", "w") as f_meta:
-        f_meta.write(str(fn_st7_full))
+        f_meta.writelines(run_params.summary_strings())
+        f_meta.writelines(config.active_config.summary_strings())
 
-    print(fn_st7_full)
     print(f"Working directory: {working_dir}")
     print()
 
@@ -794,24 +810,22 @@ def main(
         # Dummy init values
         prestrain_update = PrestrainUpdate.zero()
 
-        print(fn_st7.stem)
-
         # Assume the elements are evenly sized. Factor of 2 is for x and y.
-        n_updates_per_iter = round(2 * elem_ratio_per_iter * len(model.entity_numbers(st7.Entity.tyPLATE)))
+        n_updates_per_iter = round(2 * run_params.elem_ratio_per_iter * len(model.entity_numbers(st7.Entity.tyPLATE)))
 
         model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
 
         previous_load_factor = 0.0
 
         old_prestrain_values = ElemVectorDict()
-        for step_num_major in range(n_steps_major):
+        for step_num_major in range(run_params.n_steps_major):
 
             # Get the results from the last major step.
             with model.open_results(current_result_frame.result_file) as results:
                 write_out_screenshot(model_window, results, current_result_frame)
 
             # Update the model with the new load
-            this_load_factor = (step_num_major+1) / n_steps_major
+            this_load_factor = (step_num_major+1) / run_params.n_steps_major
 
             prestrain_load_case_num = create_load_case(model, f"Prestrain at Step {step_num_major + 1}")
             apply_prestrain(model, prestrain_load_case_num, old_prestrain_values)
@@ -836,14 +850,14 @@ def main(
 
                 # Get the results from the last minor step.
                 with model.open_results(current_result_frame.result_file) as results:
-                    minor_acuator_input_current_raw = get_results(actuator, results, current_result_frame.result_case_num)
-                    minor_acuator_input_current = update_to_include_prestrains(actuator, minor_acuator_input_current_raw, old_prestrain_values)
+                    minor_acuator_input_current_raw = get_results(run_params.actuator, results, current_result_frame.result_case_num)
+                    minor_acuator_input_current = update_to_include_prestrains(run_params.actuator, minor_acuator_input_current_raw, old_prestrain_values)
                     write_out_screenshot(model_window, results, current_result_frame)
 
                 prestrain_update = incremental_element_update_list(
                     previous_prestrain_update=prestrain_update,
                     num_allowed=n_updates_per_iter,
-                    existing_prestrain_priority_factor=existing_prestrain_priority_factor,
+                    existing_prestrain_priority_factor=run_params.existing_prestrain_priority_factor,
                     elem_volume=init_data.elem_volume,
                     ratchet=ratchet,
                     minor_prev_prestrain=old_prestrain_values,
@@ -852,7 +866,7 @@ def main(
 
                 new_count = prestrain_update.updated_this_round
                 update_bits = [
-                    f"{step_num_major + 1}.{step_num_minor + 1}/{n_steps_major}",
+                    f"{step_num_major + 1}.{step_num_minor + 1}/{run_params.n_steps_major}",
                     f"Updated {new_count}",
                     f"Left {prestrain_update.not_updated_this_round}",
                     f"Total {prestrain_update.prestrained_overall}",
@@ -924,17 +938,20 @@ if __name__ == "__main__":
     averaging = AveInRadius(0.10)
     #averaging = NoAve()
 
-    main(
-        Actuator.e_local,
+    run_params = RunParams(
+        actuator=Actuator.e_local,
         stress_end=401.0,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
-        n_steps_major=20,
+        n_steps_major=0,
         elem_ratio_per_iter=0.0005,
         existing_prestrain_priority_factor=5.0,
     )
+
+    main(run_params)
+
 
 # Combine to one video with "C:\Utilities\ffmpeg-20181212-32601fb-win64-static\bin\ffmpeg.exe -f image2 -r 12 -i Case-%04d.png -vcodec libx264 -profile:v high444 -refs 16 -crf 0 out.mp4"
 
