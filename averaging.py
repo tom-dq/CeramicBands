@@ -7,6 +7,7 @@ import time
 
 import numpy
 import scipy.spatial
+import scipy.sparse
 
 import st7
 from common_types import T_Elem, T_Result
@@ -57,6 +58,8 @@ class AveInRadius(Averaging):
     _radius: float
     _element_connections: typing.Dict[T_Elem, typing.Tuple[int, ...]]
     _elem_nodal_contributions: typing.Dict[T_Elem, dict]  # The value in this is the relative contributions of all the nodes
+    _averaging_matrix: scipy.sparse.csr_matrix
+    _elem_num_to_idx: typing.Dict[int, int]
 
     def __init__(self, radius: float):
         self._radius = radius
@@ -183,6 +186,78 @@ class AveInRadius(Averaging):
             total = sum(contrib_dict.values())
             self._elem_nodal_contributions[elem_id] = {iNode: raw / total for iNode, raw in contrib_dict.items()}
 
+    def _populate_radius_averaging_matrix(self, node_positions: typing.Dict[int, st7.Vector3]):
+        """Averaging matrix is [ElemToNode] @ [NodeAverage] @ [ElemToNode].T"""
+
+        #elem_to_node = self._elem_to_node_matrix(self._element_connections)
+        #node_average = self._node_to_node_averaging_matrix(node_positions)
+
+        #ave_mat = elem_to_node @ node_average @ elem_to_node.T
+
+        self._averaging_matrix = self._elem_to_elem_averaging_matrix(node_positions)
+
+    def _elem_to_node_matrix(self, element_connections: typing.Dict[T_Elem, typing.Tuple[int, ...]]) -> numpy.array:
+        """Makes a E_to_N matrix such that {elem_res} [E_to_N] = {node_res}"""
+
+        all_connected_nodes = {iNode for connection in element_connections.values() for iNode in connection}
+        nodes = sorted(all_connected_nodes)
+
+        node_num_to_idx = {num: idx  for idx, num in enumerate(nodes)}
+
+        e_to_n = numpy.zeros( (len(self._elem_num_to_idx), len(node_num_to_idx)) )
+
+        for elem, connection in element_connections.items():
+            # Assume equal contributions for now - if I ever do higher order elements, change it here!
+
+            nodal_contrib = 1.0 / len(connection)
+            e_idx = self._elem_num_to_idx[elem]
+            n_idx_list = [node_num_to_idx[n] for n in connection]
+
+            e_to_n[e_idx, n_idx_list] = nodal_contrib
+
+        return e_to_n
+
+
+    def _self_to_self_averaging_matrix(self, positions: typing.Dict[int, st7.Vector3]) -> scipy.sparse.csr_matrix:
+        """Makes a dense, ordered matrix of sorted contiguous node->node or elem->elem"""
+        # Trees
+        source = self._get_tree_data(positions)
+        dest = self._get_tree_data(positions)
+
+        n_rows = len(source.idx_to_id)
+        n_cols = len(dest.idx_to_id)
+        #ave_matrix = numpy.zeros( (n_rows, n_cols) )
+        ave_matrix = scipy.sparse.lil_matrix( (n_rows, n_cols) )
+
+        result = source.kd_tree.query_ball_tree(dest.kd_tree, self._radius)
+        for source_idx, list_of_dest_idxs in enumerate(result):
+
+            source_slice = source.np_data[[source_idx], :]
+            dest_slice = dest.np_data[list_of_dest_idxs, :]
+
+            distance_matrix_local = scipy.spatial.distance_matrix(source_slice, dest_slice)
+            for dest_sub_idx, dest_num in enumerate(list_of_dest_idxs):
+                dist = distance_matrix_local[0, dest_sub_idx]
+                dest_idx = list_of_dest_idxs[dest_sub_idx]
+                if dist < self._radius:
+                    ave_matrix[source_idx, dest_idx] = self._radius - dist
+
+        return ave_matrix.tocsr(copy=False)
+
+    def _elem_to_elem_averaging_matrix(self, node_positions: typing.Dict[int, st7.Vector3]) -> scipy.sparse.csr_matrix:
+        # Element centroid tree
+        all_connected_nodes = {iNode for connection in self._element_connections.values() for iNode in connection}
+        node_positions_relevant = {iNode: xyz for iNode, xyz in node_positions.items() if iNode in all_connected_nodes}
+
+        def get_cent(elem_conn):
+            all_coords = [node_positions_relevant[iNode] for iNode in elem_conn]
+            return sum(all_coords) / len(all_coords)
+
+        elem_cents = {elem_id: get_cent(elem_conn) for elem_id, elem_conn in self._element_connections.items()}
+
+        return self._self_to_self_averaging_matrix(elem_cents)
+
+
 
     def populate_radius(
             self,
@@ -194,13 +269,16 @@ class AveInRadius(Averaging):
 
         self._element_connections = element_connections
 
-        self._populate_radius_cKDTree(node_positions)
-        # self._populate_radius_bisect(node_positions)
+        self._elem_num_to_idx = {e_num: idx for idx, e_num in enumerate(sorted(self._element_connections))}
 
+        #self._populate_radius_cKDTree(node_positions)
         # If there are no nodal contributions to an element, that will cause problems later on.
-        missing_elements = [elem_id for elem_id in self._element_connections if elem_id not in self._elem_nodal_contributions]
-        if missing_elements:
-            raise ValueError(f"Missing {len(missing_elements)} elements... {missing_elements[0:3]}")
+        # missing_elements = [elem_id for elem_id in self._element_connections if elem_id not in self._elem_nodal_contributions]
+        # if missing_elements:
+        #     raise ValueError(f"Missing {len(missing_elements)} elements... {missing_elements[0:3]}")
+
+        self._populate_radius_averaging_matrix(node_positions)
+
 
         t_end = time.time()
         print(f"Took {t_end-t_start:.4g} seconds to calculate averaging contributions with {len(self._element_connections)} elements at radius of {self._radius}.")
@@ -210,7 +288,7 @@ class AveInRadius(Averaging):
         components = [factor * nodal_results[iNode] for iNode, factor in these_contribs.items()]
         return sum(components)
 
-    def average_results(self, unaveraged: typing.Dict[T_Elem, T_Result]) -> typing.Dict[T_Elem, T_Result]:
+    def average_results_OLD(self, unaveraged: typing.Dict[T_Elem, T_Result]) -> typing.Dict[T_Elem, T_Result]:
         # Accumulate the nodal contributions of the elements.
         nodal_result_list = collections.defaultdict(list)
         for elem_id, result in unaveraged.items():
@@ -222,3 +300,18 @@ class AveInRadius(Averaging):
         # Distribute the nodal results to the elements according to the pre-computed radius functions.
         averaged_results = {elem_id: self._nodal_to_elem(nodal_results, elem_id) for elem_id in unaveraged}
         return averaged_results
+
+    def average_results(self, unaveraged: typing.Dict[T_Elem, T_Result]) -> typing.Dict[T_Elem, T_Result]:
+        unave_vect = numpy.zeros((1, len(self._elem_num_to_idx)))
+
+
+        for e_num, val in unaveraged.items():
+            e_idx = self._elem_num_to_idx[e_num]
+            unave_vect[0, e_idx] = val
+
+        ave_vect = unave_vect @ self._averaging_matrix
+        ret_dict = {}
+        for e_num, e_idx in self._elem_num_to_idx.items():
+            ret_dict[e_num] = float(ave_vect[0, e_idx])
+
+        return ret_dict
