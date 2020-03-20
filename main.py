@@ -945,8 +945,8 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
-        n_steps_major=1,
-        elem_ratio_per_iter=0.05,
+        n_steps_major=20,
+        elem_ratio_per_iter=0.0005,
         existing_prestrain_priority_factor=5.0,
     )
 
