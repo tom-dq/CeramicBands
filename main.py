@@ -17,13 +17,10 @@ from common_types import XY, ElemVectorDict
 from relaxation import Relaxation, PropRelax
 from scaling import Scaling, SpacedStepScaling
 from tables import Table
+import history
 
 import directories
 import state_tracker
-
-# TODO:
-#   - Use QSA so I can do multi-part result files
-#   - Chain the restarts, file by file, say, 50 steps per file.
 
 
 # To make reproducible
@@ -31,6 +28,7 @@ random.seed(123)
 
 RATCHET_AT_INCREMENTS = True
 DEBUG_CASE_FOR_EVERY_INCREMENT = False
+RECORD_HISTORY = True
 
 LOAD_CASE_BENDING = 1
 FREEDOM_CASE = 1
