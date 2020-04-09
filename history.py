@@ -1,5 +1,6 @@
 """Keeps track of all the results in a database for quicker """
 import itertools
+import pathlib
 import sqlite3
 import typing
 
@@ -25,7 +26,6 @@ class ContourValue(typing.NamedTuple):
 
 class NodePosition(typing.NamedTuple):
     result_case_num: int
-    deformed: bool
     x: float
     y: float
     z: float
@@ -67,10 +67,16 @@ _all_contour_keys_ = [
 
 
 class DB:
-
-    def __init__(self, db_fn: str):
-        self.connection = sqlite3.connect(db_fn)
+    def __init__(self, db_fn: typing.Union[str, pathlib.Path]):
+        self.connection = sqlite3.connect(str(db_fn))
         self.cur = self.connection.cursor()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cur.close()
+        self.connection.close()
 
     def add(self, row: _T_any_db_able) -> int:
         """Add a single row, and return the rowid"""

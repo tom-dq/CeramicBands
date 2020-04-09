@@ -37,7 +37,7 @@ def _get_config():
 
     if this_env == Environment.uni_desktop:
         return Config(
-            fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11-SD2.st7"),
+            fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11.st7"),
             fn_working_image_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\pics"),
             screenshot_res=st7.CanvasSize(1920, 1080),
             #screenshot_res=st7.CanvasSize(3840, 2160),

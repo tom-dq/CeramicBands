@@ -4,6 +4,7 @@ import typing
 import enum
 import collections
 import datetime
+import contextlib
 
 import st7
 import pathlib
@@ -13,7 +14,7 @@ import shutil
 import config
 
 from averaging import Averaging, AveInRadius
-from common_types import XY, ElemVectorDict
+from common_types import XY, ElemVectorDict, T_ResultDict
 from relaxation import Relaxation, PropRelax
 from scaling import Scaling, SpacedStepScaling
 from tables import Table
@@ -287,6 +288,10 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
     return ElemVectorDict(raw_dict)
 
 
+def get_node_positions(results: st7.St7Results, case_num: int) -> T_ResultDict:
+    # TODO
+    pass
+
 def update_to_include_prestrains(
         actuator: Actuator,
         minor_acuator_input_current_raw: ElemVectorDict,
@@ -334,7 +339,6 @@ def incremental_element_update_list(
         ratchet: Ratchet,
         minor_prev_prestrain: ElemVectorDict,
         minor_acuator_input_current: ElemVectorDict,
-        #minor_current_strain: ElemVectorDict,
 ) -> PrestrainUpdate:
     """Gets the subset of elements which should be "yielded", based on the stress."""
 
@@ -763,6 +767,9 @@ def _make_prestrain_table(run_params: RunParams) -> Table:
     return prestrain_table
 
 
+def write_snapshot(db: history.DB, ):
+    pass
+
 def main(run_params: RunParams):
 
     prestrain_table = _make_prestrain_table(run_params)
@@ -775,6 +782,8 @@ def main(run_params: RunParams):
     working_dir = directories.get_unique_sub_dir(config.active_config.fn_working_image_base)
 
     fn_st7 = working_dir / "Model.st7"
+    fn_db = working_dir / "history.db" \
+                          ""
     shutil.copy2(config.active_config.fn_st7_base, fn_st7)
 
     current_result_frame = ResultFrame(
@@ -798,7 +807,11 @@ def main(run_params: RunParams):
     state.print_signal_file_names(working_dir)
 
     dont_make_model_window = False
-    with st7.St7Model(fn_st7, config.active_config.scratch_dir) as model, model.St7CreateModelWindow(dont_make_model_window) as model_window:
+
+    with contextlib.ExitStack() as exit_stack:
+        model = exit_stack.enter_context(st7.St7Model(fn_st7, config.active_config.scratch_dir))
+        model_window = exit_stack.enter_context(model.St7CreateModelWindow(dont_make_model_window))
+        db = exit_stack.enter_context(history.DB(fn_db))
 
         init_data = initial_setup(model, current_result_frame)
 
@@ -818,18 +831,27 @@ def main(run_params: RunParams):
         old_prestrain_values = ElemVectorDict()
         for step_num_major in range(run_params.n_steps_major):
 
+            # Perform an iterative update in which only a certain proportion of the elements can "yield" at once.
+            minor_step_iter = itertools.count()
+            step_num_minor = next(minor_step_iter)
+
+            def step_name():
+                return f"{step_num_major + 1}.{step_num_minor}"
+
             # Get the results from the last major step.
             with model.open_results(current_result_frame.result_file) as results:
                 write_out_screenshot(model_window, results, current_result_frame)
 
+
+
             # Update the model with the new load
             this_load_factor = (step_num_major+1) / run_params.n_steps_major
 
-            prestrain_load_case_num = create_load_case(model, f"Prestrain at Step {step_num_major + 1}")
+            prestrain_load_case_num = create_load_case(model, step_name())
             apply_prestrain(model, prestrain_load_case_num, old_prestrain_values)
 
             # Add the increment, or overwrite it
-            current_result_frame = add_increment(model, current_result_frame, this_load_factor, f"Step {step_num_major+1}", advance_result_case=True)
+            current_result_frame = add_increment(model, current_result_frame, this_load_factor, step_name(), advance_result_case=True)
             set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
 
             # Make sure we're starting from the last case
@@ -837,8 +859,6 @@ def main(run_params: RunParams):
 
             relaxation.set_current_relaxation(previous_load_factor, this_load_factor)
 
-            # Perform an iterative update in which only a certain proportion of the elements can "yield" at once.
-            minor_step_iter = itertools.count()
             step_num_minor = next(minor_step_iter)
             new_count = math.inf
             while (new_count > 0) and (step_num_minor < n_steps_minor_max):
@@ -864,7 +884,7 @@ def main(run_params: RunParams):
 
                 new_count = prestrain_update.updated_this_round
                 update_bits = [
-                    f"{step_num_major + 1}.{step_num_minor + 1}/{run_params.n_steps_major}",
+                    f"{step_name()}/{run_params.n_steps_major}",
                     f"Updated {new_count}",
                     f"Left {prestrain_update.not_updated_this_round}",
                     f"Total {prestrain_update.prestrained_overall}",
@@ -877,10 +897,10 @@ def main(run_params: RunParams):
                 # Only continue if there is updating to do.
                 if prestrain_update.updated_this_round > 0:
                     if DEBUG_CASE_FOR_EVERY_INCREMENT:
-                        prestrain_load_case_num = create_load_case(model, f"Prestrain at Step {step_num_major + 1}.{step_num_minor}")
+                        prestrain_load_case_num = create_load_case(model, step_name())
 
                     # Add the next step
-                    current_result_frame = add_increment(model, current_result_frame, this_load_factor, f"Step {step_num_major + 1}.{step_num_minor}", advance_result_case=not DEBUG_CASE_FOR_EVERY_INCREMENT)
+                    current_result_frame = add_increment(model, current_result_frame, this_load_factor, step_name(), advance_result_case=not DEBUG_CASE_FOR_EVERY_INCREMENT)
                     set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
 
                     # Make sure we're starting from the last case
