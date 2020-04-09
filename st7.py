@@ -29,18 +29,18 @@ class Entity(enum.Enum):
 
 
 class SolverType(enum.Enum):
-    stLinearStaticSolver = St7API.stLinearStaticSolver
-    stLinearBucklingSolver = St7API.stLinearBucklingSolver
-    stNonlinearStaticSolver = St7API.stNonlinearStaticSolver
-    stNaturalFrequencySolver = St7API.stNaturalFrequencySolver
-    stHarmonicResponseSolver = St7API.stHarmonicResponseSolver
-    stSpectralResponseSolver = St7API.stSpectralResponseSolver
-    stLinearTransientDynamicSolver = St7API.stLinearTransientDynamicSolver
-    stNonlinearTransientDynamicSolver = St7API.stNonlinearTransientDynamicSolver
-    stSteadyHeatSolver = St7API.stSteadyHeatSolver
-    stTransientHeatSolver = St7API.stTransientHeatSolver
-    stLoadInfluenceSolver = St7API.stLoadInfluenceSolver
-    stQuasiStaticSolver = St7API.stQuasiStaticSolver
+    stLinearStatic = St7API.stLinearStatic
+    stLinearBuckling = St7API.stLinearBuckling
+    stNonlinearStatic = St7API.stNonlinearStatic
+    stNaturalFrequency = St7API.stNaturalFrequency
+    stHarmonicResponse = St7API.stHarmonicResponse
+    stSpectralResponse = St7API.stSpectralResponse
+    stLinearTransientDynamic = St7API.stLinearTransientDynamic
+    stNonlinearTransientDynamic = St7API.stNonlinearTransientDynamic
+    stSteadyHeat = St7API.stSteadyHeat
+    stTransientHeat = St7API.stTransientHeat
+    stLoadInfluence = St7API.stLoadInfluence
+    stQuasiStatic = St7API.stQuasiStatic
 
 
 class SolverMode(enum.Enum):
@@ -114,7 +114,6 @@ class SolverDefaultLogical(enum.Enum):
     spNonlinearHeat = St7API.spNonlinearHeat
     spLumpedLoadBeam = St7API.spLumpedLoadBeam
     spLumpedLoadPlate = St7API.spLumpedLoadPlate
-    spLumpedLoadBrick = St7API.spLumpedLoadBrick
     spLumpedMassBeam = St7API.spLumpedMassBeam
     spLumpedMassPlate = St7API.spLumpedMassPlate
     spLumpedMassBrick = St7API.spLumpedMassBrick
@@ -128,7 +127,6 @@ class SolverDefaultLogical(enum.Enum):
     spSaveCQCSpectral = St7API.spSaveCQCSpectral
     spDoResidualsCheck = St7API.spDoResidualsCheck
     spSuppressAllSingularities = St7API.spSuppressAllSingularities
-    spSaveModalResults = St7API.spSaveModalResults
     spReducedLogFile = St7API.spReducedLogFile
     spIncludeRotationalMass = St7API.spIncludeRotationalMass
     spIgnoreCompressiveBeamKg = St7API.spIgnoreCompressiveBeamKg
@@ -325,9 +323,9 @@ class PlateContour(enum.Enum):
     ctPlatePreStrainZ = St7API.ctPlatePreStrainZ
     ctPlatePreStrainMagnitude = St7API.ctPlatePreStrainMagnitude
     ctPlateTempGradient = St7API.ctPlateTempGradient
-    ctPlateEdgePressure = St7API.ctPlateEdgePressure
+    ctPlateEdgeNormalPressure = St7API.ctPlateEdgeNormalPressure
     ctPlateEdgeShear = St7API.ctPlateEdgeShear
-    ctPlateEdgeNormalShear = St7API.ctPlateEdgeNormalShear
+    ctPlateEdgeTransverseShear = St7API.ctPlateEdgeTransverseShear
     ctPlatePressureNormalMZ = St7API.ctPlatePressureNormalMZ
     ctPlatePressureNormalPZ = St7API.ctPlatePressureNormalPZ
     ctPlatePressureGlobalMZ = St7API.ctPlatePressureGlobalMZ

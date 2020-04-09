@@ -466,13 +466,13 @@ class ResultFrame(typing.NamedTuple):
         else:
             proposed_new_result_case_num = self.result_case_num
 
-        if self.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+        if self.configuration.solver == st7.SolverType.stNonlinearStatic:
             return self._replace(
                 result_case_num=proposed_new_result_case_num,
                 global_result_case_num=self.global_result_case_num + 1
             )
 
-        elif self.configuration.solver == st7.SolverType.stQuasiStaticSolver:
+        elif self.configuration.solver == st7.SolverType.stQuasiStatic:
             need_new_result_file = proposed_new_result_case_num > self.configuration.qsa_steps_per_file
 
             if need_new_result_file:
@@ -503,13 +503,13 @@ class ResultFrame(typing.NamedTuple):
         if self.global_result_case_num < 2:
             raise ValueError("This is the first one!")
 
-        if self.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+        if self.configuration.solver == st7.SolverType.stNonlinearStatic:
             return self._replace(
                 result_case_num=self.result_case_num - 1,
                 global_result_case_num=self.global_result_case_num - 1,
             )
 
-        elif self.configuration.solver == st7.SolverType.stQuasiStaticSolver:
+        elif self.configuration.solver == st7.SolverType.stQuasiStatic:
             need_previous_result_file = self.result_case_num == 1
 
             if need_previous_result_file:
@@ -531,10 +531,10 @@ class ResultFrame(typing.NamedTuple):
 
     @property
     def result_file(self) -> pathlib.Path:
-        if self.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+        if self.configuration.solver == st7.SolverType.stNonlinearStatic:
             return self.st7_file.with_suffix(".NLA")
 
-        elif self.configuration.solver == st7.SolverType.stQuasiStaticSolver:
+        elif self.configuration.solver == st7.SolverType.stQuasiStatic:
             number_suffix = f"{self.result_file_index:04}"
             new_name = f"{self.st7_file.stem}_{number_suffix}.QSA"
             return self.st7_file.with_name(new_name)
@@ -544,10 +544,10 @@ class ResultFrame(typing.NamedTuple):
 
     @property
     def restart_file(self) -> pathlib.Path:
-        if self.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+        if self.configuration.solver == st7.SolverType.stNonlinearStatic:
             return self.result_file.with_suffix(".SRF")
 
-        elif self.configuration.solver == st7.SolverType.stQuasiStaticSolver:
+        elif self.configuration.solver == st7.SolverType.stQuasiStatic:
             return self.result_file.with_suffix(".QRF")
 
         else:
@@ -569,13 +569,13 @@ class ResultFrame(typing.NamedTuple):
 def add_increment(model: st7.St7Model, result_frame: ResultFrame, this_load_factor, inc_name, advance_result_case) -> ResultFrame:
     next_result_frame = result_frame.get_next_result_frame(this_load_factor, advance_result_case)
 
-    if result_frame.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+    if result_frame.configuration.solver == st7.SolverType.stNonlinearStatic:
         model.St7AddNLAIncrement(STAGE, inc_name)
         this_inc = model.St7GetNumNLAIncrements(STAGE)
         if next_result_frame.global_result_case_num != this_inc:
             raise ValueError(f"Got {this_inc} from St7GetNumNLAIncrements but {next_result_frame.global_result_case_num} from the ResultFrame...")
 
-    elif result_frame.configuration.solver == st7.SolverType.stQuasiStaticSolver:
+    elif result_frame.configuration.solver == st7.SolverType.stQuasiStatic:
         # For QSA, we roll over the result files. So sometimes this will have changed.
         model.St7SetResultFileName(next_result_frame.result_file)
         model.St7SetStaticRestartFile(next_result_frame.restart_file)
@@ -588,10 +588,10 @@ def add_increment(model: st7.St7Model, result_frame: ResultFrame, this_load_fact
 
 def set_restart_for(model: st7.St7Model, result_frame: ResultFrame):
     previous_result_frame = result_frame.get_previous_result_frame()
-    if result_frame.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+    if result_frame.configuration.solver == st7.SolverType.stNonlinearStatic:
         model.St7SetNLAInitial(previous_result_frame.result_file, previous_result_frame.result_case_num)
 
-    elif result_frame.configuration.solver == st7.SolverType.stQuasiStaticSolver:
+    elif result_frame.configuration.solver == st7.SolverType.stQuasiStatic:
         model.St7SetQSAInitial(previous_result_frame.result_file, previous_result_frame.result_case_num)
 
     else:
@@ -601,7 +601,7 @@ def set_restart_for(model: st7.St7Model, result_frame: ResultFrame):
 def set_load_increment_table(model: st7.St7Model, result_frame: ResultFrame, this_bending_load_factor, prestrain_load_case_num):
     # Set the load and freedom case - can use either method. Don't use both though!
 
-    if result_frame.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+    if result_frame.configuration.solver == st7.SolverType.stNonlinearStatic:
         model.St7SetNLAFreedomIncrementFactor(STAGE, result_frame.result_case_num, FREEDOM_CASE, this_bending_load_factor)
         for iLoadCase in range(1, model.St7GetNumLoadCase() + 1):
             if iLoadCase == LOAD_CASE_BENDING:
@@ -615,7 +615,7 @@ def set_load_increment_table(model: st7.St7Model, result_frame: ResultFrame, thi
 
             model.St7SetNLALoadIncrementFactor(STAGE, result_frame.result_case_num, iLoadCase, factor)
 
-    elif result_frame.configuration.solver == st7.SolverType.stQuasiStaticSolver:
+    elif result_frame.configuration.solver == st7.SolverType.stQuasiStatic:
         # Enable / disable the load and freedom cases.
         model.St7EnableTransientFreedomCase(FREEDOM_CASE)
         for iLoadCase in range(1, model.St7GetNumLoadCase() + 1):
@@ -666,7 +666,7 @@ def initial_setup(model: st7.St7Model, initial_result_frame: ResultFrame) -> Ini
         plate_num in model.entity_numbers(st7.Entity.tyPLATE)
     }
 
-    if initial_result_frame.configuration.solver == st7.SolverType.stNonlinearStaticSolver:
+    if initial_result_frame.configuration.solver == st7.SolverType.stNonlinearStatic:
         # If there's no first increment, create one.
         starting_incs = model.St7GetNumNLAIncrements(STAGE)
         if starting_incs == 0:
