@@ -55,6 +55,18 @@ class PreLoadType(enum.Enum):
     plPlatePreStress = St7API.plPlatePreStress
 
 
+class NodeResultType(enum.Enum):
+    rtNodeDisp = St7API.rtNodeDisp
+    rtNodeVel = St7API.rtNodeVel
+    rtNodeAcc = St7API.rtNodeAcc
+    rtNodePhase = St7API.rtNodePhase
+    rtNodeReact = St7API.rtNodeReact
+    rtNodeTemp = St7API.rtNodeTemp
+    rtNodeFlux = St7API.rtNodeFlux
+    rtNodeInfluence = St7API.rtNodeInfluence
+    rtNodeInertia = St7API.rtNodeInertia
+
+
 class PlateResultType(enum.Enum):
     rtPlateStress = St7API.rtPlateStress
     rtPlateStrain = St7API.rtPlateStrain
@@ -678,6 +690,30 @@ class St7Results:
     def close(self):
         chk(St7API.St7CloseResultFile(self.uID))
 
+    def St7GetNodeResult(
+            self,
+            res_type: NodeResultType,
+            node_num: int,
+            res_case: int,
+    ) -> ResultOutput:
+        ct_res_array = (ctypes.c_double * 6)()
+
+        chk(St7API.St7GetNodeResult(
+            self.uID,
+            res_type.value,
+            node_num,
+            res_case,
+            ct_res_array))
+
+        out_array = tuple(ct_res_array)
+
+        return ResultOutput(
+            num_points=1,
+            num_cols=6,
+            results=out_array,
+        )
+
+
     def St7GetPlateResultArray(
             self,
             res_type: PlateResultType,
@@ -722,10 +758,6 @@ class St7Results:
             num_cols=ct_num_cols.value,
             results=out_array,
         )
-
-
-    def St7SetDisplacementScale(self, disp_scale: float, scale_type: ScaleType):
-        chk(St7API.St7SetDisplacementScale(self.uID, disp_scale, scale_type.value))
 
 
 class St7ModelWindow:
@@ -781,6 +813,9 @@ class St7ModelWindow:
 
     def St7RedrawModel(self, rescale: bool):
         chk(St7API.St7RedrawModel(self.uID, rescale))
+
+    def St7SetDisplacementScale(self, disp_scale: float, scale_type: ScaleType):
+        chk(St7API.St7SetDisplacementScale(self.uID, disp_scale, scale_type.value))
 
 
 def _DummyClassFactory(name, BaseClass):

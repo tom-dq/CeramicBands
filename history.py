@@ -3,16 +3,23 @@ import itertools
 import pathlib
 import sqlite3
 import typing
+import enum
+
+
+class ContourKey(enum.Enum):
+    prestrain_x = enum.auto()
+    prestrain_y = enum.auto()
+    prestrain_mag = enum.auto()
 
 
 class ResultCase(typing.NamedTuple):
-    num: int
+    num: typing.Optional[int]  # Hack! This means an auto increment primary key.
     name: str
     major_inc: int
     minor_inc: int
 
 
-class ContourKey(typing.NamedTuple):
+class ContourKeyLookup(typing.NamedTuple):
     num: int
     name: str
 
@@ -26,6 +33,7 @@ class ContourValue(typing.NamedTuple):
 
 class NodePosition(typing.NamedTuple):
     result_case_num: int
+    node_num: int
     x: float
     y: float
     z: float
@@ -36,6 +44,7 @@ def _make_table_statement(nt_class) -> str:
         int: "INTEGER",
         float: "REAL",
         str: "TEXT",
+        typing.Optional[int]: "INTEGER PRIMARY KEY"
     }
 
     def make_one_line(field_type_item):
@@ -47,6 +56,7 @@ def _make_table_statement(nt_class) -> str:
 
     return f"CREATE TABLE IF NOT EXISTS {nt_class.__name__}(\n {table_data} )"
 
+
 def _make_insert_string(nt_class) -> str:
     qms = ",".join("?" for _ in nt_class._fields)
     return f"INSERT INTO {nt_class.__name__} VALUES ({qms})"
@@ -54,15 +64,13 @@ def _make_insert_string(nt_class) -> str:
 
 _T_any_db_able = typing.Union[
     ResultCase,
-    ContourKey,
+    ContourKeyLookup,
     ContourValue,
     NodePosition,
 ]
 
 _all_contour_keys_ = [
-    ContourKey(num=1, name="PreStrain-X"),
-    ContourKey(num=2, name="PreStrain-Y"),
-    ContourKey(num=3, name="PreStrain-Mag"),
+    ContourKeyLookup(num=x.value, name=x.name) for x in ContourKey.__members__.values()
 ]
 
 
@@ -70,6 +78,7 @@ class DB:
     def __init__(self, db_fn: typing.Union[str, pathlib.Path]):
         self.connection = sqlite3.connect(str(db_fn))
         self.cur = self.connection.cursor()
+        self._make_tables()
 
     def __enter__(self):
         return self
@@ -77,6 +86,15 @@ class DB:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.cur.close()
         self.connection.close()
+
+    def _make_tables(self):
+        with self.connection:
+            for one_table in _T_any_db_able.__args__:
+                create_statement = _make_table_statement(one_table)
+                self.connection.execute(create_statement)
+
+            self.add_many(_all_contour_keys_)
+
 
     def add(self, row: _T_any_db_able) -> int:
         """Add a single row, and return the rowid"""
@@ -86,6 +104,8 @@ class DB:
             return self.cur.lastrowid
 
     def add_many(self, rows: typing.Iterable[_T_any_db_able]):
+        """Add lots of rows at once. For it to be as fast as possible, they should be grouped by type like [ContourValue, ContourValue, ..., NodePosition, NodePosition, ...]"""
+
         def get_class(row):
             return row.__class__
 

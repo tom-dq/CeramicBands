@@ -30,6 +30,7 @@ random.seed(123)
 RATCHET_AT_INCREMENTS = True
 DEBUG_CASE_FOR_EVERY_INCREMENT = False
 RECORD_HISTORY = True
+DONT_MAKE_MODEL_WINDOW = True
 
 LOAD_CASE_BENDING = 1
 FREEDOM_CASE = 1
@@ -204,6 +205,36 @@ class Ratchet:
         return f"Elem {max_elem}\tMaxStress {self.max_stress_ever}\tStrain {max_val}\tNonzero {proportion_non_zero:.3%}"
 
 
+
+class InitialSetupModelData(typing.NamedTuple):
+    node_xyz: typing.Dict[int, st7.Vector3]
+    elem_centroid: typing.Dict[int, st7.Vector3]
+    elem_conns: typing.Dict[int, typing.Tuple[int, ...]]
+    elem_volume: typing.Dict[int, float]
+
+
+class PrestrainUpdate(typing.NamedTuple):
+    elem_prestrains: ElemVectorDict
+    updated_this_round: int
+    not_updated_this_round: int
+    prestrained_overall: int
+    update_ratio: float
+    this_update_time: datetime.timedelta
+    update_completed_at_time: datetime.datetime
+
+    @staticmethod
+    def zero() -> "PrestrainUpdate":
+        return PrestrainUpdate(
+            elem_prestrains=ElemVectorDict(),
+            updated_this_round=0,
+            not_updated_this_round=0,
+            prestrained_overall=0,
+            update_ratio=0.0,
+            this_update_time=datetime.timedelta(seconds=0),
+            update_completed_at_time=datetime.datetime.now(),
+        )
+
+
 def apply_prestrain(model: st7.St7Model, case_num: int, elem_to_ratio: typing.Dict[int, st7.Vector3]):
     """Apply all the prestrains"""
 
@@ -212,20 +243,54 @@ def apply_prestrain(model: st7.St7Model, case_num: int, elem_to_ratio: typing.Di
         model.St7SetPlatePreLoad3(plate_num, case_num, st7.PreLoadType.plPlatePreStrain, prestrain)
 
 
-def setup_model_window(model_window: st7.St7ModelWindow, results: st7.St7Results, case_num: int):
+def setup_model_window(model_window: st7.St7ModelWindow, case_num: int):
     model_window.St7SetPlateResultDisplay_None()
     model_window.St7SetWindowResultCase(case_num)
     model_window.St7SetEntityContourIndex(st7.Entity.tyPLATE, st7.PlateContour.ctPlatePreStrainMagnitude)
-    results.St7SetDisplacementScale(5.0, st7.ScaleType.dsAbsolute)
+    model_window.St7SetDisplacementScale(5.0, st7.ScaleType.dsAbsolute)
     model_window.St7RedrawModel(True)
 
 
-def write_out_screenshot(model_window: st7.St7ModelWindow, results: st7.St7Results, current_result_frame: "ResultFrame"):
-
-    setup_model_window(model_window, results, current_result_frame.result_case_num)
-    #draw_area = model_window.St7GetDrawAreaSize()
+def write_out_screenshot(model_window: st7.St7ModelWindow, current_result_frame: "ResultFrame"):
+    setup_model_window(model_window, current_result_frame.result_case_num)
     model_window.St7ExportImage(current_result_frame.image_file, st7.ImageType.itPNG, config.active_config.screenshot_res.width, config.active_config.screenshot_res.height)
-    #model_window.St7ExportImage(fn, st7.ImageType.itPNG, EXPORT_FACT * draw_area.width, EXPORT_FACT * draw_area.height)
+
+
+def write_out_to_db(db: history.DB, init_data: InitialSetupModelData, step_num_major, step_num_minor, results: st7.St7Results, current_result_frame: "ResultFrame", prestrain_update: PrestrainUpdate):
+
+    # Main case data
+    db_res_case = history.ResultCase(
+        num=None,
+        name=str(current_result_frame),
+        major_inc=step_num_major,
+        minor_inc=step_num_minor,
+    )
+
+    db_case_num = db.add(db_res_case)
+
+    # Deformed positions
+    deformed_pos = get_node_positions_deformed(init_data.node_xyz, results, current_result_frame.result_case_num)
+    db_node_xyz = (history.NodePosition(
+        result_case_num=db_case_num,
+        node_num=node_num,
+        x=pos.x,
+        y=pos.y,
+        z=pos.z) for node_num, pos in deformed_pos.items())
+
+    db.add_many(db_node_xyz)
+
+    # Prestrains
+    def make_prestrain_rows():
+        for plate_num, pre_strain in prestrain_update.elem_prestrains.items():
+            pre_strain_mag = (pre_strain.x**2 + pre_strain.y**2)**0.5
+            yield history.ContourValue(
+                result_case_num=db_case_num,
+                contour_key_num=history.ContourKey.prestrain_mag.value,
+                elem_num=plate_num,
+                value=pre_strain_mag
+            )
+
+    db.add_many(make_prestrain_rows())
 
 
 def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_num: int) -> ElemVectorDict:
@@ -288,9 +353,16 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
     return ElemVectorDict(raw_dict)
 
 
-def get_node_positions(results: st7.St7Results, case_num: int) -> T_ResultDict:
-    # TODO
-    pass
+def get_node_positions_deformed(orig_positions: T_ResultDict, results: st7.St7Results, case_num: int) -> T_ResultDict:
+    """Deformed node positions"""
+
+    def one_node_pos(node_num: int):
+        node_res = results.St7GetNodeResult(st7.NodeResultType.rtNodeDisp, node_num, case_num).results
+        deformation = st7.Vector3(x=node_res[0], y=node_res[1], z=node_res[2])
+        return orig_positions[node_num] + deformation
+
+    return {node_num: one_node_pos(node_num) for node_num in results.model.entity_numbers(st7.Entity.tyNODE)}
+
 
 def update_to_include_prestrains(
         actuator: Actuator,
@@ -308,28 +380,6 @@ def update_to_include_prestrains(
     else:
         return minor_acuator_input_current_raw
 
-
-
-class PrestrainUpdate(typing.NamedTuple):
-    elem_prestrains: ElemVectorDict
-    updated_this_round: int
-    not_updated_this_round: int
-    prestrained_overall: int
-    update_ratio: float
-    this_update_time: datetime.timedelta
-    update_completed_at_time: datetime.datetime
-
-    @staticmethod
-    def zero() -> "PrestrainUpdate":
-        return PrestrainUpdate(
-            elem_prestrains=ElemVectorDict(),
-            updated_this_round=0,
-            not_updated_this_round=0,
-            prestrained_overall=0,
-            update_ratio=0.0,
-            this_update_time=datetime.timedelta(seconds=0),
-            update_completed_at_time=datetime.datetime.now(),
-        )
 
 def incremental_element_update_list(
         previous_prestrain_update: PrestrainUpdate,
@@ -459,6 +509,10 @@ class ResultFrame(typing.NamedTuple):
     result_case_num: int  # Result case number in the current file - this may be reused.
     global_result_case_num: int   # Case number which is unique across all files (if result files are split).
     load_time_table: typing.Optional[Table]
+
+    def __str__(self):
+        """Trimmed down version..."""
+        return f"ResultFrame(result_file_index={self.result_file_index}, result_case_num={self.result_case_num}, global_result_case_num={self.global_result_case_num})"
 
     def get_next_result_frame(self, bending_load_factor: float, advance_result_case: bool) -> "ResultFrame":
 
@@ -639,12 +693,6 @@ def set_load_increment_table(model: st7.St7Model, result_frame: ResultFrame, thi
     else:
         raise ValueError(result_frame.configuration.solver)
 
-class InitialSetupModelData(typing.NamedTuple):
-    node_xyz: typing.Dict[int, st7.Vector3]
-    elem_centroid: typing.Dict[int, st7.Vector3]
-    elem_conns: typing.Dict[int, typing.Tuple[int, ...]]
-    elem_volume: typing.Dict[int, float]
-
 
 def initial_setup(model: st7.St7Model, initial_result_frame: ResultFrame) -> InitialSetupModelData:
 
@@ -806,11 +854,9 @@ def main(run_params: RunParams):
     print("Signal files:")
     state.print_signal_file_names(working_dir)
 
-    dont_make_model_window = False
-
     with contextlib.ExitStack() as exit_stack:
         model = exit_stack.enter_context(st7.St7Model(fn_st7, config.active_config.scratch_dir))
-        model_window = exit_stack.enter_context(model.St7CreateModelWindow(dont_make_model_window))
+        model_window = exit_stack.enter_context(model.St7CreateModelWindow(DONT_MAKE_MODEL_WINDOW))
         db = exit_stack.enter_context(history.DB(fn_db))
 
         init_data = initial_setup(model, current_result_frame)
@@ -840,9 +886,8 @@ def main(run_params: RunParams):
 
             # Get the results from the last major step.
             with model.open_results(current_result_frame.result_file) as results:
-                write_out_screenshot(model_window, results, current_result_frame)
-
-
+                write_out_screenshot(model_window, current_result_frame)
+                write_out_to_db(db, init_data, step_num_major, step_num_minor, results, current_result_frame, prestrain_update)
 
             # Update the model with the new load
             this_load_factor = (step_num_major+1) / run_params.n_steps_major
@@ -870,7 +915,8 @@ def main(run_params: RunParams):
                 with model.open_results(current_result_frame.result_file) as results:
                     minor_acuator_input_current_raw = get_results(run_params.actuator, results, current_result_frame.result_case_num)
                     minor_acuator_input_current = update_to_include_prestrains(run_params.actuator, minor_acuator_input_current_raw, old_prestrain_values)
-                    write_out_screenshot(model_window, results, current_result_frame)
+                    write_out_screenshot(model_window, current_result_frame)
+                    write_out_to_db(db, init_data, step_num_major, step_num_minor, results, current_result_frame, prestrain_update)
 
                 prestrain_update = incremental_element_update_list(
                     previous_prestrain_update=prestrain_update,
@@ -937,7 +983,8 @@ def main(run_params: RunParams):
 
         # Save the image of pre-strain results from the maximum load step.
         with model.open_results(current_result_frame.result_file) as results, model.St7CreateModelWindow(dont_really_make=False) as model_window:
-            write_out_screenshot(model_window, results, current_result_frame)
+            write_out_screenshot(model_window, current_result_frame)
+            write_out_to_db(db, init_data, step_num_major, step_num_minor, results, current_result_frame, prestrain_update)
 
 
 def create_load_case(model, case_name):
