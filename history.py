@@ -61,6 +61,12 @@ def _make_insert_string(nt_class) -> str:
     qms = ",".join("?" for _ in nt_class._fields)
     return f"INSERT INTO {nt_class.__name__} VALUES ({qms})"
 
+def _make_select_all(nt_class) -> str:
+    return f"SELECT * FROM {nt_class.__name__}"
+
+def _make_select_all_with_result_case_num(nt_class) -> str:
+    return f"SELECT * FROM {nt_class.__name__} WHERE result_case_num = ?"
+
 
 _T_any_db_able = typing.Union[
     ResultCase,
@@ -114,3 +120,21 @@ class DB:
             with self.connection:
                 self.cur.executemany(ins_str, same_type_rows)
 
+    def get_all(self, row_type: _T_any_db_able) -> typing.Iterable[ResultCase]:
+        with self.connection:
+            get_all_str = _make_select_all(row_type)
+            rows = self.connection.execute(get_all_str)
+            for r in rows:
+                print(r)
+                yield row_type(*r)
+
+
+
+def do_stuff():
+    with DB(r"E:\Simulations\CeramicBands\v5\pics\3D\history.db") as db:
+        for row in db.get_all(ResultCase):
+            print(row)
+
+if __name__ == "__main__":
+    print("AAA")
+    do_stuff()
