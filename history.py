@@ -85,6 +85,7 @@ class DB:
         self.connection = sqlite3.connect(str(db_fn))
         self.cur = self.connection.cursor()
         self._make_tables()
+        self._add_contour_key_lookups_if_needed()
 
     def __enter__(self):
         return self
@@ -99,7 +100,19 @@ class DB:
                 create_statement = _make_table_statement(one_table)
                 self.connection.execute(create_statement)
 
+    def _add_contour_key_lookups_if_needed(self):
+        existing_rows = list(self.get_all(ContourKeyLookup))
+
+        if not existing_rows:
+            # add the rows - new DB.
             self.add_many(_all_contour_keys_)
+
+        else:
+            # check they're the same
+            if sorted(existing_rows) != sorted(_all_contour_keys_):
+                print(existing_rows)
+                print(_all_contour_keys_)
+                raise ValueError("Mismatched ContourKeyLookup.")
 
 
     def add(self, row: _T_any_db_able) -> int:
@@ -121,20 +134,18 @@ class DB:
                 self.cur.executemany(ins_str, same_type_rows)
 
     def get_all(self, row_type: _T_any_db_able) -> typing.Iterable[ResultCase]:
+        get_all_str = _make_select_all(row_type)
         with self.connection:
-            get_all_str = _make_select_all(row_type)
-            rows = self.connection.execute(get_all_str)
+            rows = self.cur.execute(get_all_str)
             for r in rows:
-                print(r)
                 yield row_type(*r)
 
 
 
 def do_stuff():
-    with DB(r"E:\Simulations\CeramicBands\v5\pics\3D\history.db") as db:
+    with DB(r"E:\Simulations\CeramicBands\v5\pics\3E\history.db") as db:
         for row in db.get_all(ResultCase):
             print(row)
 
 if __name__ == "__main__":
-    print("AAA")
     do_stuff()
