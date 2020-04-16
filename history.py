@@ -140,7 +140,9 @@ class DB:
             for r in rows:
                 yield row_type(*r)
 
-
+    def get_all_matching(self, ):
+        # TODO - up to here - maybe make the input a row like ContourValue(result_case_num=2, contour_key_num=1, elem_num=None, value=None
+        pass
 
 def do_stuff():
     with DB(r"E:\Simulations\CeramicBands\v5\pics\3E\history.db") as db:
