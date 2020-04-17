@@ -140,14 +140,33 @@ class DB:
             for r in rows:
                 yield row_type(*r)
 
-    def get_all_matching(self, ):
-        # TODO - up to here - maybe make the input a row like ContourValue(result_case_num=2, contour_key_num=1, elem_num=None, value=None
-        pass
+    def get_all_matching(self, row_skeleton: _T_any_db_able):
+        """input a row like ContourValue(result_case_num=2, contour_key_num=1, elem_num=None, value=None"""
+
+        not_none_bits = {key: val for key, val in row_skeleton._asdict().items() if val is not None}
+
+        # Make the select string
+        sel_terms = [f"{key} = ?" for key in not_none_bits]
+        sel_all = " AND ".join(sel_terms)
+        sel_str = f"SELECT * FROM {row_skeleton.__class__.__name__} WHERE {sel_all}"
+        args = list(not_none_bits.values())
+
+        row_class = row_skeleton.__class__
+        with self.connection:
+            rows = self.cur.execute(sel_str, args)
+            yield from (row_class(*rows) for row in rows)
+
+
 
 def do_stuff():
     with DB(r"E:\Simulations\CeramicBands\v5\pics\3E\history.db") as db:
         for row in db.get_all(ResultCase):
             print(row)
+
+        skeleton = ContourValue(result_case_num=2, contour_key_num=1, elem_num=None, value=None)
+        for row in db.get_all_matching(skeleton):
+            print(row)
+
 
 if __name__ == "__main__":
     do_stuff()
