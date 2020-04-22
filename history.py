@@ -1,4 +1,5 @@
 """Keeps track of all the results in a database for quicker """
+import hashlib
 import itertools
 import pathlib
 import sqlite3
@@ -37,6 +38,12 @@ class NodePosition(typing.NamedTuple):
     x: float
     y: float
     z: float
+
+    @classmethod
+    def _all_nones(cls) -> "NodePosition":
+        nones = [None for _ in cls._fields]
+        return NodePosition(*nones)
+
 
 
 def _make_table_statement(nt_class) -> str:
@@ -140,6 +147,23 @@ class DB:
             for r in rows:
                 yield row_type(*r)
 
+    def _create_index(self, row_skeleton: _T_any_db_able):
+
+        not_none_bits = {key: val for key, val in row_skeleton._asdict().items() if val is not None}
+
+        keys = tuple([key for key in not_none_bits.keys()])
+        keys_bytes = b'_'.join(key.encode() for key in keys)
+        checksum_head = hashlib.md5(keys_bytes).hexdigest()[0:8]
+
+        name = row_skeleton.__class__.__name__
+
+        index_name = f"{name}_{len(keys)}_{checksum_head}"
+        cols = ', '.join(keys)
+        index_str = f"CREATE INDEX IF NOT EXISTS {index_name} ON {name}({cols})"
+        with self.connection:
+            self.cur.execute(index_str)
+
+
     def get_all_matching(self, row_skeleton: _T_any_db_able):
         """input a row like ContourValue(result_case_num=2, contour_key_num=1, elem_num=None, value=None"""
 
@@ -151,10 +175,12 @@ class DB:
         sel_str = f"SELECT * FROM {row_skeleton.__class__.__name__} WHERE {sel_all}"
         args = list(not_none_bits.values())
 
+        self._create_index(row_skeleton)
+
         row_class = row_skeleton.__class__
         with self.connection:
             rows = self.cur.execute(sel_str, args)
-            yield from (row_class(*rows) for row in rows)
+            yield from (row_class(*row) for row in rows)
 
 
 
@@ -163,7 +189,7 @@ def do_stuff():
         for row in db.get_all(ResultCase):
             print(row)
 
-        skeleton = ContourValue(result_case_num=2, contour_key_num=1, elem_num=None, value=None)
+        skeleton = ContourValue(result_case_num=21, contour_key_num=3, elem_num=None, value=None)
         for row in db.get_all_matching(skeleton):
             print(row)
 

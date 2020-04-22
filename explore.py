@@ -1,6 +1,7 @@
-import holoviews
+import pyvista
 import numpy
 import typing
+import holoviews
 
 import history
 
@@ -17,6 +18,10 @@ def make_quadmesh(
     """Make a single Quadmesh representation"""
 
     # TODO - up to here, after adding some stuff to history.DB
+
+
+    node_skeleton = history.NodePosition._all_nones()._replace(result_case_num=contour_view.db_case_num)
+    node_coords = list(db.get_all_matching(node_skeleton))
 
     # Make the undeformed meshgrid.
     x_vals = design.gen_ordinates(stent_params.divs.Th, 0.0, stent_params.theta_arc_initial)
@@ -72,3 +77,28 @@ def make_quadmesh(
         qmesh.opts(aspect='equal', line_width=0.1, padding=0.1, width=FIG_SIZE[0], height=FIG_SIZE[1], colorbar=True)
 
     return holoviews.Overlay(qmesh_list)
+
+
+
+
+def py_vista_test():
+    # mesh points
+    vertices = numpy.array([[0, 0, 0],
+                         [1, 0, 0],
+                         [1, 1, 0],
+                         [0, 1, 0],
+                         [0.5, 0.5, -1]])
+
+    # mesh faces
+    faces = numpy.hstack([[4, 0, 1, 2, 3],  # square
+                       [3, 0, 1, 4],  # triangle
+                       [3, 1, 2, 4]])  # triangle
+
+    surf = pyvista.PolyData(vertices, faces)
+
+    # plot each face with a different color
+    surf.plot(scalars=numpy.arange(3), cpos=[-1, 1, 0.5])
+
+
+if __name__ == "__main__":
+    py_vista_test()

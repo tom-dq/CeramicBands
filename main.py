@@ -5,6 +5,8 @@ import enum
 import collections
 import datetime
 import contextlib
+from PIL import Image
+
 
 import st7
 import pathlib
@@ -30,7 +32,7 @@ random.seed(123)
 RATCHET_AT_INCREMENTS = True
 DEBUG_CASE_FOR_EVERY_INCREMENT = False
 RECORD_HISTORY = True
-DONT_MAKE_MODEL_WINDOW = True
+DONT_MAKE_MODEL_WINDOW = False
 
 LOAD_CASE_BENDING = 1
 FREEDOM_CASE = 1
@@ -235,6 +237,12 @@ class PrestrainUpdate(typing.NamedTuple):
         )
 
 
+def compress_png(png_fn):
+    if not DONT_MAKE_MODEL_WINDOW:
+        image = Image.open(png_fn)
+        image.save(png_fn, optimize=True, quality=95)
+
+
 def apply_prestrain(model: st7.St7Model, case_num: int, elem_to_ratio: typing.Dict[int, st7.Vector3]):
     """Apply all the prestrains"""
 
@@ -254,6 +262,7 @@ def setup_model_window(model_window: st7.St7ModelWindow, case_num: int):
 def write_out_screenshot(model_window: st7.St7ModelWindow, current_result_frame: "ResultFrame"):
     setup_model_window(model_window, current_result_frame.result_case_num)
     model_window.St7ExportImage(current_result_frame.image_file, st7.ImageType.itPNG, config.active_config.screenshot_res.width, config.active_config.screenshot_res.height)
+    compress_png(current_result_frame.image_file)
 
 
 def write_out_to_db(db: history.DB, init_data: InitialSetupModelData, step_num_major, step_num_minor, results: st7.St7Results, current_result_frame: "ResultFrame", prestrain_update: PrestrainUpdate):
@@ -694,6 +703,15 @@ def set_load_increment_table(model: st7.St7Model, result_frame: ResultFrame, thi
         raise ValueError(result_frame.configuration.solver)
 
 
+def set_max_iters(model: st7.St7Model, max_iters: typing.Optional[config.MaxIters], use_major:bool):
+    """Put a hard out at some number of increments."""
+
+    if max_iters:
+        iter_num = max_iters.major_step if use_major else max_iters.minor_step
+        model.St7SetSolverDefaultsLogical(st7.SolverDefaultLogical.spAllowExtraIterations, False)
+        model.St7SetSolverDefaultsInteger(st7.SolverDefaultInteger.spMaxIterationNonlin, iter_num)
+
+
 def initial_setup(model: st7.St7Model, initial_result_frame: ResultFrame) -> InitialSetupModelData:
 
     model.St7EnableSaveRestart()
@@ -815,8 +833,6 @@ def _make_prestrain_table(run_params: RunParams) -> Table:
     return prestrain_table
 
 
-def write_snapshot(db: history.DB, ):
-    pass
 
 def main(run_params: RunParams):
 
@@ -870,6 +886,7 @@ def main(run_params: RunParams):
         # Assume the elements are evenly sized. Factor of 2 is for x and y.
         n_updates_per_iter = round(2 * run_params.elem_ratio_per_iter * len(model.entity_numbers(st7.Entity.tyPLATE)))
 
+        set_max_iters(config.active_config.max_iters, use_major=True)
         model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
 
         previous_load_factor = 0.0
@@ -918,6 +935,8 @@ def main(run_params: RunParams):
                     write_out_screenshot(model_window, current_result_frame)
                     write_out_to_db(db, init_data, step_num_major, step_num_minor, results, current_result_frame, prestrain_update)
 
+                    set_max_iters(config.active_config.max_iters, use_major=False)
+
                 prestrain_update = incremental_element_update_list(
                     previous_prestrain_update=prestrain_update,
                     num_allowed=n_updates_per_iter,
@@ -957,6 +976,8 @@ def main(run_params: RunParams):
                     # Keep track of the old results...
                     step_num_minor = next(minor_step_iter)
                     old_prestrain_values = prestrain_update.elem_prestrains
+
+                    set_max_iters(config.active_config.max_iters, use_major=True)
 
                 # Update the state.
                 state = state.update_from_fn(working_dir)
@@ -1011,7 +1032,7 @@ if __name__ == "__main__":
         relaxation=relaxation,
         dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
         n_steps_major=20,
-        elem_ratio_per_iter=0.0005,
+        elem_ratio_per_iter=0.0001,
         existing_prestrain_priority_factor=5.0,
     )
 

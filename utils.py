@@ -1,5 +1,59 @@
 # Some handy bits and pieces
 
+from PIL import Image
+import os
+import time
+import multiprocessing
+import typing
+
+BASE_DIR = r"E:\Simulations\CeramicBands\v5"
+
+def tally():
+    for base, dirs, files in os.walk(BASE_DIR):
+        png_files = [os.path.join(base, f) for f in files if os.path.splitext(f)[1].lower() == '.png']
+        num_png = len(png_files)
+        if num_png > 10:
+            print(num_png, base, sep='\t')
+
+
+class Job(typing.NamedTuple):
+    idx: int
+    fn: str
+
+def compress_png(job):
+    png_fn = job.fn
+    if job.idx % 100 == 0:
+        print(job)
+
+    image = Image.open(png_fn)
+    image.save(png_fn, optimize=True, quality=95)
+
+
+def compress_existing_images():
+    def all_pngs():
+        for base, dirs, files in os.walk(BASE_DIR):
+            png_files = (os.path.join(base, f) for f in files if os.path.splitext(f)[1].lower() == '.png')
+            yield from png_files
+
+    def convertible_png(fn):
+        stat = os.stat(fn)
+        size_mb = stat.st_size / 1024 / 1024
+        age_in_mins = (time.time() - stat.st_mtime) / 60
+
+        return size_mb > 1.0 and age_in_mins > 10.0
+
+    conv_pngs = (fn for fn in all_pngs() if convertible_png(fn))
+
+    jobs = (Job(idx=idx, fn=fn) for idx, fn in enumerate(conv_pngs))
+
+    with multiprocessing.Pool(6) as pool:
+        res = pool.map_async(compress_png, jobs)
+        pool.close()
+        pool.join()
+
+
+
+
 def make_enum(text):
     data = [one_line.split("=")[0].strip() for one_line in text.splitlines() if "=" in one_line]
     print("class BLAH_BLAH_BLAH(enum.Enum):")
@@ -191,7 +245,30 @@ tyLOADPATH = 8
 tyGEOMETRYCOEDGE = 9
 tyGEOMETRYLOOP = 10"""
 
-    make_enum(text)
-    make_enum(text2)
+
+    text3 = """spTreeStartNumber = 1
+spNumFrequency = 2
+spNumBucklingModes = 3
+spMaxIterationEig = 4
+spMaxIterationNonlin = 5
+spNumBeamSlicesSpectral = 6
+spMaxConjugateGradientIter = 7
+spMaxNumWarnings = 8
+spFiniteStrainDefinition = 9
+spBeamLength = 10
+spFormStiffMatrix = 11
+spMaxUpdateInterval = 12
+spFormNonlinHeatStiffMatrix = 13
+spExpandWorkingSet = 14
+spMinNumViscoUnits = 15
+spMaxNumViscoUnits = 16
+spCurveFitTimeUnit = 17
+spStaticAutoStepping = 18
+spBeamKgType = 19
+spDynamicAutoStepping = 20
+spMaxIterationHeat = 21"""
 
 
+    make_enum(text3)
+
+    tally()

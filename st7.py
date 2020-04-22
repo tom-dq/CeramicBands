@@ -169,6 +169,30 @@ class SolverDefaultLogical(enum.Enum):
     spSolverGeneratesCombinations = St7API.spSolverGeneratesCombinations
 
 
+class SolverDefaultInteger(enum.Enum):
+    spTreeStartNumber = St7API.spTreeStartNumber
+    spNumFrequency = St7API.spNumFrequency
+    spNumBucklingModes = St7API.spNumBucklingModes
+    spMaxIterationEig = St7API.spMaxIterationEig
+    spMaxIterationNonlin = St7API.spMaxIterationNonlin
+    spNumBeamSlicesSpectral = St7API.spNumBeamSlicesSpectral
+    spMaxConjugateGradientIter = St7API.spMaxConjugateGradientIter
+    spMaxNumWarnings = St7API.spMaxNumWarnings
+    spFiniteStrainDefinition = St7API.spFiniteStrainDefinition
+    spBeamLength = St7API.spBeamLength
+    spFormStiffMatrix = St7API.spFormStiffMatrix
+    spMaxUpdateInterval = St7API.spMaxUpdateInterval
+    spFormNonlinHeatStiffMatrix = St7API.spFormNonlinHeatStiffMatrix
+    spExpandWorkingSet = St7API.spExpandWorkingSet
+    spMinNumViscoUnits = St7API.spMinNumViscoUnits
+    spMaxNumViscoUnits = St7API.spMaxNumViscoUnits
+    spCurveFitTimeUnit = St7API.spCurveFitTimeUnit
+    spStaticAutoStepping = St7API.spStaticAutoStepping
+    spBeamKgType = St7API.spBeamKgType
+    spDynamicAutoStepping = St7API.spDynamicAutoStepping
+    spMaxIterationHeat = St7API.spMaxIterationHeat
+
+
 class TableType(enum.Enum):
     ttVsTime = St7API.ttVsTime
     ttVsTemperature = St7API.ttVsTemperature
@@ -644,6 +668,10 @@ class St7Model:
 
     def St7SetSolverDefaultsLogical(self, solver_def_logical: SolverDefaultLogical, value: bool):
         chk(St7API.St7SetSolverDefaultsLogical(self.uID, solver_def_logical.value, value))
+
+    def St7SetSolverDefaultsInteger(self, solver_def_int: SolverDefaultInteger, value: int):
+        chk(St7API.St7SetSolverDefaultsInteger(self.uID, solver_def_int.value, value))
+
 
     def _make_table_data_and_validate(self, num_entries: int, doubles: typing.Sequence[float]):
         data = list(doubles)
