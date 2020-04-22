@@ -45,6 +45,12 @@ class NodePosition(typing.NamedTuple):
         return NodePosition(*nones)
 
 
+class ElementNodeConnection(typing.NamedTuple):
+    """This is really just for internal use - to record the connectivity of the mesh once for plotting purposes later."""
+    elem_num: int
+    node_local_idx: int
+    node_num: int
+
 
 def _make_table_statement(nt_class) -> str:
     type_lookup = {
@@ -80,6 +86,7 @@ _T_any_db_able = typing.Union[
     ContourKeyLookup,
     ContourValue,
     NodePosition,
+    ElementNodeConnection,
 ]
 
 _all_contour_keys_ = [
@@ -182,15 +189,44 @@ class DB:
             rows = self.cur.execute(sel_str, args)
             yield from (row_class(*row) for row in rows)
 
+    def add_element_connections(self, elem_conn: typing.Dict[int, typing.Tuple[int]]):
+        """Saves all the element connections"""
+        def make_rows():
+            for elem_num, nodes in elem_conn.items():
+                for node_idx, node_num in enumerate(nodes):
+                    yield ElementNodeConnection(elem_num=elem_num, node_local_idx=node_idx, node_num=node_num)
+
+        self.add_many(make_rows())
+
+    def get_element_connections(self) -> typing.Dict[int, typing.Tuple[int]]:
+        def get_rows():
+            sel_str = "SELECT * FROM ElementNodeConnection ORDER BY elem_num, node_local_idx"
+            with self.connection:
+                rows = self.cur.execute(sel_str)
+                for r in rows:
+                    yield ElementNodeConnection(*r)
+
+        def group_key(elem_node_conn: ElementNodeConnection):
+            return elem_node_conn.elem_num
+
+        out_dict = {}
+        for elem_num, node_iter in itertools.groupby(get_rows(), group_key):
+            node_nums = [elem_node_conn.node_num for elem_node_conn in node_iter]
+            out_dict[elem_num] = tuple(node_nums)
+
+        return out_dict
 
 
 def do_stuff():
-    with DB(r"E:\Simulations\CeramicBands\v5\pics\3E\history.db") as db:
+    with DB(r"E:\Simulations\CeramicBands\v5\pics\4L\history.db") as db:
         for row in db.get_all(ResultCase):
             print(row)
 
         skeleton = ContourValue(result_case_num=21, contour_key_num=3, elem_num=None, value=None)
         for row in db.get_all_matching(skeleton):
+            print(row)
+
+        for row in db.get_element_connections().items():
             print(row)
 
 

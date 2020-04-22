@@ -1,3 +1,6 @@
+import collections
+import math
+
 import pyvista
 import numpy
 import typing
@@ -79,26 +82,118 @@ def make_quadmesh(
     return holoviews.Overlay(qmesh_list)
 
 
+class QuadPlateEdge(typing.NamedTuple):
+    plate_num: int
+    edge_idx: int
+    node_num_1: int
+    node_num_2: int
+
+    @property
+    def node_idx_1(self):
+        return self.edge_idx
+
+    @property
+    def node_idx_2(self):
+        return (self.edge_idx + 1) % 4
+
+    @property
+    def global_sorted_nodes(self):
+        return tuple(sorted([self.node_num_1, self.node_num_2]))
 
 
-def py_vista_test():
-    # mesh points
-    vertices = numpy.array([[0, 0, 0],
-                         [1, 0, 0],
-                         [1, 1, 0],
-                         [0, 1, 0],
-                         [0.5, 0.5, -1]])
+def get_regular_mesh_data(db: history.DB):
+    elem_conn = db.get_element_connections()
 
-    # mesh faces
-    faces = numpy.hstack([[4, 0, 1, 2, 3],  # square
-                       [3, 0, 1, 4],  # triangle
-                       [3, 1, 2, 4]])  # triangle
+    # Step 1 - get all the edges of plates.
+    all_edges = []
+    min_elem_num = math.inf
+    for elem_num, nodes in elem_conn.items():
+        if len(nodes) != 4:
+            raise ValueError("Quad4 only at the moment")
 
-    surf = pyvista.PolyData(vertices, faces)
+        min_elem_num = min(min_elem_num, elem_num)
+        for edge_idx in range(4):
+            node_idx_1 = edge_idx
+            node_idx_2 = (edge_idx + 1) % 4
+            one_edge = QuadPlateEdge(
+                plate_num=elem_num,
+                edge_idx=edge_idx,
+                node_num_1=nodes[node_idx_1],
+                node_num_2=nodes[node_idx_2],
+            )
 
-    # plot each face with a different color
-    surf.plot(scalars=numpy.arange(3), cpos=[-1, 1, 0.5])
+            all_edges.append(one_edge)
+
+    # Step 2 - orientationA and orientationB are perpendicular - one if horizontal and one is vert but we don't know which is which yet.
+    sorted_global_node_to_edge = collections.defaultdict(set)
+    for one_edge in all_edges:
+        sorted_global_node_to_edge[one_edge.global_sorted_nodes].add(one_edge)
+
+    elem_to_edges = collections.defaultdict(set)
+    for one_edge in all_edges:
+        elem_to_edges[one_edge.plate_num].add(one_edge)
+
+    # These are perpendicular - one if horizontal and one is vert but we don't know which is which yet.
+    ORI_A = 0
+    ORI_B = 1
+
+    edge_to_ori = dict()
+
+    # Step 3 - populate the known edges by working a "frontier"
+    def discard_edge_from_working_set(one_edge):
+        sorted_global_node_to_edge[one_edge.global_sorted_nodes].discard(one_edge)
+        elem_to_edges[one_edge.plate_num].discard(one_edge)
+
+    # Start off
+    arbitrary_edge = elem_to_edges[min_elem_num].pop()
+    edge_to_ori[arbitrary_edge] = ORI_A
+    discard_edge_from_working_set(arbitrary_edge)
+    frontier_edges = {arbitrary_edge,}
+
+    while frontier_edges:
+        new_frontier = set()
+        for one_edge in frontier_edges:
+
+            # We can tell a relative orientation from the edge index.
+            new_edges_from_elem = elem_to_edges[one_edge.plate_num]
+            for one_new_edge in new_edges_from_elem:
+                same_ori = one_new_edge.edge_idx % 2 == one_edge.edge_idx % 2
+                if same_ori:
+                    this_ori = edge_to_ori[one_edge]
+
+                else:
+                    this_ori = (edge_to_ori[one_edge] + 1) % 2
+
+                edge_to_ori[one_new_edge] = this_ori
+                new_frontier.add(one_new_edge)
+
+
+            # We can also tell when an edge has the same orientation if it has the same global nodes.
+            new_edges_from_nodes = sorted_global_node_to_edge[one_edge.global_sorted_nodes]
+            for one_new_edge in new_edges_from_nodes:
+                this_ori = edge_to_ori[one_edge]
+                edge_to_ori[one_new_edge] = this_ori
+                new_frontier.add(one_new_edge)
+
+        for one_new_edge in new_frontier:
+            discard_edge_from_working_set(one_new_edge)
+
+        frontier_edges.clear()
+        frontier_edges.update(new_frontier)
 
 
 if __name__ == "__main__":
-    py_vista_test()
+    db_fn = r"E:\Simulations\CeramicBands\v5\pics\4L\history.db"
+    with history.DB(db_fn) as db:
+        get_regular_mesh_data(db)
+
+
+
+
+
+
+
+
+
+
+

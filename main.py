@@ -1,5 +1,6 @@
 import itertools
 import random
+import time
 import typing
 import enum
 import collections
@@ -40,6 +41,8 @@ STAGE = 0
 TABLE_BENDING_ID = 5
 
 STRESS_START = 400
+
+NUM_PLATE_RES_RETRIES = 10
 
 #fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD2.st7")
 #fn_working_image_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3-pics")
@@ -343,15 +346,32 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
         raise ValueError(phase_change_actuator)
 
     def one_plate_result(plate_num):
-        res_array = results.St7GetPlateResultArray(
-            res_type,
-            res_sub_type,
-            plate_num,
-            case_num,
-            st7.SampleLocation.spCentroid,
-            st7.PlateSurface.psPlateMidPlane,
-            0,
-        )
+        worked = False
+        num_tries = 0
+        while num_tries < NUM_PLATE_RES_RETRIES and not worked:
+            try:
+                res_array = results.St7GetPlateResultArray(
+                    res_type,
+                    res_sub_type,
+                    plate_num,
+                    case_num,
+                    st7.SampleLocation.spCentroid,
+                    st7.PlateSurface.psPlateMidPlane,
+                    0,
+                )
+                worked = True
+
+            except Exception as e:
+                if num_tries > 0:
+                    time.sleep(0.001 * num_tries**2)
+
+                num_tries += 1
+                print(f"Failed with {e}, try {num_tries}/{NUM_PLATE_RES_RETRIES}")
+
+        if not worked:
+            raise Exception("Ran out of chances to get plate result.")
+
+
         if res_array.num_points != 1:
             raise ValueError()
 
@@ -876,6 +896,7 @@ def main(run_params: RunParams):
         db = exit_stack.enter_context(history.DB(fn_db))
 
         init_data = initial_setup(model, current_result_frame)
+        db.add_element_connections(init_data.elem_conns)
 
         scaling.assign_centroids(init_data.elem_centroid)
         averaging.populate_radius(init_data.node_xyz, init_data.elem_conns)
@@ -886,7 +907,7 @@ def main(run_params: RunParams):
         # Assume the elements are evenly sized. Factor of 2 is for x and y.
         n_updates_per_iter = round(2 * run_params.elem_ratio_per_iter * len(model.entity_numbers(st7.Entity.tyPLATE)))
 
-        set_max_iters(config.active_config.max_iters, use_major=True)
+        set_max_iters(model, config.active_config.max_iters, use_major=True)
         model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
 
         previous_load_factor = 0.0
@@ -928,14 +949,15 @@ def main(run_params: RunParams):
                 model.St7SaveFile()
                 model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
 
+                # For the next minor increment, unless overwritten.
+                set_max_iters(model, config.active_config.max_iters, use_major=False)
+
                 # Get the results from the last minor step.
                 with model.open_results(current_result_frame.result_file) as results:
                     minor_acuator_input_current_raw = get_results(run_params.actuator, results, current_result_frame.result_case_num)
                     minor_acuator_input_current = update_to_include_prestrains(run_params.actuator, minor_acuator_input_current_raw, old_prestrain_values)
                     write_out_screenshot(model_window, current_result_frame)
                     write_out_to_db(db, init_data, step_num_major, step_num_minor, results, current_result_frame, prestrain_update)
-
-                    set_max_iters(config.active_config.max_iters, use_major=False)
 
                 prestrain_update = incremental_element_update_list(
                     previous_prestrain_update=prestrain_update,
@@ -977,7 +999,7 @@ def main(run_params: RunParams):
                     step_num_minor = next(minor_step_iter)
                     old_prestrain_values = prestrain_update.elem_prestrains
 
-                    set_max_iters(config.active_config.max_iters, use_major=True)
+                    set_max_iters(model, config.active_config.max_iters, use_major=True)
 
                 # Update the state.
                 state = state.update_from_fn(working_dir)
@@ -1018,10 +1040,10 @@ def create_load_case(model, case_name):
 if __name__ == "__main__":
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
-    relaxation = PropRelax(0.5)
+    relaxation = PropRelax(0.1)
     scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
-    averaging = AveInRadius(0.10)
+    averaging = AveInRadius(0.25)
     #averaging = NoAve()
 
     run_params = RunParams(
