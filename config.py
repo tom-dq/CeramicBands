@@ -24,6 +24,7 @@ class Config(typing.NamedTuple):
     qsa_steps_per_file: int
     qsa_time_step_size: float
     max_iters: typing.Optional[MaxIters]
+    delete_old_result_files: bool
 
     def summary_strings(self) -> typing.Iterable[str]:
         yield "Config:\n"
@@ -44,7 +45,7 @@ def _get_config():
 
     if this_env == Environment.uni_desktop:
         return Config(
-            fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11-SD2.st7"),
+            fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11.st7"),
             fn_working_image_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\pics"),
             screenshot_res=st7.CanvasSize(1920, 1080),
             #screenshot_res=st7.CanvasSize(3840, 2160),
@@ -53,6 +54,7 @@ def _get_config():
             qsa_steps_per_file=50,
             qsa_time_step_size=0.1,
             max_iters=MaxIters(major_step=5, minor_step=1),
+            delete_old_result_files=True,
         )
 
     elif this_env == Environment.samsung_laptop:

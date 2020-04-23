@@ -1,85 +1,66 @@
 import collections
+import itertools
 import math
 
-import pyvista
+import datashader
 import numpy
 import typing
 import holoviews
+import panel
+
+from holoviews.operation.datashader import datashade, shade, dynspread, rasterize
 
 import history
 
+
+holoviews.extension('bokeh')
 
 class ContourView(typing.NamedTuple):
     db_case_num: int
     contour_key: history.ContourKey
 
+    @property
+    def title(self) -> str:
+        return f"Case {self.db_case_num}: {self.contour_key.name}"
+
 
 def make_quadmesh(
         db: history.DB,
         contour_view: ContourView,
-) -> holoviews.Overlay:
+) -> holoviews.QuadMesh:
     """Make a single Quadmesh representation"""
 
-    # TODO - up to here, after adding some stuff to history.DB
-
+    struct_data = get_regular_mesh_data(db)
 
     node_skeleton = history.NodePosition._all_nones()._replace(result_case_num=contour_view.db_case_num)
-    node_coords = list(db.get_all_matching(node_skeleton))
+    node_coords = {node_pos.node_num: node_pos for node_pos in db.get_all_matching(node_skeleton)}
 
-    # Make the undeformed meshgrid.
-    x_vals = design.gen_ordinates(stent_params.divs.Th, 0.0, stent_params.theta_arc_initial)
-    y_vals = design.gen_ordinates(stent_params.divs.Z, 0.0, stent_params.length)
+    # Node positions
+    X = numpy.zeros(shape=struct_data.node_indices.shape)
+    Y = numpy.zeros(shape=struct_data.node_indices.shape)
 
-    # Get the bounds which are non-NaN
-    idx_z = [idx.Z for idx in elem_idx_to_value.keys()]
-    idx_Th = [idx.Th for idx in elem_idx_to_value.keys()]
-
-    z_low, z_high = min(idx_z), max(idx_z)+1  # This plus one is for element to upper node index
-    th_low, th_high = min(idx_Th), max(idx_Th)+1
-
-    x_vals_trim = x_vals[th_low: th_high+1]  # This plus one is for Python indexing.
-    y_vals_trim = y_vals[z_low: z_high+1]
-
-    # X and Y are boundary points.
-    X, Y = numpy.meshgrid(x_vals_trim, y_vals_trim)
+    for idx_x, along_y in enumerate(struct_data.node_indices):
+        for idx_y, node_num in enumerate(along_y):
+            X[idx_x, idx_y] = node_coords[node_num].x
+            Y[idx_x, idx_y] = node_coords[node_num].y
 
     # The values are element centred.
-    elem_shape = (X.shape[0]-1, X.shape[1]-1)
-    Z = numpy.full(shape=elem_shape, fill_value=numpy.nan)
-    Z_ghost = Z.copy()
+    Z = numpy.zeros(shape=struct_data.elem_indices.shape)
 
-    for idx, val in elem_idx_to_value.items():
-        if idx in active_elements:
-            Z[idx.Z-z_low, idx.Th-th_low] = val
+    contour_val_skeleton = history.ContourValue._all_nones()._replace(result_case_num=contour_view.db_case_num, contour_key_num=contour_view.contour_key.value)
+    contour_vals = {contour_val.elem_num: contour_val.value for contour_val in db.get_all_matching(contour_val_skeleton)}
 
-        elif INCLUDE_GHOST_ELEMENENTS:
-            Z_ghost[idx.Z - z_low, idx.Th - th_low] = val
 
-    all_ghosts_nan = numpy.isnan(Z_ghost).all()
+    for idx_x, along_y in enumerate(struct_data.elem_indices):
+        for idx_y, elem_num in enumerate(along_y):
+            Z[idx_x, idx_y] = contour_vals.get(elem_num, 0.0)
 
-    # Overwrite with the nodes...
-    th_range = range(th_low, th_high+1)
-    z_range = range(z_low, z_high+1)
-    for node_idx, pos in node_idx_pos.items():
-        if node_idx.Th in th_range and node_idx.Z in z_range:
-            X[node_idx.Z-z_low, node_idx.Th-th_low] = pos.x
-            Y[node_idx.Z-z_low, node_idx.Th-th_low] = pos.y
+    qmesh = holoviews.QuadMesh((X, Y, Z), vdims='level', group=contour_view.title)
+    qmesh.options(cmap='viridis')
 
-    # Populate with the real values.
+    qmesh.opts(aspect='equal', line_width=0.1, padding=0.1, colorbar=True)
 
-    qmesh_real = holoviews.QuadMesh((X, Y, Z), vdims='level', group=contour_view.metric_name)
-    qmesh_real.options(cmap='viridis')
-
-    qmesh_list = [qmesh_real]
-    if INCLUDE_GHOST_ELEMENENTS and not all_ghosts_nan:
-        qmesh_ghost = holoviews.QuadMesh((X, Y, Z_ghost), vdims='level', group=contour_view.metric_name)
-        qmesh_ghost.options(cmap='inferno')
-        qmesh_list.append(qmesh_ghost)
-
-    for qmesh in qmesh_list:
-        qmesh.opts(aspect='equal', line_width=0.1, padding=0.1, width=FIG_SIZE[0], height=FIG_SIZE[1], colorbar=True)
-
-    return holoviews.Overlay(qmesh_list)
+    return qmesh
 
 
 class QuadPlateEdge(typing.NamedTuple):
@@ -100,8 +81,24 @@ class QuadPlateEdge(typing.NamedTuple):
     def global_sorted_nodes(self):
         return tuple(sorted([self.node_num_1, self.node_num_2]))
 
+    def opposing_node(self, n1: int) -> int:
+        if n1 == self.node_num_1:
+            return self.node_num_2
 
-def get_regular_mesh_data(db: history.DB):
+        elif n1 == self.node_num_2:
+            return self.node_num_1
+
+        else:
+            raise ValueError(n1)
+
+
+class StructuredMeshData(typing.NamedTuple):
+    node_indices: numpy.ndarray
+    elem_indices: numpy.ndarray
+
+
+def get_regular_mesh_data(db: history.DB) -> StructuredMeshData:
+    """Returns a numpy array of node indices for a structured mesh."""
     elem_conn = db.get_element_connections()
 
     # Step 1 - get all the edges of plates.
@@ -181,11 +178,96 @@ def get_regular_mesh_data(db: history.DB):
         frontier_edges.clear()
         frontier_edges.update(new_frontier)
 
+    # Step 4 - find a corner
+    nodes_on_edges = collections.defaultdict(set)
+    for one_edge in all_edges:
+        for n in [one_edge.node_num_1, one_edge.node_num_2]:
+            nodes_on_edges[n].add(one_edge)
+
+    corner_nodes = [node_num for node_num, edges in nodes_on_edges.items() if len(edges) == 2]
+
+    # Step 5 - send out "streamers" from the corner
+    def make_streamer(starting_node: int, ori) -> typing.List[int]:
+        """Get the nodes in a line."""
+
+        streamer = [starting_node]
+        still_going = True
+        while still_going:
+            frontier_node = streamer[-1]
+            if len(streamer) > 1:
+                backwards_node = streamer[-2]
+
+            else:
+                backwards_node = None
+
+            next_edges = [edge for edge in nodes_on_edges[frontier_node] if edge_to_ori[edge] == ori and backwards_node not in edge.global_sorted_nodes]
+            if not next_edges:
+                still_going = False
+
+            else:
+                next_edge = next_edges.pop()
+                streamer.append(next_edge.opposing_node(frontier_node))
+
+        return streamer
+
+    arbitrary_corner_node = min(corner_nodes)
+    ori_to_streamer = {ori: make_streamer(arbitrary_corner_node, ori) for ori in [ORI_A, ORI_B]}
+
+    len_to_ori = {len(streamer): ori for ori, streamer in ori_to_streamer.items()}
+    X_ORI = max(len_to_ori.items())[1]
+    Y_ORI = (X_ORI + 1) % 2
+
+    # Step 6 - Make the node indices for the structured mesh
+    node_indices = numpy.zeros( shape=(len(ori_to_streamer[X_ORI]), len(ori_to_streamer[Y_ORI])), dtype=int )
+
+    for y_idx, y_starting_node in enumerate(ori_to_streamer[Y_ORI]):
+        x_streamer = make_streamer(y_starting_node, X_ORI)
+        node_indices[:, y_idx] = x_streamer
+
+
+    # Step 7 - element indices are determined based on the 2x2 patch and the nodes.
+    sorted_nodes_to_elem = {tuple(sorted(conn)): elem_num for elem_num, conn in elem_conn.items()}
+    elem_shape = (node_indices.shape[0] - 1, node_indices.shape[1] - 1)
+    elem_indices = numpy.zeros( shape=elem_shape, dtype=int)
+
+    x_idxs = range(node_indices.shape[0]-1)
+    y_idxs = range(node_indices.shape[1]-1)
+    for x_node_idx, y_node_idx in itertools.product(x_idxs, y_idxs):
+        window = node_indices[x_node_idx:x_node_idx+2, y_node_idx:y_node_idx+2]
+        sorted_nodes = tuple(sorted(window.flatten()))
+        elem_num = sorted_nodes_to_elem[sorted_nodes]
+        elem_indices[x_node_idx, y_node_idx] = elem_num
+
+    return StructuredMeshData(
+        node_indices=node_indices,
+        elem_indices=elem_indices,
+    )
+
+
+
+
+
+def make_dashboard(db: history.DB):
+
+    cases = db.get_all(history.ResultCase)
+    all_views = [ContourView(db_case_num=case.num, contour_key=history.ContourKey.prestrain_mag) for case in cases]
+
+    plot_dict = {}
+    for contour_view in all_views:
+        qmesh = make_quadmesh(db, contour_view)
+        plot_dict[contour_view] = datashade(qmesh)
+
+    hmap = holoviews.HoloMap(plot_dict, kdims=list(contour_view._fields))
+    panel.panel(hmap).show()
+
+
+
 
 if __name__ == "__main__":
-    db_fn = r"E:\Simulations\CeramicBands\v5\pics\4L\history.db"
+    db_fn = r"E:\Simulations\CeramicBands\v5\pics\54\history - Copy.db"
     with history.DB(db_fn) as db:
-        get_regular_mesh_data(db)
+        make_dashboard(db)
+        input()
 
 
 

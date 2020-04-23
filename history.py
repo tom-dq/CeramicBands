@@ -31,6 +31,11 @@ class ContourValue(typing.NamedTuple):
     elem_num: int
     value: float
 
+    @classmethod
+    def _all_nones(cls) -> "ContourValue":
+        nones = [None for _ in cls._fields]
+        return ContourValue(*nones)
+
 
 class NodePosition(typing.NamedTuple):
     result_case_num: int

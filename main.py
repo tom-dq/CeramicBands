@@ -16,7 +16,7 @@ import shutil
 
 import config
 
-from averaging import Averaging, AveInRadius
+from averaging import Averaging, AveInRadius, NoAve
 from common_types import XY, ElemVectorDict, T_ResultDict
 from relaxation import Relaxation, PropRelax
 from scaling import Scaling, SpacedStepScaling
@@ -368,9 +368,8 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
                 num_tries += 1
                 print(f"Failed with {e}, try {num_tries}/{NUM_PLATE_RES_RETRIES}")
 
-        if not worked:
-            raise Exception("Ran out of chances to get plate result.")
-
+                if num_tries == NUM_PLATE_RES_RETRIES:
+                    raise e
 
         if res_array.num_points != 1:
             raise ValueError()
@@ -1040,21 +1039,21 @@ def create_load_case(model, case_name):
 if __name__ == "__main__":
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
-    relaxation = PropRelax(0.1)
+    relaxation = PropRelax(0.5)
     scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
-    averaging = AveInRadius(0.25)
+    averaging = AveInRadius(0.1)
     #averaging = NoAve()
 
     run_params = RunParams(
         actuator=Actuator.e_local,
-        stress_end=401.0,
+        stress_end=425.0,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
-        n_steps_major=20,
-        elem_ratio_per_iter=0.0001,
+        n_steps_major=5,
+        elem_ratio_per_iter=0.01,
         existing_prestrain_priority_factor=5.0,
     )
 
