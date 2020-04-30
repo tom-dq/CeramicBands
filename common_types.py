@@ -14,6 +14,7 @@ T_FactVal = typing.Tuple[float, float]
 T_Result = typing.TypeVar("T_Result")
 T_ResultDict = typing.Dict[int, st7.Vector3]
 
+T_Elem_Axis = typing.Tuple[int, int]  # E.g, (2354, 0) -> Elem 2354, x axis.
 
 class ElemVectorDict(dict):
     """Handy subclass to iterate over the individual values."""

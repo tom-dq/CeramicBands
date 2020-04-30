@@ -21,6 +21,7 @@ from common_types import XY, ElemVectorDict, T_ResultDict
 from relaxation import Relaxation, PropRelax
 from scaling import Scaling, SpacedStepScaling
 from tables import Table
+from throttle import Throttler, StoppingCriterion, Shape, ElemStrainIncreaseData
 import history
 
 import directories
@@ -94,14 +95,16 @@ class Ratchet:
     _relaxation: Relaxation
     scaling: Scaling
     _averaging: Averaging
+    throttler: Throttler
     min_y_so_far: dict
     max_stress_ever: float
 
-    def __init__(self, table: Table, scaling: Scaling, relaxation: Relaxation, averaging: Averaging):
+    def __init__(self, table: Table, scaling: Scaling, relaxation: Relaxation, averaging: Averaging, throttler: Throttler):
         self.table = table
         self._relaxation = relaxation
         self.scaling = scaling
         self._averaging = averaging
+        self.throttler = throttler
         self.min_y_so_far = dict()
         self.max_stress_ever = -1 * math.inf
 
@@ -112,7 +115,8 @@ class Ratchet:
             table=self.table,
             scaling=self.scaling,
             relaxation=self._relaxation,
-            averaging=self._averaging
+            averaging=self._averaging,
+            throttler=self.throttler,
         )
 
         working_copy.min_y_so_far = self.min_y_so_far.copy()
@@ -169,25 +173,6 @@ class Ratchet:
             self.min_y_so_far[scale_key] = this_min
 
         return this_min
-
-    def _get_value_single(self, scale_key, x_unscaled: float) -> float:
-        """Interpolates a single value."""
-
-        self.max_stress_ever = max(self.max_stress_ever, x_unscaled)
-
-        # Apply the scaling.
-        x_scaled = self.scaling.get_x_scale_factor(scale_key) * x_unscaled
-
-        # Look up the table value
-        y_val_unrelaxed = self.table.interp(x_scaled)
-
-        # Apply the relaxation on the looked-up value.
-        y_val = self._relaxation.relaxed(scale_key, y_val_unrelaxed)
-
-        self.update_minimum(scale_key, y_val)
-
-        return self.min_y_so_far[scale_key]
-
 
     def status_update(self) -> str:
         """Status update string"""
@@ -436,9 +421,20 @@ def incremental_element_update_list(
     new_prestrains_all = candidate_strains(minor_acuator_input_current)
 
     old_prestrains = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_prev_prestrain.as_single_values()}
-    increased_prestrains = {key: val for key, val in new_prestrains_all.items() if abs(val) > abs(old_prestrains.get(key, 0.0))}
+    increased_prestrains_OLD = {key: val for key, val in new_prestrains_all.items() if abs(val) > abs(old_prestrains.get(key, 0.0))}
 
-    # Use the current stress results to choose the new elements.
+    increased_prestrains = [
+        ElemStrainIncreaseData(
+            elem_num=key[0],
+            axis=key[1],
+            proposed_prestrain_val=val,
+            old_prestrain_val=old_prestrains.get(key, 0.0)
+        )
+        for key, val in new_prestrains_all.items()
+        if abs(val) > abs(old_prestrains.get(key, 0.0))
+    ]
+
+    # Use the current stress or strain results to choose the new elements.
     minor_acuator_input_current_flat = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_acuator_input_current.as_single_values()}
     #minor_current_strain_flat = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_current_strain.as_single_values()}
 
@@ -474,7 +470,7 @@ def incremental_element_update_list(
 
 
     # Get the top N elements.
-    all_new = ( (elem_idx[0], elem_idx[1], val) for elem_idx, val in increased_prestrains.items())
+    all_new = ( (elem_idx[0], elem_idx[1], val) for elem_idx, val in increased_prestrains_OLD.items())
     all_new_sorted = sorted(all_new, key=priorty_strain_simple, reverse=True)
 
     top_n_new = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_new_sorted[0:num_allowed]}
@@ -808,6 +804,7 @@ class RunParams(typing.NamedTuple):
     scaling: Scaling
     averaging: Averaging
     relaxation: Relaxation
+    throttler: Throttler
     dilation_ratio: float
     n_steps_major: int
     elem_ratio_per_iter: float
@@ -856,7 +853,12 @@ def _make_prestrain_table(run_params: RunParams) -> Table:
 def main(run_params: RunParams):
 
     prestrain_table = _make_prestrain_table(run_params)
-    ratchet = Ratchet(prestrain_table, scaling=run_params.scaling, averaging=run_params.averaging, relaxation=run_params.relaxation)
+    ratchet = Ratchet(
+        prestrain_table,
+        scaling=run_params.scaling,
+        averaging=run_params.averaging,
+        relaxation=run_params.relaxation,
+        throttler=run_params.throttler)
 
     # Allow a maximum of 10% of the elements to yield in a given step.
     n_steps_minor_max = math.inf
@@ -1037,12 +1039,14 @@ def create_load_case(model, case_name):
 
 
 if __name__ == "__main__":
+    elem_ratio_per_iter = 0.01
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
     relaxation = PropRelax(0.5)
     scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
     averaging = AveInRadius(0.1)
+    throttler = Throttler(stopping_criterion=StoppingCriterion.element_count, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
     #averaging = NoAve()
 
     run_params = RunParams(
@@ -1051,9 +1055,10 @@ if __name__ == "__main__":
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
+        throttler=throttler,
         dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
         n_steps_major=5,
-        elem_ratio_per_iter=0.01,
+        elem_ratio_per_iter=elem_ratio_per_iter,
         existing_prestrain_priority_factor=5.0,
     )
 
