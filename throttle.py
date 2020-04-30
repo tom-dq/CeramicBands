@@ -5,11 +5,11 @@ import enum
 
 import typing
 
-from common_types import ElemVectorDict, T_Elem_Axis
+from common_types import ElemVectorDict, T_Elem_Axis, InitialSetupModelData
 
 
 class StoppingCriterion(enum.Enum):
-    element_count = enum.auto()
+    volume_ratio = enum.auto()
     new_prestrain_total = enum.auto()
 
 
@@ -23,6 +23,28 @@ class ElemStrainIncreaseData(typing.NamedTuple):
     axis: int
     proposed_prestrain_val: float
     old_prestrain_val: float
+
+    def proposed_abs_increase(self) -> float:
+        increase = self.proposed_prestrain_val - self.old_prestrain_val
+        return abs(increase)
+
+    def ranking_with_priority(self, existing_prestrain_priority_factor: float) -> float:
+        """Determines the priority of this strain increase for ranking purposes."""
+        return self.proposed_abs_increase() + existing_prestrain_priority_factor * abs(self.old_prestrain_val)
+
+    def throttle_contribution_full(
+            self,
+            init_data: InitialSetupModelData,
+            stopping_criterion: StoppingCriterion
+    ):
+        if stopping_criterion == StoppingCriterion.new_prestrain_total:
+            return self.proposed_abs_increase()
+
+        elif stopping_criterion == StoppingCriterion.volume_ratio:
+            return init_data.elem_volume[self.elem_num] / 2  # Divide by two since we may do X and Y prestrains
+
+        else:
+            raise ValueError(stopping_criterion)
 
 
 class Throttler:
@@ -39,14 +61,15 @@ class Throttler:
         self.shape = shape
         self.cutoff_value = cutoff_value
 
-
     def throttle(
             self,
-            increased_prestrains: typing.Dict[T_Elem_Axis, float],
-            minor_prev_prestrain: ElemVectorDict,
+            init_data: InitialSetupModelData,
+            increased_prestrains: typing.List[ElemStrainIncreaseData],
+    ) -> typing.Iterable[ElemStrainIncreaseData]:
 
-    ) -> float:
+        if self.shape == Shape.step:
+            accumulate
+            takewhile
 
-        raise NotImplementedError
-
+        # TODO - this is just the old behaviour
 

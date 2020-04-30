@@ -59,3 +59,9 @@ class ElemVectorDict(dict):
     def zeros_from_element_ids(cls, elems: typing.Iterable[T_Elem]) -> "ElemVectorDict":
         return ElemVectorDict( (elem, st7.Vector3(x=0.0, y=0.0, z=0.0) ) for elem in elems)
 
+
+class InitialSetupModelData(typing.NamedTuple):
+    node_xyz: typing.Dict[int, st7.Vector3]
+    elem_centroid: typing.Dict[int, st7.Vector3]
+    elem_conns: typing.Dict[int, typing.Tuple[int, ...]]
+    elem_volume: typing.Dict[int, float]

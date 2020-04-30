@@ -16,8 +16,8 @@ import shutil
 
 import config
 
-from averaging import Averaging, AveInRadius, NoAve
-from common_types import XY, ElemVectorDict, T_ResultDict
+from averaging import Averaging, AveInRadius
+from common_types import XY, ElemVectorDict, T_ResultDict, InitialSetupModelData
 from relaxation import Relaxation, PropRelax
 from scaling import Scaling, SpacedStepScaling
 from tables import Table
@@ -193,14 +193,6 @@ class Ratchet:
             proportion_non_zero = 0.0
 
         return f"Elem {max_elem}\tMaxStress {self.max_stress_ever}\tStrain {max_val}\tNonzero {proportion_non_zero:.3%}"
-
-
-
-class InitialSetupModelData(typing.NamedTuple):
-    node_xyz: typing.Dict[int, st7.Vector3]
-    elem_centroid: typing.Dict[int, st7.Vector3]
-    elem_conns: typing.Dict[int, typing.Tuple[int, ...]]
-    elem_volume: typing.Dict[int, float]
 
 
 class PrestrainUpdate(typing.NamedTuple):
@@ -395,6 +387,7 @@ def update_to_include_prestrains(
 
 
 def incremental_element_update_list(
+        init_data: InitialSetupModelData,
         previous_prestrain_update: PrestrainUpdate,
         num_allowed: int,
         existing_prestrain_priority_factor: float,
@@ -427,7 +420,7 @@ def incremental_element_update_list(
         ElemStrainIncreaseData(
             elem_num=key[0],
             axis=key[1],
-            proposed_prestrain_val=val,
+            proposed_prestrain_val=val * ratchet.scaling.get_x_scale_factor(key),
             old_prestrain_val=old_prestrains.get(key, 0.0)
         )
         for key, val in new_prestrains_all.items()
@@ -437,22 +430,6 @@ def incremental_element_update_list(
     # Use the current stress or strain results to choose the new elements.
     minor_acuator_input_current_flat = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_acuator_input_current.as_single_values()}
     #minor_current_strain_flat = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_current_strain.as_single_values()}
-
-    def priority_stress(elem_idx_val):
-        """Takes in a prestrain item. This decides which prestrains get updated this round."""
-        elem_idx = (elem_idx_val[0], elem_idx_val[1])
-        current_stress_unscaled = minor_acuator_input_current_flat[elem_idx]
-
-        existing_scale_ratio = abs(old_prestrains.get(elem_idx, 0.0)) / ratchet.table.max_abs_y
-        scale_factor = existing_prestrain_priority_factor * existing_scale_ratio
-        current_stress_scaled = current_stress_unscaled * ratchet.scaling.get_x_scale_factor(elem_idx) * scale_factor
-        return abs(current_stress_scaled)
-
-    def priority_strain(elem_idx_val):
-        elem_idx = (elem_idx_val[0], elem_idx_val[1])
-        current_strain_results_scaled = minor_current_strain_flat[elem_idx] * ratchet.scaling.get_x_scale_factor(elem_idx)
-        current_applied_strain = existing_prestrain_priority_factor * old_prestrains.get(elem_idx, 0.0)
-        return abs(current_strain_results_scaled + current_applied_strain)
 
     def priorty_strain_simple(elem_idx_val):
         elem_idx = (elem_idx_val[0], elem_idx_val[1])
@@ -468,10 +445,14 @@ def incremental_element_update_list(
         # Give a boost to the already-strained elements
         return abs(proposed_new_prestrain) + existing_prestrain_priority_factor * abs(strain_previous)
 
-
     # Get the top N elements.
     all_new = ( (elem_idx[0], elem_idx[1], val) for elem_idx, val in increased_prestrains_OLD.items())
     all_new_sorted = sorted(all_new, key=priorty_strain_simple, reverse=True)
+
+    increased_prestrains.sort(
+        reverse=True,
+        key=lambda elem_strain_inc_data: elem_strain_inc_data.ranking_with_priority(existing_prestrain_priority_factor)
+    )
 
     top_n_new = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_new_sorted[0:num_allowed]}
     new_count = len(top_n_new)
@@ -961,6 +942,7 @@ def main(run_params: RunParams):
                     write_out_to_db(db, init_data, step_num_major, step_num_minor, results, current_result_frame, prestrain_update)
 
                 prestrain_update = incremental_element_update_list(
+                    init_data=init_data,
                     previous_prestrain_update=prestrain_update,
                     num_allowed=n_updates_per_iter,
                     existing_prestrain_priority_factor=run_params.existing_prestrain_priority_factor,
@@ -1046,7 +1028,7 @@ if __name__ == "__main__":
     scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
     averaging = AveInRadius(0.1)
-    throttler = Throttler(stopping_criterion=StoppingCriterion.element_count, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
+    throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
     #averaging = NoAve()
 
     run_params = RunParams(

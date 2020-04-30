@@ -11,7 +11,7 @@ class Scaling:
     """Scales the "Yield Stress" according to some criterion."""
     @abc.abstractmethod
     def get_x_scale_factor(self, scale_key: T_ScaleKey) -> float:
-        raise NotImplementedError
+        raise NotImplementedError()
 
     def __str__(self):
         return self.__class__.__name__
@@ -59,6 +59,10 @@ class CentroidAwareScaling(Scaling):
     _y_min: float
     _y_max: float
     _y_depth: float
+
+    @abc.abstractmethod
+    def _scale_factor_one_elem(self, cent: st7.Vector3):
+        raise NotImplementedError()
 
     def assign_centroids(self, elem_centroid: typing.Dict[int, st7.Vector3]):
         # Find out how deep the elements go.
