@@ -13,6 +13,16 @@ from holoviews.operation.datashader import datashade, shade, dynspread, rasteriz
 import history
 
 
+FIG_SIZE_UNI = (2000, 1350)
+FIG_SIZE_LAPTOP = (1200, 750)
+
+FIG_SIZE = FIG_SIZE_UNI
+
+
+
+#hv.Image((range(10), range(10), np.random.rand(10, 10)), datatype=['xarray']).data.hvplot.image('x', 'y', label='test').options(height=1000)
+
+
 holoviews.extension('bokeh')
 
 class ContourView(typing.NamedTuple):
@@ -47,19 +57,33 @@ def make_quadmesh(
     # The values are element centred.
     Z = numpy.zeros(shape=struct_data.elem_indices.shape)
 
+
+
     contour_val_skeleton = history.ContourValue._all_nones()._replace(result_case_num=contour_view.db_case_num, contour_key_num=contour_view.contour_key.value)
     contour_vals = {contour_val.elem_num: contour_val.value for contour_val in db.get_all_matching(contour_val_skeleton)}
 
+    # TEMP - to get rasterize to work, need to make this node-centred.
+    Z_nodal_shape = (4,) + struct_data.node_indices.shape
+    Z_nodal = numpy.empty(shape = Z_nodal_shape)
+    Z_nodal[:] = numpy.nan
 
     for idx_x, along_y in enumerate(struct_data.elem_indices):
         for idx_y, elem_num in enumerate(along_y):
-            Z[idx_x, idx_y] = contour_vals.get(elem_num, 0.0)
+            c_val = contour_vals.get(elem_num, 0.0)
+            Z[idx_x, idx_y] = c_val
 
-    qmesh = holoviews.QuadMesh((X, Y, Z), vdims='level', group=contour_view.title)
+            for layer, (z_nodal_idx_x, z_nodal_idx_y) in enumerate(itertools.product( (idx_x, idx_x+1), (idx_y, idx_y+1) )):
+                Z_nodal[layer, z_nodal_idx_x, z_nodal_idx_y] = c_val
+
+    Z_nodal_flat = numpy.nanmean(Z_nodal, axis=0)
+
+
+    qmesh = holoviews.QuadMesh((X, Y, Z_nodal_flat), vdims='level', group=contour_view.title)
     qmesh.options(cmap='viridis')
 
-    qmesh.opts(aspect='equal', line_width=0.1, padding=0.1, colorbar=True)
+    qmesh.opts(aspect='equal', line_width=0.1, padding=0.1, colorbar=True, width=FIG_SIZE[0], height=FIG_SIZE[1])
 
+    qmesh.data.hvplot.image('x', 'y', label=contour_view.title).options( width=FIG_SIZE[0], height=FIG_SIZE[1])
     return qmesh
 
 
@@ -244,9 +268,6 @@ def get_regular_mesh_data(db: history.DB) -> StructuredMeshData:
     )
 
 
-
-
-
 def make_dashboard(db: history.DB):
 
     cases = db.get_all(history.ResultCase)
@@ -255,10 +276,16 @@ def make_dashboard(db: history.DB):
     plot_dict = {}
     for contour_view in all_views:
         qmesh = make_quadmesh(db, contour_view)
-        plot_dict[contour_view] = datashade(qmesh)
+        #plot_dict[contour_view] = rasterize(qmesh)
 
-    hmap = holoviews.HoloMap(plot_dict, kdims=list(contour_view._fields))
-    panel.panel(hmap).show()
+    # hmap = holoviews.HoloMap(plot_dict, kdims=list(contour_view._fields))
+
+    ds_mesh = datashade(qmesh)
+    ds_mesh.opts(plot=dict(width=500, height=500))
+    ds_mesh.options(width=1000, height=500)
+    p = panel.panel(ds_mesh)
+
+    p.show()
 
 
 
