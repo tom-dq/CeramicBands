@@ -65,3 +65,4 @@ class InitialSetupModelData(typing.NamedTuple):
     elem_centroid: typing.Dict[int, st7.Vector3]
     elem_conns: typing.Dict[int, typing.Tuple[int, ...]]
     elem_volume: typing.Dict[int, float]
+    elem_volume_ratio: typing.Dict[int, float]

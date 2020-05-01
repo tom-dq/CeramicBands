@@ -46,6 +46,19 @@ class Relaxation:
             del self._history[key]
 
 
+class NoRelax(Relaxation):
+    """Do nothing - just pass through the full value."""
+
+    def __init__(self):
+        self._history = dict()
+
+    def __str__(self):
+        return f"{self.__class__.__name__}()"
+
+    def relaxed(self, _, new_value) -> float:
+        return new_value
+
+
 class PropRelax(Relaxation):
     """Applies some relaxation to the ramp-up of the pre-strain, for example, limit it to 50% of the raw increase."""
     _incremental_ratio: float = None

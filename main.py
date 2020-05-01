@@ -18,7 +18,7 @@ import config
 
 from averaging import Averaging, AveInRadius
 from common_types import XY, ElemVectorDict, T_ResultDict, InitialSetupModelData
-from relaxation import Relaxation, PropRelax
+from relaxation import Relaxation, PropRelax, NoRelax
 from scaling import Scaling, SpacedStepScaling
 from tables import Table
 from throttle import Throttler, StoppingCriterion, Shape, ElemStrainIncreaseData
@@ -410,7 +410,10 @@ def incremental_element_update_list(
         all_res = ratchet.get_all_values(lock_in=False, elem_results=res_dict)
         return {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_res.as_single_values()}
 
-    #old_prestrains = candidate_strains(minor_acuator_input_prev)
+
+    # Use the current stress or strain results to choose the new elements.
+    minor_acuator_input_current_flat = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_acuator_input_current.as_single_values()}
+
     new_prestrains_all = candidate_strains(minor_acuator_input_current)
 
     old_prestrains = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_prev_prestrain.as_single_values()}
@@ -421,14 +424,13 @@ def incremental_element_update_list(
             elem_num=key[0],
             axis=key[1],
             proposed_prestrain_val=val * ratchet.scaling.get_x_scale_factor(key),
-            old_prestrain_val=old_prestrains.get(key, 0.0)
+            old_prestrain_val=old_prestrains.get(key, 0.0),
+            result_strain_val=minor_acuator_input_current_flat[key] * ratchet.scaling.get_x_scale_factor(key),
         )
         for key, val in new_prestrains_all.items()
         if abs(val) > abs(old_prestrains.get(key, 0.0))
     ]
 
-    # Use the current stress or strain results to choose the new elements.
-    minor_acuator_input_current_flat = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_acuator_input_current.as_single_values()}
     #minor_current_strain_flat = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_current_strain.as_single_values()}
 
     def priorty_strain_simple(elem_idx_val):
@@ -454,7 +456,10 @@ def incremental_element_update_list(
         key=lambda elem_strain_inc_data: elem_strain_inc_data.ranking_with_priority(existing_prestrain_priority_factor)
     )
 
-    top_n_new = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_new_sorted[0:num_allowed]}
+    new_prestrains_subset = list(ratchet.throttler.throttle(init_data, increased_prestrains))
+    top_n_new = { (elem_strain_inc_data.elem_num, elem_strain_inc_data.axis): elem_strain_inc_data.proposed_prestrain_val for elem_strain_inc_data in new_prestrains_subset }
+
+    # top_n_new = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_new_sorted[0:num_allowed]}
     new_count = len(top_n_new)
     left_over_count = max(0, len(all_new_sorted) - new_count)
 
@@ -730,6 +735,9 @@ def initial_setup(model: st7.St7Model, initial_result_frame: ResultFrame) -> Ini
         plate_num in model.entity_numbers(st7.Entity.tyPLATE)
     }
 
+    total_volume = sum(elem_volume.values())
+    elem_volume_ratio = {elem: vol/total_volume for elem, vol in elem_volume.items()}
+
     if initial_result_frame.configuration.solver == st7.SolverType.stNonlinearStatic:
         # If there's no first increment, create one.
         starting_incs = model.St7GetNumNLAIncrements(STAGE)
@@ -771,11 +779,13 @@ def initial_setup(model: st7.St7Model, initial_result_frame: ResultFrame) -> Ini
     model.St7SetResultFileName(initial_result_frame.result_file)
     model.St7SetStaticRestartFile(initial_result_frame.restart_file)
 
+
     return InitialSetupModelData(
         node_xyz=node_xyz,
         elem_centroid=elem_centroid,
         elem_conns=elem_conns,
         elem_volume=elem_volume,
+        elem_volume_ratio=elem_volume_ratio,
     )
 
 
@@ -848,8 +858,8 @@ def main(run_params: RunParams):
     working_dir = directories.get_unique_sub_dir(config.active_config.fn_working_image_base)
 
     fn_st7 = working_dir / "Model.st7"
-    fn_db = working_dir / "history.db" \
-                          ""
+    fn_db = working_dir / "history.db"
+
     shutil.copy2(config.active_config.fn_st7_base, fn_st7)
 
     current_result_frame = ResultFrame(
@@ -1021,14 +1031,17 @@ def create_load_case(model, case_name):
 
 
 if __name__ == "__main__":
-    elem_ratio_per_iter = 0.01
+    dilation_ratio = 0.008   # 0.8% expansion, according to Jerome
+    elem_ratio_per_iter = 0.0002
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
-    relaxation = PropRelax(0.5)
+    #relaxation = PropRelax(0.5)
+    relaxation = NoRelax()
     scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
     averaging = AveInRadius(0.1)
-    throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
+    # throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
+    throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
     #averaging = NoAve()
 
     run_params = RunParams(
@@ -1038,7 +1051,7 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        dilation_ratio=0.008,  # 0.8% expansion, according to Jerome
+        dilation_ratio=dilation_ratio,
         n_steps_major=5,
         elem_ratio_per_iter=elem_ratio_per_iter,
         existing_prestrain_priority_factor=5.0,
