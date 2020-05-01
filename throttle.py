@@ -75,8 +75,14 @@ class ElemStrainIncreaseData(typing.NamedTuple):
         """Determines the priority of this strain increase for ranking purposes."""
 
         return (
+                existing_prestrain_priority_factor * abs(self.old_prestrain_val) + # Optionally boost elements which were already prestrained.
+                abs(self.proposed_prestrain_val)
+        )
+
+        return (
             existing_prestrain_priority_factor * abs(self.old_prestrain_val) +  # Optionally boost elements which were already prestrained.
-            self.result_strain_val + abs(self.old_prestrain_val)  # This is the old "total" strain.
+            self.result_strain_val + abs(self.old_prestrain_val) +  # This is the old "total" strain.
+            self.proposed_abs_increase()
         )
 
     def throttle_contribution_full(
@@ -141,8 +147,6 @@ class Throttler:
             increased_prestrains: typing.List[ElemStrainIncreaseData],
     ) -> typing.List[ElemStrainIncreaseData]:
 
-        running_total = 0.0
-
         if self.shape == Shape.step:
             return self._go_to_cutoff_step(init_data, increased_prestrains)
 
@@ -172,8 +176,6 @@ class Throttler:
             mid_guess = (lower_bound + upper_bound) // 2
             increased_prestrains_guess = increased_prestrains[0:mid_guess]
             guess_total, increased_prestrains_head = self._running_total_and_list(False, init_data, increased_prestrains_guess)
-
-            print(f"lower={lower_bound}\tupper={upper_bound}\tat [{mid_guess}], total={guess_total}\ttarget={self.cutoff_value}")
 
             if guess_total > self.cutoff_value:
                 # Have too much - need a shorter list.

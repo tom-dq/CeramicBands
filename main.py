@@ -19,7 +19,7 @@ import config
 from averaging import Averaging, AveInRadius
 from common_types import XY, ElemVectorDict, T_ResultDict, InitialSetupModelData
 from relaxation import Relaxation, PropRelax, NoRelax
-from scaling import Scaling, SpacedStepScaling
+from scaling import Scaling, SpacedStepScaling, SingleHoleCentre
 from tables import Table
 from throttle import Throttler, StoppingCriterion, Shape, ElemStrainIncreaseData
 import history
@@ -32,7 +32,7 @@ import state_tracker
 random.seed(123)
 
 RATCHET_AT_INCREMENTS = True
-DEBUG_CASE_FOR_EVERY_INCREMENT = False
+DEBUG_CASE_FOR_EVERY_INCREMENT = True
 RECORD_HISTORY = True
 DONT_MAKE_MODEL_WINDOW = False
 
@@ -431,8 +431,6 @@ def incremental_element_update_list(
         if abs(val) > abs(old_prestrains.get(key, 0.0))
     ]
 
-    #minor_current_strain_flat = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_current_strain.as_single_values()}
-
     def priorty_strain_simple(elem_idx_val):
         elem_idx = (elem_idx_val[0], elem_idx_val[1])
         # Assuming a strain actuation, the input is the true actuator value...
@@ -448,20 +446,20 @@ def incremental_element_update_list(
         return abs(proposed_new_prestrain) + existing_prestrain_priority_factor * abs(strain_previous)
 
     # Get the top N elements.
-    all_new = ( (elem_idx[0], elem_idx[1], val) for elem_idx, val in increased_prestrains_OLD.items())
-    all_new_sorted = sorted(all_new, key=priorty_strain_simple, reverse=True)
-
     increased_prestrains.sort(
         reverse=True,
         key=lambda elem_strain_inc_data: elem_strain_inc_data.ranking_with_priority(existing_prestrain_priority_factor)
     )
 
     new_prestrains_subset = list(ratchet.throttler.throttle(init_data, increased_prestrains))
-    top_n_new = { (elem_strain_inc_data.elem_num, elem_strain_inc_data.axis): elem_strain_inc_data.proposed_prestrain_val for elem_strain_inc_data in new_prestrains_subset }
+
+    top_n_new = {
+        (elem_strain_inc_data.elem_num, elem_strain_inc_data.axis): elem_strain_inc_data.proposed_prestrain_val
+        for elem_strain_inc_data in new_prestrains_subset }
 
     # top_n_new = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_new_sorted[0:num_allowed]}
     new_count = len(top_n_new)
-    left_over_count = max(0, len(all_new_sorted) - new_count)
+    left_over_count = max(0, len(increased_prestrains) - new_count)
 
     # Build the new pre-strain dictionary out of old and new values.
     # old_strain_single_vals = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_prev_strain.as_single_values()}
@@ -519,6 +517,7 @@ class ResultFrame(typing.NamedTuple):
     result_case_num: int  # Result case number in the current file - this may be reused.
     global_result_case_num: int   # Case number which is unique across all files (if result files are split).
     load_time_table: typing.Optional[Table]
+    prev_result_case: typing.Optional["ResultFrame"] # Store this with the full chain of history - just go one step back.
 
     def __str__(self):
         """Trimmed down version..."""
@@ -532,10 +531,13 @@ class ResultFrame(typing.NamedTuple):
         else:
             proposed_new_result_case_num = self.result_case_num
 
+        this_case_with_no_history = self._replace(prev_result_case=None)
+
         if self.configuration.solver == st7.SolverType.stNonlinearStatic:
             return self._replace(
                 result_case_num=proposed_new_result_case_num,
-                global_result_case_num=self.global_result_case_num + 1
+                global_result_case_num=self.global_result_case_num + 1,
+                prev_result_case=this_case_with_no_history,
             )
 
         elif self.configuration.solver == st7.SolverType.stQuasiStatic:
@@ -560,40 +562,13 @@ class ResultFrame(typing.NamedTuple):
 
             new_table_working = self.load_time_table.with_appended_datapoint(final_table_datapoint_A)
             new_table = new_table_working.with_appended_datapoint(final_table_datapoint_B)
-            return working_new_frame._replace(load_time_table=new_table)
-
-        else:
-            raise ValueError(self.configuration.solver)
-
-    def get_previous_result_frame(self) -> "ResultFrame":
-        if self.global_result_case_num < 2:
-            raise ValueError("This is the first one!")
-
-        if self.configuration.solver == st7.SolverType.stNonlinearStatic:
-            return self._replace(
-                result_case_num=self.result_case_num - 1,
-                global_result_case_num=self.global_result_case_num - 1,
+            return working_new_frame._replace(
+                load_time_table=new_table,
+                prev_result_case=this_case_with_no_history,
             )
 
-        elif self.configuration.solver == st7.SolverType.stQuasiStatic:
-            need_previous_result_file = self.result_case_num == 1
-
-            if need_previous_result_file:
-                return self._replace(
-                    result_case_num=self.configuration.qsa_steps_per_file,
-                    result_file_index=self.result_file_index - 1,
-                    global_result_case_num=self.global_result_case_num - 1,
-                )
-
-            else:
-                return self._replace(
-                    result_case_num=self.result_case_num - 1,
-                    global_result_case_num=self.global_result_case_num - 1,
-                )
-
         else:
             raise ValueError(self.configuration.solver)
-
 
     @property
     def result_file(self) -> pathlib.Path:
@@ -653,7 +628,7 @@ def add_increment(model: st7.St7Model, result_frame: ResultFrame, this_load_fact
 
 
 def set_restart_for(model: st7.St7Model, result_frame: ResultFrame):
-    previous_result_frame = result_frame.get_previous_result_frame()
+    previous_result_frame = result_frame.prev_result_case
     if result_frame.configuration.solver == st7.SolverType.stNonlinearStatic:
         model.St7SetNLAInitial(previous_result_frame.result_file, previous_result_frame.result_case_num)
 
@@ -868,7 +843,8 @@ def main(run_params: RunParams):
         result_file_index=0,
         result_case_num=1,
         global_result_case_num=1,
-        load_time_table=Table([XY(0.0, 0.0), XY(config.active_config.qsa_time_step_size, 0.0)])
+        load_time_table=Table([XY(0.0, 0.0), XY(config.active_config.qsa_time_step_size, 0.0)]),
+        prev_result_case=None,
     )
 
     with open(working_dir / "Meta.txt", "w") as f_meta:
@@ -980,7 +956,7 @@ def main(run_params: RunParams):
                         prestrain_load_case_num = create_load_case(model, step_name())
 
                     # Add the next step
-                    current_result_frame = add_increment(model, current_result_frame, this_load_factor, step_name(), advance_result_case=not DEBUG_CASE_FOR_EVERY_INCREMENT)
+                    current_result_frame = add_increment(model, current_result_frame, this_load_factor, step_name(), advance_result_case=True)
                     set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
 
                     # Make sure we're starting from the last case
@@ -1032,14 +1008,15 @@ def create_load_case(model, case_name):
 
 if __name__ == "__main__":
     dilation_ratio = 0.008   # 0.8% expansion, according to Jerome
-    elem_ratio_per_iter = 0.0002
+    elem_ratio_per_iter = 0.00002
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
     #relaxation = PropRelax(0.5)
     relaxation = NoRelax()
-    scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
+    #scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
+    scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.051)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
-    averaging = AveInRadius(0.1)
+    averaging = AveInRadius(0.11)
     # throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
     throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
     #averaging = NoAve()
@@ -1052,7 +1029,7 @@ if __name__ == "__main__":
         relaxation=relaxation,
         throttler=throttler,
         dilation_ratio=dilation_ratio,
-        n_steps_major=5,
+        n_steps_major=2,
         elem_ratio_per_iter=elem_ratio_per_iter,
         existing_prestrain_priority_factor=5.0,
     )

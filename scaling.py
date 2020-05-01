@@ -59,6 +59,7 @@ class CentroidAwareScaling(Scaling):
     _y_min: float
     _y_max: float
     _y_depth: float
+    _x_cent: float
 
     @abc.abstractmethod
     def _scale_factor_one_elem(self, cent: st7.Vector3):
@@ -68,6 +69,7 @@ class CentroidAwareScaling(Scaling):
         # Find out how deep the elements go.
         self._y_max = max(xyz.y for xyz in elem_centroid.values())
         self._y_min = self._y_max - self._y_depth
+        self._x_cent = 0.5 * (min(xyz.x for xyz in elem_centroid.values()) + max(xyz.x for xyz in elem_centroid.values()))
 
         for elem_num, elem_cent in elem_centroid.items():
             self._elem_scale_fact[elem_num] = self._scale_factor_one_elem(elem_cent)
@@ -153,3 +155,39 @@ class SpacedStepScaling(CentroidAwareScaling):
 
     def __str__(self):
         return f"{self.__class__.__name__}(spacing={self._spacing}, amplitude={self._amplitude}, y_depth={self._y_depth}, hole_width={self._hole_width})"
+
+
+class SingleHoleCentre(CentroidAwareScaling):
+    """One hole, in the middle."""
+
+    _hole_width: float
+
+    def __init__(self, y_depth: float, amplitude: float, hole_width: float):
+        self._elem_scale_fact = dict()
+        self._y_depth = y_depth
+        self._amplitude = amplitude
+        self._hole_width = hole_width
+
+    def _scale_factor_one_elem(self, cent: st7.Vector3):
+        x, y, _ = cent[:]
+        if y < self._y_min:
+            real_amplitude = 0.0
+
+        elif y < self._y_max:
+            real_amplitude = self._amplitude * (y-self._y_min) / (self._y_max - self._y_min)
+
+        else:
+            real_amplitude = self._amplitude
+
+
+        in_hole = 2 * abs(x - self._x_cent) < self._hole_width
+
+        if in_hole:
+            return 1.0 + real_amplitude
+
+        else:
+            return 1.0
+
+
+    def __str__(self):
+        return f"{self.__class__.__name__}(y_depth={self._y_depth}, amplitude={self._amplitude}, hole_width={self._hole_width}, )"
