@@ -19,7 +19,7 @@ import config
 from averaging import Averaging, AveInRadius, NoAve
 from common_types import XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST
 from relaxation import Relaxation, NoRelax
-from scaling import Scaling, SingleHoleCentre
+from scaling import Scaling, SingleHoleCentre, SpacedStepScaling
 from tables import Table
 from throttle import Throttler, StoppingCriterion, Shape, ElemStrainIncreaseData
 import history
@@ -31,8 +31,8 @@ import state_tracker
 random.seed(123)
 
 RATCHET_AT_INCREMENTS = True
-DEBUG_CASE_FOR_EVERY_INCREMENT = True
-RECORD_HISTORY = True
+DEBUG_CASE_FOR_EVERY_INCREMENT = False
+RECORD_RESULT_HISTORY = False
 DONT_MAKE_MODEL_WINDOW = False
 
 LOAD_CASE_BENDING = 1
@@ -265,6 +265,9 @@ def write_out_screenshot(model_window: st7.St7ModelWindow, current_result_frame:
 
 
 def write_out_to_db(db: history.DB, init_data: InitialSetupModelData, step_num_major, step_num_minor, results: st7.St7Results, current_result_frame: "ResultFrame", prestrain_update: PrestrainUpdate):
+
+    if not RECORD_RESULT_HISTORY:
+        return
 
     # Main case data
     db_res_case = history.ResultCase(
@@ -1042,15 +1045,15 @@ def create_load_case(model, case_name):
 
 
 if __name__ == "__main__":
-    dilation_ratio = 0.008   # 0.8% expansion, according to Jerome
-    elem_ratio_per_iter = 0.000001
+    dilation_ratio = 0.01   # 0.8% expansion, according to Jerome
+    elem_ratio_per_iter = 0.00005
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
     #relaxation = PropRelax(0.5)
     relaxation = NoRelax()
 
-    #scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
-    scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.03)
+    scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.03)
+    # scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.03)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
     # averaging = AveInRadius(0.05)
@@ -1062,15 +1065,15 @@ if __name__ == "__main__":
 
     run_params = RunParams(
         actuator=Actuator.e_local,
-        stress_end=425.0,
+        stress_end=800.0,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
         dilation_ratio=dilation_ratio,
-        n_steps_major=20,
+        n_steps_major=50,
         elem_ratio_per_iter=elem_ratio_per_iter,
-        existing_prestrain_priority_factor=0.1,
+        existing_prestrain_priority_factor=2,
     )
 
     main(run_params)
