@@ -16,7 +16,7 @@ import shutil
 
 import config
 
-from averaging import Averaging, AveInRadius
+from averaging import Averaging, AveInRadius, NoAve
 from common_types import XY, ElemVectorDict, T_ResultDict, InitialSetupModelData
 from relaxation import Relaxation, PropRelax, NoRelax
 from scaling import Scaling, SpacedStepScaling, SingleHoleCentre
@@ -27,6 +27,8 @@ import history
 import directories
 import state_tracker
 
+#TEMP_ELEMS_OF_INTEREST = {1983, 1992, 1993}
+TEMP_ELEMS_OF_INTEREST = {4001, 4002}
 
 # To make reproducible
 random.seed(123)
@@ -134,6 +136,12 @@ class Ratchet:
         idx_to_elem_to_unaveraged = collections.defaultdict(dict)
 
         for elem_id, idx, stress_raw in elem_results.as_single_values():
+
+            if TEMP_ELEMS_OF_INTEREST:
+                print("Unaveraged:")
+                if elem_id in TEMP_ELEMS_OF_INTEREST and idx == 0:
+                    print(elem_id, stress_raw, sep='\t')
+
             if lock_in:
                 self.max_stress_ever = max(self.max_stress_ever, stress_raw)
 
@@ -161,6 +169,11 @@ class Ratchet:
 
                 ratchet_value = self.update_minimum(lock_in, ratchet_key, prestrain_val)
                 single_vals.append( (elem_id, idx, ratchet_value))
+
+                if TEMP_ELEMS_OF_INTEREST:
+                    print("Averaged:")
+                    if elem_id in TEMP_ELEMS_OF_INTEREST and idx == 0:
+                        print(elem_id, prestrain_val, ratchet_value, sep='\t')
 
         # self.min_y_so_far is now updated - compose that back into the return results.
         return ElemVectorDict.from_single_values(False, single_vals)
@@ -410,7 +423,6 @@ def incremental_element_update_list(
         all_res = ratchet.get_all_values(lock_in=False, elem_results=res_dict)
         return {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_res.as_single_values()}
 
-
     # Use the current stress or strain results to choose the new elements.
     minor_acuator_input_current_flat = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_acuator_input_current.as_single_values()}
 
@@ -423,7 +435,7 @@ def incremental_element_update_list(
         ElemStrainIncreaseData(
             elem_num=key[0],
             axis=key[1],
-            proposed_prestrain_val=val * ratchet.scaling.get_x_scale_factor(key),
+            proposed_prestrain_val=val,
             old_prestrain_val=old_prestrains.get(key, 0.0),
             result_strain_val=minor_acuator_input_current_flat[key] * ratchet.scaling.get_x_scale_factor(key),
         )
@@ -431,19 +443,36 @@ def incremental_element_update_list(
         if abs(val) > abs(old_prestrains.get(key, 0.0))
     ]
 
-    def priorty_strain_simple(elem_idx_val):
-        elem_idx = (elem_idx_val[0], elem_idx_val[1])
-        # Assuming a strain actuation, the input is the true actuator value...
+    if TEMP_ELEMS_OF_INTEREST:
+        old_TEMP = {elem_idx: val for elem_idx, val in old_prestrains.items() if elem_idx[0] in TEMP_ELEMS_OF_INTEREST}
+        res_TEMP = {elem_idx: val for elem_idx, val in minor_acuator_input_current_flat.items() if elem_idx[0] in TEMP_ELEMS_OF_INTEREST}
+        new_TEMP = {elem_idx: val for elem_idx, val in new_prestrains_all.items() if elem_idx[0] in TEMP_ELEMS_OF_INTEREST}
+        scale_facts_TEMP = {elem_idx: ratchet.scaling.get_x_scale_factor(elem_idx) for elem_idx in new_TEMP.keys()}
+        increased_prestrains_TEMP = [elem_strain_inc for elem_strain_inc in increased_prestrains if elem_strain_inc.elem_num in TEMP_ELEMS_OF_INTEREST]
 
-        proposed_new_prestrain = minor_acuator_input_current_flat[elem_idx] * ratchet.scaling.get_x_scale_factor(elem_idx)
 
-        # Previous pre-strain will be zero if the element is:
-        # - zero if the element is undialated.
-        # - negative if the element is dialated.
-        strain_previous = old_prestrains.get(elem_idx, 0.0)
+        all_dicts = (old_TEMP, res_TEMP, scale_facts_TEMP, new_TEMP)
+        all_keys = set()
+        for d in all_dicts:
+            rel_keys = [k for k in d.keys() if k[1] == 0]
+            all_keys.update(rel_keys)
 
-        # Give a boost to the already-strained elements
-        return abs(proposed_new_prestrain) + existing_prestrain_priority_factor * abs(strain_previous)
+        all_bits = ['..', 'OldPS', 'ResStrain', 'Scale', 'NewPS']
+        print(*all_bits, sep='\t')
+        def print_line(k):
+            bits = [d.get(k, '..') for d in all_dicts]
+            all_bits = [k] + bits
+            print(*all_bits, sep='\t')
+
+        for k in all_keys:
+            print_line(k)
+
+        print("increased_prestrains_TEMP:")
+        for inc in increased_prestrains_TEMP:
+            print(inc)
+
+        print()
+
 
     # Get the top N elements.
     increased_prestrains.sort(
@@ -983,9 +1012,9 @@ def main(run_params: RunParams):
                     return
 
             # Update the ratchet with the equilibrated results.
-            for elem, idx, val in prestrain_update.elem_prestrains.as_single_values():
-                scale_key = (elem, idx)
-                ratchet.update_minimum(True, scale_key, val)
+            # for elem, idx, val in prestrain_update.elem_prestrains.as_single_values():
+            #     scale_key = (elem, idx)
+            #    ratchet.update_minimum(True, scale_key, val)
 
             previous_load_factor = this_load_factor
 
@@ -1013,13 +1042,17 @@ if __name__ == "__main__":
     #relaxation = LimitedIncreaseRelaxation(0.01)
     #relaxation = PropRelax(0.5)
     relaxation = NoRelax()
+
     #scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
-    scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.051)
+    scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.11)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
+
     averaging = AveInRadius(0.11)
+    # averaging = NoAve()
+
     # throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
     throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
-    #averaging = NoAve()
+
 
     run_params = RunParams(
         actuator=Actuator.e_local,

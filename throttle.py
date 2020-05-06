@@ -76,7 +76,8 @@ class ElemStrainIncreaseData(typing.NamedTuple):
 
         return (
                 existing_prestrain_priority_factor * abs(self.old_prestrain_val) + # Optionally boost elements which were already prestrained.
-                abs(self.proposed_prestrain_val)
+                abs(self.proposed_prestrain_val) +
+                0.1 * self.result_strain_val
         )
 
         return (
