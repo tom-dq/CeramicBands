@@ -17,18 +17,15 @@ import shutil
 import config
 
 from averaging import Averaging, AveInRadius, NoAve
-from common_types import XY, ElemVectorDict, T_ResultDict, InitialSetupModelData
-from relaxation import Relaxation, PropRelax, NoRelax
-from scaling import Scaling, SpacedStepScaling, SingleHoleCentre
+from common_types import XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST
+from relaxation import Relaxation, NoRelax
+from scaling import Scaling, SingleHoleCentre
 from tables import Table
 from throttle import Throttler, StoppingCriterion, Shape, ElemStrainIncreaseData
 import history
 
 import directories
 import state_tracker
-
-#TEMP_ELEMS_OF_INTEREST = {1983, 1992, 1993}
-TEMP_ELEMS_OF_INTEREST = {4001, 4002}
 
 # To make reproducible
 random.seed(123)
@@ -135,19 +132,17 @@ class Ratchet:
 
         idx_to_elem_to_unaveraged = collections.defaultdict(dict)
 
-        for elem_id, idx, stress_raw in elem_results.as_single_values():
+        if TEMP_ELEMS_OF_INTEREST:
+            print("Unaveraged:")
 
-            if TEMP_ELEMS_OF_INTEREST:
-                print("Unaveraged:")
-                if elem_id in TEMP_ELEMS_OF_INTEREST and idx == 0:
-                    print(elem_id, stress_raw, sep='\t')
+        for elem_id, idx, result_strain_raw in elem_results.as_single_values():
 
             if lock_in:
-                self.max_stress_ever = max(self.max_stress_ever, stress_raw)
+                self.max_stress_ever = max(self.max_stress_ever, result_strain_raw)
 
             # Apply scaling
             scale_key = (elem_id, idx)
-            stress_scaled = self.scaling.get_x_scale_factor(scale_key) * stress_raw
+            stress_scaled = self.scaling.get_x_scale_factor(scale_key) * result_strain_raw
 
             # Do the stress-to-prestrain lookup
             strain_raw = self.table.interp(stress_scaled)
@@ -155,11 +150,23 @@ class Ratchet:
             # Apply relaxation
             strain_relaxed = self._relaxation.relaxed(scale_key, strain_raw)
 
+            # The unaveraged results take the ratchet value (so any locked in pre-strain is included in the averaging).
+            strain_relaxed_ratcheted = self.update_minimum(False, scale_key, strain_relaxed)
+
+            if TEMP_ELEMS_OF_INTEREST:
+                if elem_id in TEMP_ELEMS_OF_INTEREST and idx == 0:
+                    print(elem_id, result_strain_raw, strain_raw, strain_relaxed, strain_relaxed_ratcheted, sep='\t')
+
+
             # Save the unaveraged results
-            idx_to_elem_to_unaveraged[idx][elem_id] = strain_relaxed
+            idx_to_elem_to_unaveraged[idx][elem_id] = strain_relaxed_ratcheted
 
         # Perform averaging on a per-index basis (so the x-prestrain is only averaged with other x-prestrain.)
         single_vals = []
+
+        if TEMP_ELEMS_OF_INTEREST:
+            print("Averaged:")
+
         for idx, unaveraged in idx_to_elem_to_unaveraged.items():
             averaged = self._averaging.average_results(unaveraged)
 
@@ -171,7 +178,6 @@ class Ratchet:
                 single_vals.append( (elem_id, idx, ratchet_value))
 
                 if TEMP_ELEMS_OF_INTEREST:
-                    print("Averaged:")
                     if elem_id in TEMP_ELEMS_OF_INTEREST and idx == 0:
                         print(elem_id, prestrain_val, ratchet_value, sep='\t')
 
@@ -1037,18 +1043,18 @@ def create_load_case(model, case_name):
 
 if __name__ == "__main__":
     dilation_ratio = 0.008   # 0.8% expansion, according to Jerome
-    elem_ratio_per_iter = 0.00002
+    elem_ratio_per_iter = 0.000001
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
     #relaxation = PropRelax(0.5)
     relaxation = NoRelax()
 
     #scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.051)
-    scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.11)
+    scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.03)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
-    averaging = AveInRadius(0.11)
-    # averaging = NoAve()
+    # averaging = AveInRadius(0.05)
+    averaging = NoAve()
 
     # throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
     throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
@@ -1062,9 +1068,9 @@ if __name__ == "__main__":
         relaxation=relaxation,
         throttler=throttler,
         dilation_ratio=dilation_ratio,
-        n_steps_major=2,
+        n_steps_major=20,
         elem_ratio_per_iter=elem_ratio_per_iter,
-        existing_prestrain_priority_factor=5.0,
+        existing_prestrain_priority_factor=0.1,
     )
 
     main(run_params)

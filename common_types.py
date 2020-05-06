@@ -66,3 +66,8 @@ class InitialSetupModelData(typing.NamedTuple):
     elem_conns: typing.Dict[int, typing.Tuple[int, ...]]
     elem_volume: typing.Dict[int, float]
     elem_volume_ratio: typing.Dict[int, float]
+
+
+# TEMP_ELEMS_OF_INTEREST = {4001, 4002, 4003, 4004, 4201,}
+# TEMP_ELEMS_OF_INTEREST = {8606, 8597, 8704,}
+TEMP_ELEMS_OF_INTEREST = set()

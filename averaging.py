@@ -1,6 +1,7 @@
 import abc
 import bisect
 import collections
+import enum
 import math
 import typing
 import time
@@ -11,6 +12,12 @@ import scipy.sparse
 
 import st7
 from common_types import T_Elem, T_Result
+from common_types import TEMP_ELEMS_OF_INTEREST
+
+
+class _LocalityMethod(enum.Enum):
+    dict_to_list = enum.auto()
+    sparse_matrix = enum.auto()
 
 
 class Averaging:
@@ -60,6 +67,7 @@ class AveInRadius(Averaging):
     _elem_nodal_contributions: typing.Dict[T_Elem, dict]  # The value in this is the relative contributions of all the nodes
     _averaging_matrix: scipy.sparse.csr_matrix
     _elem_num_to_idx: typing.Dict[int, int]
+    _locality_method: _LocalityMethod = _LocalityMethod.sparse_matrix
 
     def __init__(self, radius: float):
         self._radius = radius
@@ -242,7 +250,14 @@ class AveInRadius(Averaging):
                 if dist < self._radius:
                     ave_matrix[source_idx, dest_idx] = self._radius - dist
 
-        return ave_matrix.tocsr(copy=False)
+        # Normalise the averaging matrix - make the columns sum to one.
+
+        column_sum = ave_matrix.sum(axis=0)
+        norm_val = 1 / column_sum
+        norm_diag = scipy.sparse.diags([norm_val.A1], [0] )
+        norm_ave_mat = ave_matrix.dot(norm_diag)
+
+        return norm_ave_mat.tocsr(copy=False)
 
     def _elem_to_elem_averaging_matrix(self, node_positions: typing.Dict[int, st7.Vector3]) -> scipy.sparse.csr_matrix:
         # Element centroid tree
@@ -257,8 +272,6 @@ class AveInRadius(Averaging):
 
         return self._self_to_self_averaging_matrix(elem_cents)
 
-
-
     def populate_radius(
             self,
             node_positions: typing.Dict[int, st7.Vector3],
@@ -271,24 +284,44 @@ class AveInRadius(Averaging):
 
         self._elem_num_to_idx = {e_num: idx for idx, e_num in enumerate(sorted(self._element_connections))}
 
-        #self._populate_radius_cKDTree(node_positions)
-        # If there are no nodal contributions to an element, that will cause problems later on.
-        # missing_elements = [elem_id for elem_id in self._element_connections if elem_id not in self._elem_nodal_contributions]
-        # if missing_elements:
-        #     raise ValueError(f"Missing {len(missing_elements)} elements... {missing_elements[0:3]}")
+        if self._locality_method == _LocalityMethod.sparse_matrix:
+            self._populate_radius_averaging_matrix(node_positions)
 
-        self._populate_radius_averaging_matrix(node_positions)
+        elif self._locality_method == _LocalityMethod.dict_to_list:
+            self._populate_radius_cKDTree(node_positions)
+            # If there are no nodal contributions to an element, that will cause problems later on.
+            missing_elements = [elem_id for elem_id in self._element_connections if elem_id not in self._elem_nodal_contributions]
+            if missing_elements:
+                raise ValueError(f"Missing {len(missing_elements)} elements... {missing_elements[0:3]}")
 
+        else:
+            raise ValueError(self._locality_method)
 
         t_end = time.time()
-        print(f"Took {t_end-t_start:.4g} seconds to calculate averaging contributions with {len(self._element_connections)} elements at radius of {self._radius}.")
+        print(f"Took {t_end-t_start:.4g} seconds to calculate averaging contributions with {len(self._element_connections)} elements at radius of {self._radius} using {self._locality_method.name}.")
 
     def _nodal_to_elem(self, nodal_results, elem_id: T_Elem) -> T_Result:
         these_contribs = self._elem_nodal_contributions[elem_id]
         components = [factor * nodal_results[iNode] for iNode, factor in these_contribs.items()]
+
+        if elem_id in TEMP_ELEMS_OF_INTEREST:
+            unscaled_components = [nodal_results[iNode] for iNode in these_contribs.keys()]
+            print(elem_id, unscaled_components, sum(components), sep='\t')
+
         return sum(components)
 
-    def average_results_OLD(self, unaveraged: typing.Dict[T_Elem, T_Result]) -> typing.Dict[T_Elem, T_Result]:
+    def average_results(self, unaveraged: typing.Dict[T_Elem, T_Result]) -> typing.Dict[T_Elem, T_Result]:
+        if self._locality_method == _LocalityMethod.sparse_matrix:
+            return self._average_results_matrix(unaveraged)
+
+        elif self._locality_method == _LocalityMethod.dict_to_list:
+            return self._average_results_old(unaveraged)
+
+        else:
+            raise ValueError(self._locality_method)
+
+
+    def _average_results_old(self, unaveraged: typing.Dict[T_Elem, T_Result]) -> typing.Dict[T_Elem, T_Result]:
         # Accumulate the nodal contributions of the elements.
         nodal_result_list = collections.defaultdict(list)
         for elem_id, result in unaveraged.items():
@@ -299,11 +332,11 @@ class AveInRadius(Averaging):
 
         # Distribute the nodal results to the elements according to the pre-computed radius functions.
         averaged_results = {elem_id: self._nodal_to_elem(nodal_results, elem_id) for elem_id in unaveraged}
+
         return averaged_results
 
-    def average_results(self, unaveraged: typing.Dict[T_Elem, T_Result]) -> typing.Dict[T_Elem, T_Result]:
+    def _average_results_matrix(self, unaveraged: typing.Dict[T_Elem, T_Result]) -> typing.Dict[T_Elem, T_Result]:
         unave_vect = numpy.zeros((1, len(self._elem_num_to_idx)))
-
 
         for e_num, val in unaveraged.items():
             e_idx = self._elem_num_to_idx[e_num]
