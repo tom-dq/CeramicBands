@@ -21,7 +21,7 @@ from common_types import XY, ElemVectorDict, T_ResultDict, InitialSetupModelData
 from relaxation import Relaxation, NoRelax
 from scaling import Scaling, SingleHoleCentre, SpacedStepScaling
 from tables import Table
-from throttle import Throttler, StoppingCriterion, Shape, ElemStrainIncreaseData
+from throttle import Throttler, StoppingCriterion, Shape, ElemPreStrainChangeData, BaseThrottler, RelaxedIncreaseDecrease
 import history
 
 import directories
@@ -30,9 +30,6 @@ import state_tracker
 # To make reproducible
 random.seed(123)
 
-RATCHET_AT_INCREMENTS = True
-DEBUG_CASE_FOR_EVERY_INCREMENT = False
-RECORD_RESULT_HISTORY = False
 DONT_MAKE_MODEL_WINDOW = False
 
 LOAD_CASE_BENDING = 1
@@ -87,6 +84,32 @@ class Actuator(enum.Enum):
         else:
             raise ValueError(self)
 
+class RunParams(typing.NamedTuple):
+    actuator: Actuator
+    stress_end: float
+    scaling: Scaling
+    averaging: Averaging
+    relaxation: Relaxation
+    throttler: BaseThrottler
+    dilation_ratio: float
+    n_steps_major: int
+    elem_ratio_per_iter: float
+    existing_prestrain_priority_factor: float
+
+    def summary_strings(self) -> typing.Iterable[str]:
+        yield "RunParams:\n"
+        for field_name, field_type in self._field_types.items():
+            field_val = getattr(self, field_name)
+            if field_type in (Actuator,):
+                output_str = field_val.nice_name()
+
+            else:
+                output_str = str(field_val)
+
+            yield f"{field_name}\t{output_str}\n"
+
+        yield "\n"
+
 
 class Ratchet:
     """Ratchets up a table, keeping track of which element is up to where."""
@@ -94,18 +117,17 @@ class Ratchet:
     _relaxation: Relaxation
     scaling: Scaling
     _averaging: Averaging
-    throttler: Throttler
+    throttler: BaseThrottler
     min_y_so_far: dict
     max_stress_ever: float
 
-    def __init__(self, table: Table, scaling: Scaling, relaxation: Relaxation, averaging: Averaging, throttler: Throttler):
+    def __init__(self, table: Table, scaling: Scaling, relaxation: Relaxation, averaging: Averaging, throttler: BaseThrottler):
         self.table = table
         self._relaxation = relaxation
         self.scaling = scaling
         self._averaging = averaging
         self.throttler = throttler
         self.min_y_so_far = dict()
-        self.max_stress_ever = -1 * math.inf
 
     def __copy__(self) -> "Ratchet":
         """Need to be able to make a copy of this so we can keep the state at the start of a major increment."""
@@ -126,7 +148,7 @@ class Ratchet:
     def copy(self) -> "Ratchet":
         return self.__copy__()
 
-    def get_all_values(self, lock_in: bool, elem_results: ElemVectorDict) -> ElemVectorDict:
+    def get_all_proposed_values(self, elem_results: ElemVectorDict) -> ElemVectorDict:
         """Ratchet up the table and return the value. This is done independently for each axis.
         If 'lock_in' is set, the ratchet is "moved up". Otherwise, it's just like peeking at what the value would have been."""
 
@@ -136,9 +158,6 @@ class Ratchet:
             print("Unaveraged:")
 
         for elem_id, idx, result_strain_raw in elem_results.as_single_values():
-
-            if lock_in:
-                self.max_stress_ever = max(self.max_stress_ever, result_strain_raw)
 
             # Apply scaling
             scale_key = (elem_id, idx)
@@ -167,6 +186,7 @@ class Ratchet:
         if TEMP_ELEMS_OF_INTEREST:
             print("Averaged:")
 
+        LOCK_IN = False
         for idx, unaveraged in idx_to_elem_to_unaveraged.items():
             averaged = self._averaging.average_results(unaveraged)
 
@@ -174,7 +194,7 @@ class Ratchet:
             for elem_id, prestrain_val in averaged.items():
                 ratchet_key = (elem_id, idx)
 
-                ratchet_value = self.update_minimum(lock_in, ratchet_key, prestrain_val)
+                ratchet_value = self.update_minimum(LOCK_IN, ratchet_key, prestrain_val)
                 single_vals.append( (elem_id, idx, ratchet_value))
 
                 if TEMP_ELEMS_OF_INTEREST:
@@ -211,11 +231,12 @@ class Ratchet:
         except ZeroDivisionError:
             proportion_non_zero = 0.0
 
-        return f"Elem {max_elem}\tMaxStress {self.max_stress_ever}\tStrain {max_val}\tNonzero {proportion_non_zero:.3%}"
+        return f"Elem {max_elem}\tStrain {max_val}\tNonzero {proportion_non_zero:.3%}"
 
 
 class PrestrainUpdate(typing.NamedTuple):
-    elem_prestrains: ElemVectorDict
+    elem_prestrains_locked_in: ElemVectorDict
+    elem_prestrains_iteration_set: ElemVectorDict
     updated_this_round: int
     not_updated_this_round: int
     prestrained_overall: int
@@ -226,7 +247,8 @@ class PrestrainUpdate(typing.NamedTuple):
     @staticmethod
     def zero() -> "PrestrainUpdate":
         return PrestrainUpdate(
-            elem_prestrains=ElemVectorDict(),
+            elem_prestrains_locked_in=ElemVectorDict(),
+            elem_prestrains_iteration_set=ElemVectorDict(),
             updated_this_round=0,
             not_updated_this_round=0,
             prestrained_overall=0,
@@ -234,6 +256,9 @@ class PrestrainUpdate(typing.NamedTuple):
             this_update_time=datetime.timedelta(seconds=0),
             update_completed_at_time=datetime.datetime.now(),
         )
+
+    def locked_in_prestrains(self) -> "PrestrainUpdate":
+        return self._replace(elem_prestrains_locked_in=self.elem_prestrains_iteration_set)
 
 
 def compress_png(png_fn):
@@ -266,7 +291,7 @@ def write_out_screenshot(model_window: st7.St7ModelWindow, current_result_frame:
 
 def write_out_to_db(db: history.DB, init_data: InitialSetupModelData, step_num_major, step_num_minor, results: st7.St7Results, current_result_frame: "ResultFrame", prestrain_update: PrestrainUpdate):
 
-    if not RECORD_RESULT_HISTORY:
+    if not config.active_config.record_result_history_in_db:
         return
 
     # Main case data
@@ -292,7 +317,7 @@ def write_out_to_db(db: history.DB, init_data: InitialSetupModelData, step_num_m
 
     # Prestrains
     def make_prestrain_rows():
-        for plate_num, pre_strain in prestrain_update.elem_prestrains.items():
+        for plate_num, pre_strain in prestrain_update.elem_prestrains_iteration_set.items():
             pre_strain_mag = (pre_strain.x**2 + pre_strain.y**2)**0.5
             yield history.ContourValue(
                 result_case_num=db_case_num,
@@ -410,13 +435,10 @@ def update_to_include_prestrains(
 
 def incremental_element_update_list(
         init_data: InitialSetupModelData,
-        previous_prestrain_update: PrestrainUpdate,
-        num_allowed: int,
-        existing_prestrain_priority_factor: float,
-        elem_volume: typing.Dict[int, float],
+        run_params: RunParams,
         ratchet: Ratchet,
-        minor_prev_prestrain: ElemVectorDict,
-        minor_acuator_input_current: ElemVectorDict,
+        previous_prestrain_update: PrestrainUpdate,
+        result_strain: ElemVectorDict,
 ) -> PrestrainUpdate:
     """Gets the subset of elements which should be "yielded", based on the stress."""
 
@@ -429,19 +451,19 @@ def incremental_element_update_list(
         return elem_idx_val[2]
 
     def candidate_strains(res_dict):
-        all_res = ratchet.get_all_values(lock_in=False, elem_results=res_dict)
+        all_res = ratchet.get_all_proposed_values(elem_results=res_dict)
         return {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_res.as_single_values()}
 
     # Use the current stress or strain results to choose the new elements.
-    minor_acuator_input_current_flat = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_acuator_input_current.as_single_values()}
+    minor_acuator_input_current_flat = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in result_strain.as_single_values()}
 
-    new_prestrains_all = candidate_strains(minor_acuator_input_current)
+    new_prestrains_all = candidate_strains(result_strain)
 
-    old_prestrains = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_prev_prestrain.as_single_values()}
+    old_prestrains = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in previous_prestrain_update.elem_prestrains_iteration_set.as_single_values()}
     increased_prestrains_OLD = {key: val for key, val in new_prestrains_all.items() if abs(val) > abs(old_prestrains.get(key, 0.0))}
 
-    increased_prestrains = [
-        ElemStrainIncreaseData(
+    proposed_prestrains_changes = [
+        ElemPreStrainChangeData(
             elem_num=key[0],
             axis=key[1],
             proposed_prestrain_val=val,
@@ -449,7 +471,7 @@ def incremental_element_update_list(
             result_strain_val=minor_acuator_input_current_flat[key] * ratchet.scaling.get_x_scale_factor(key),
         )
         for key, val in new_prestrains_all.items()
-        if abs(val) > abs(old_prestrains.get(key, 0.0))
+        if val != old_prestrains.get(key, 0.0)
     ]
 
     if TEMP_ELEMS_OF_INTEREST:
@@ -457,7 +479,7 @@ def incremental_element_update_list(
         res_TEMP = {elem_idx: val for elem_idx, val in minor_acuator_input_current_flat.items() if elem_idx[0] in TEMP_ELEMS_OF_INTEREST}
         new_TEMP = {elem_idx: val for elem_idx, val in new_prestrains_all.items() if elem_idx[0] in TEMP_ELEMS_OF_INTEREST}
         scale_facts_TEMP = {elem_idx: ratchet.scaling.get_x_scale_factor(elem_idx) for elem_idx in new_TEMP.keys()}
-        increased_prestrains_TEMP = [elem_strain_inc for elem_strain_inc in increased_prestrains if elem_strain_inc.elem_num in TEMP_ELEMS_OF_INTEREST]
+        increased_prestrains_TEMP = [elem_strain_inc for elem_strain_inc in proposed_prestrains_changes if elem_strain_inc.elem_num in TEMP_ELEMS_OF_INTEREST]
 
 
         all_dicts = (old_TEMP, res_TEMP, scale_facts_TEMP, new_TEMP)
@@ -484,20 +506,15 @@ def incremental_element_update_list(
 
 
     # Get the top N elements.
-    increased_prestrains.sort(
-        reverse=True,
-        key=lambda elem_strain_inc_data: elem_strain_inc_data.ranking_with_priority(existing_prestrain_priority_factor)
-    )
-
-    new_prestrains_subset = list(ratchet.throttler.throttle(init_data, increased_prestrains))
+    proposed_prestrains_subset = list(ratchet.throttler.throttle(init_data, run_params, proposed_prestrains_changes))
 
     top_n_new = {
         (elem_strain_inc_data.elem_num, elem_strain_inc_data.axis): elem_strain_inc_data.proposed_prestrain_val
-        for elem_strain_inc_data in new_prestrains_subset }
+        for elem_strain_inc_data in proposed_prestrains_subset }
 
     # top_n_new = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_new_sorted[0:num_allowed]}
     new_count = len(top_n_new)
-    left_over_count = max(0, len(increased_prestrains) - new_count)
+    left_over_count = max(0, len(proposed_prestrains_changes) - new_count)
 
     # Build the new pre-strain dictionary out of old and new values.
     # old_strain_single_vals = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_prev_strain.as_single_values()}
@@ -505,23 +522,20 @@ def incremental_element_update_list(
     single_vals_out = [ (elem, idx, val) for (elem, idx), val in combined_final_single_values.items()]
     total_out = sum(1 for _, _, val in single_vals_out if abs(val))
 
-    # Update the ratchet settings for the one we did ramp up.
-    for elem_idx, val in top_n_new.items():
-        ratchet.update_minimum(True, elem_idx, val)
-
     # Work out now much additional dilation has been introduced.
     extra_dilation = [
         (elem_idx, val - old_prestrains.get(elem_idx, 0.0))
         for elem_idx, val in top_n_new.items()
     ]
 
-    extra_dilation_norm = sum(elem_volume[elem_idx[0]] * abs(val) for elem_idx, val in extra_dilation)
+    extra_dilation_norm = sum(init_data.elem_volume[elem_idx[0]] * abs(val) for elem_idx, val in extra_dilation)
 
     update_completed_at_time = datetime.datetime.now()
     this_update_time = update_completed_at_time - previous_prestrain_update.update_completed_at_time
 
     return PrestrainUpdate(
-        elem_prestrains=ElemVectorDict.from_single_values(True, single_vals_out),
+        elem_prestrains_locked_in=previous_prestrain_update.elem_prestrains_locked_in,
+        elem_prestrains_iteration_set=ElemVectorDict.from_single_values(True, single_vals_out),
         updated_this_round=new_count,
         not_updated_this_round=left_over_count,
         prestrained_overall=total_out,
@@ -802,33 +816,6 @@ def initial_setup(model: st7.St7Model, initial_result_frame: ResultFrame) -> Ini
     )
 
 
-class RunParams(typing.NamedTuple):
-    actuator: Actuator
-    stress_end: float
-    scaling: Scaling
-    averaging: Averaging
-    relaxation: Relaxation
-    throttler: Throttler
-    dilation_ratio: float
-    n_steps_major: int
-    elem_ratio_per_iter: float
-    existing_prestrain_priority_factor: float
-
-    def summary_strings(self) -> typing.Iterable[str]:
-        yield "RunParams:\n"
-        for field_name, field_type in self._field_types.items():
-            field_val = getattr(self, field_name)
-            if field_type in (Actuator,):
-                output_str = field_val.nice_name()
-
-            else:
-                output_str = str(field_val)
-
-            yield f"{field_name}\t{output_str}\n"
-
-        yield "\n"
-
-
 def _make_prestrain_table(run_params: RunParams) -> Table:
     if run_params.actuator.input_result == st7.PlateResultType.rtPlateStress:
         prestrain_table = Table([
@@ -918,7 +905,7 @@ def main(run_params: RunParams):
 
         previous_load_factor = 0.0
 
-        old_prestrain_values = ElemVectorDict()
+        # old_prestrain_values = ElemVectorDict()
         for step_num_major in range(run_params.n_steps_major):
 
             # Perform an iterative update in which only a certain proportion of the elements can "yield" at once.
@@ -937,7 +924,7 @@ def main(run_params: RunParams):
             this_load_factor = (step_num_major+1) / run_params.n_steps_major
 
             prestrain_load_case_num = create_load_case(model, step_name())
-            apply_prestrain(model, prestrain_load_case_num, old_prestrain_values)
+            apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_locked_in)
 
             # Add the increment, or overwrite it
             current_result_frame = add_increment(model, current_result_frame, this_load_factor, step_name(), advance_result_case=True)
@@ -960,20 +947,17 @@ def main(run_params: RunParams):
 
                 # Get the results from the last minor step.
                 with model.open_results(current_result_frame.result_file) as results:
-                    minor_acuator_input_current_raw = get_results(run_params.actuator, results, current_result_frame.result_case_num)
-                    minor_acuator_input_current = update_to_include_prestrains(run_params.actuator, minor_acuator_input_current_raw, old_prestrain_values)
+                    result_strain_raw = get_results(run_params.actuator, results, current_result_frame.result_case_num)
+                    result_strain = update_to_include_prestrains(run_params.actuator, result_strain_raw, prestrain_update.elem_prestrains_iteration_set)
                     write_out_screenshot(model_window, current_result_frame)
                     write_out_to_db(db, init_data, step_num_major, step_num_minor, results, current_result_frame, prestrain_update)
 
                 prestrain_update = incremental_element_update_list(
                     init_data=init_data,
-                    previous_prestrain_update=prestrain_update,
-                    num_allowed=n_updates_per_iter,
-                    existing_prestrain_priority_factor=run_params.existing_prestrain_priority_factor,
-                    elem_volume=init_data.elem_volume,
+                    run_params=run_params,
                     ratchet=ratchet,
-                    minor_prev_prestrain=old_prestrain_values,
-                    minor_acuator_input_current=minor_acuator_input_current,
+                    previous_prestrain_update=prestrain_update,
+                    result_strain=result_strain,
                 )
 
                 new_count = prestrain_update.updated_this_round
@@ -990,7 +974,7 @@ def main(run_params: RunParams):
 
                 # Only continue if there is updating to do.
                 if prestrain_update.updated_this_round > 0:
-                    if DEBUG_CASE_FOR_EVERY_INCREMENT:
+                    if config.active_config.case_for_every_increment:
                         prestrain_load_case_num = create_load_case(model, step_name())
 
                     # Add the next step
@@ -1000,11 +984,15 @@ def main(run_params: RunParams):
                     # Make sure we're starting from the last case
                     set_restart_for(model, current_result_frame)
 
-                    apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains)
+                    apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_iteration_set)
+
+                    if config.active_config.ratched_prestrains_during_iterations:
+                        # Update the ratchet settings for the one we did ramp up.
+                        for elem, idx, val in prestrain_update.elem_prestrains_iteration_set.as_single_values():
+                            ratchet.update_minimum(True, (elem, idx), val)
 
                     # Keep track of the old results...
                     step_num_minor = next(minor_step_iter)
-                    old_prestrain_values = prestrain_update.elem_prestrains
 
                     set_max_iters(model, config.active_config.max_iters, use_major=True)
 
@@ -1025,7 +1013,12 @@ def main(run_params: RunParams):
             #     scale_key = (elem, idx)
             #    ratchet.update_minimum(True, scale_key, val)
 
+            prestrain_update = prestrain_update.locked_in_prestrains()
             previous_load_factor = this_load_factor
+
+            # Update the ratchet for what's been locked in.
+            for elem, idx, val in prestrain_update.elem_prestrains_locked_in.as_single_values():
+                ratchet.update_minimum(True, (elem, idx), val)
 
             relaxation.flush_previous_values()
 
@@ -1046,32 +1039,32 @@ def create_load_case(model, case_name):
 
 if __name__ == "__main__":
     dilation_ratio = 0.008   # 0.8% expansion, according to Jerome
-    elem_ratio_per_iter = 0.00005
+    elem_ratio_per_iter = 0.0005
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
     #relaxation = PropRelax(0.5)
     relaxation = NoRelax()
 
-    scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.03)
+    scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.11)
     # scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.03)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
-    averaging = AveInRadius(0.02)
-    # averaging = NoAve()
+    # averaging = AveInRadius(0.02)
+    averaging = NoAve()
 
     # throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
-    throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
-
+    # throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
+    throttler = RelaxedIncreaseDecrease(ratio=0.25)
 
     run_params = RunParams(
         actuator=Actuator.e_local,
-        stress_end=800.0,
+        stress_end=500.0,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
         dilation_ratio=dilation_ratio,
-        n_steps_major=50,
+        n_steps_major=5,
         elem_ratio_per_iter=elem_ratio_per_iter,
         existing_prestrain_priority_factor=2,
     )

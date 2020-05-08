@@ -25,6 +25,10 @@ class Config(typing.NamedTuple):
     qsa_time_step_size: float
     max_iters: typing.Optional[MaxIters]
     delete_old_result_files: bool
+    ratched_prestrains_during_iterations: bool
+    case_for_every_increment: bool
+    record_result_history_in_db: bool
+
 
     def summary_strings(self) -> typing.Iterable[str]:
         yield "Config:\n"
@@ -45,8 +49,8 @@ def _get_config():
 
     if this_env == Environment.uni_desktop:
         return Config(
-            fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 12-SingleGrade.st7"),
-            # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11.st7"),
+            # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 12-SingleGrade.st7"),
+            fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11.st7"),
             # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11-SD2.st7"),
             fn_working_image_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\pics"),
             screenshot_res=st7.CanvasSize(1920, 1080),
@@ -57,6 +61,9 @@ def _get_config():
             qsa_time_step_size=0.1,
             max_iters=MaxIters(major_step=5, minor_step=1),
             delete_old_result_files=True,
+            ratched_prestrains_during_iterations=False,
+            case_for_every_increment=False,
+            record_result_history_in_db=False,
         )
 
     elif this_env == Environment.samsung_laptop:

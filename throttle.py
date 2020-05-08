@@ -1,6 +1,7 @@
 
 
 """Throttling controls the elements which get updated at a given iteration, rather than just updating all of them"""
+import abc
 import enum
 
 import typing
@@ -47,14 +48,14 @@ class ThrottleMethod(enum.Enum):
             raise ValueError(self)
 
 
-class ElemStrainIncreaseData(typing.NamedTuple):
+class ElemPreStrainChangeData(typing.NamedTuple):
     elem_num: int
     axis: int
     proposed_prestrain_val: float
     old_prestrain_val: float
     result_strain_val: float
 
-    def scaled_down(self, factor: float) -> "ElemStrainIncreaseData":
+    def scaled_down(self, factor: float) -> "ElemPreStrainChangeData":
         """Taper off the full value."""
 
         if factor > 1 or factor < 0:
@@ -67,9 +68,22 @@ class ElemStrainIncreaseData(typing.NamedTuple):
 
         return self._replace(proposed_prestrain_val=new_proposed_prestrain)
 
+    def proposed_change(self) -> float:
+        return self.proposed_prestrain_val - self.old_prestrain_val
+
     def proposed_abs_increase(self) -> float:
-        increase = self.proposed_prestrain_val - self.old_prestrain_val
-        return abs(increase)
+        """If the prestrain went further away from zero (on the same side), how much was that?"""
+
+        # Sign change -> no abs increase
+        if (self.old_prestrain_val * self.proposed_prestrain_val) < 0:
+            return 0.0
+
+        maybe_abs_increase = abs(self.proposed_prestrain_val) - abs(self.old_prestrain_val)
+        if maybe_abs_increase > 0:
+            return maybe_abs_increase
+
+        return 0.0
+
 
     def ranking_with_priority(self, existing_prestrain_priority_factor: float) -> float:
         """Determines the priority of this strain increase for ranking purposes."""
@@ -101,7 +115,18 @@ class ElemStrainIncreaseData(typing.NamedTuple):
             raise ValueError(stopping_criterion)
 
 
-class Throttler:
+class BaseThrottler:
+    @abc.abstractmethod
+    def throttle(
+            self,
+            init_data: InitialSetupModelData,
+            run_params,  # This is main.RunParams
+            proposed_prestrains: typing.List[ElemPreStrainChangeData],
+    ) -> typing.List[ElemPreStrainChangeData]:
+        raise NotImplementedError()
+
+
+class Throttler(BaseThrottler):
     stopping_criterion: StoppingCriterion = None
     shape: Shape = None
     cutoff_value: float = None
@@ -118,8 +143,8 @@ class Throttler:
             self,
             stop_at_cutoff: bool,
             init_data: InitialSetupModelData,
-            increased_prestrains: typing.List[ElemStrainIncreaseData],
-    ) -> typing.Tuple[float, typing.List[ElemStrainIncreaseData]]:
+            increased_prestrains: typing.List[ElemPreStrainChangeData],
+    ) -> typing.Tuple[float, typing.List[ElemPreStrainChangeData]]:
         working_list = []
 
         running_total = 0.0
@@ -136,8 +161,8 @@ class Throttler:
     def _go_to_cutoff_step(
             self,
             init_data: InitialSetupModelData,
-            increased_prestrains: typing.List[ElemStrainIncreaseData],
-    ) -> typing.List[ElemStrainIncreaseData]:
+            increased_prestrains: typing.List[ElemPreStrainChangeData],
+    ) -> typing.List[ElemPreStrainChangeData]:
 
         running_total, sub_list = self._running_total_and_list(True, init_data, increased_prestrains)
         return sub_list
@@ -145,14 +170,23 @@ class Throttler:
     def throttle(
             self,
             init_data: InitialSetupModelData,
-            increased_prestrains: typing.List[ElemStrainIncreaseData],
-    ) -> typing.List[ElemStrainIncreaseData]:
+            run_params,  # This is main.RunParams
+            proposed_prestrains: typing.List[ElemPreStrainChangeData],
+    ) -> typing.List[ElemPreStrainChangeData]:
+
+        proposed_prestrains.sort(
+            reverse=True,
+            key=lambda epscd: epscd.ranking_with_priority(run_params.existing_prestrain_priority_factor)
+        )
+
+        # Limit to cases where the pre-strain is increasing
+        increasing_prestrains = [epscd for epscd in proposed_prestrains if epscd.proposed_abs_increase() > 0]
 
         if self.shape == Shape.step:
-            return self._go_to_cutoff_step(init_data, increased_prestrains)
+            return self._go_to_cutoff_step(init_data, increasing_prestrains)
 
         elif self.shape == Shape.linear:
-            return self._find_tapered_scale_end(init_data, increased_prestrains)
+            return self._find_tapered_scale_end(init_data, increasing_prestrains)
 
         else:
             raise ValueError(self.shape)
@@ -160,8 +194,8 @@ class Throttler:
     def _find_tapered_scale_end(
             self,
             init_data: InitialSetupModelData,
-            increased_prestrains: typing.List[ElemStrainIncreaseData],
-    ) -> typing.List[ElemStrainIncreaseData]:
+            increased_prestrains: typing.List[ElemPreStrainChangeData],
+    ) -> typing.List[ElemPreStrainChangeData]:
         lower_bound = 1
         upper_bound = len(increased_prestrains)
 
@@ -196,9 +230,9 @@ class Throttler:
 
     def _tapered_scale(
             self,
-            increased_prestrains: typing.List[ElemStrainIncreaseData],
+            increased_prestrains: typing.List[ElemPreStrainChangeData],
             idx_end: int
-    ) -> typing.Iterable[ElemStrainIncreaseData]:
+    ) -> typing.Iterable[ElemPreStrainChangeData]:
         """Linearly scaled down the pre-strain increases."""
 
         for idx, one in enumerate(increased_prestrains[:idx_end]):
@@ -206,4 +240,24 @@ class Throttler:
             yield one.scaled_down(scale_down_factor)
 
 
+class RelaxedIncreaseDecrease(BaseThrottler):
+    _ratio: float
 
+    def __init__(self, ratio: float):
+        if not 0.0 <= ratio <= 1.0:
+            raise ValueError("Ratio needs to be between 0 and 1.")
+
+        self._ratio = ratio
+
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}(ratio={self._ratio})"
+
+    def throttle(
+            self,
+            init_data: InitialSetupModelData,
+            run_params,  # This is main.RunParams
+            proposed_prestrains: typing.List[ElemPreStrainChangeData],
+    ) -> typing.List[ElemPreStrainChangeData]:
+
+        scaled_down_proposed_strains = [epscd.scaled_down(self._ratio) for epscd in proposed_prestrains]
+        return scaled_down_proposed_strains
