@@ -59,6 +59,7 @@ class CentroidAwareScaling(Scaling):
     _y_min: float
     _y_max: float
     _y_depth: float
+    _y_no_yielding_below: float
     _x_cent: float
 
     @abc.abstractmethod
@@ -68,16 +69,29 @@ class CentroidAwareScaling(Scaling):
     def assign_centroids(self, elem_centroid: typing.Dict[int, st7.Vector3]):
         # Find out how deep the elements go.
         self._y_max = max(xyz.y for xyz in elem_centroid.values())
+
+        # Stop the bottom, say, 5% of elements from ever going, so we don't have to deal with contact pressure stuff, etc.
+        y_base = min(xyz.y for xyz in elem_centroid.values())
+        y_range = (self._y_max - y_base)
+        self._y_no_yielding_below = y_base + 0.05 * y_range
+
         self._y_min = self._y_max - self._y_depth
         self._x_cent = 0.5 * (min(xyz.x for xyz in elem_centroid.values()) + max(xyz.x for xyz in elem_centroid.values()))
 
         for elem_num, elem_cent in elem_centroid.items():
-            self._elem_scale_fact[elem_num] = self._scale_factor_one_elem(elem_cent)
+            blank_out_bottom_elems = self._no_base_yield_modifier(elem_cent)
+            self._elem_scale_fact[elem_num] = self._scale_factor_one_elem(elem_cent) * blank_out_bottom_elems
 
     def get_x_scale_factor(self, scale_key: T_ScaleKey) -> float:
         elem_num, _ = scale_key[:]
         return self._elem_scale_fact[elem_num]
 
+    def _no_base_yield_modifier(self, elem_cent) -> float:
+        if elem_cent.y < self._y_no_yielding_below:
+            return 0.0
+
+        else:
+            return 1.0
 
 class CosineScaling(CentroidAwareScaling):
     """Does a cosine based on the element position."""

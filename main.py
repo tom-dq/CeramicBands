@@ -1,4 +1,5 @@
 import itertools
+import os
 import random
 import time
 import typing
@@ -580,6 +581,17 @@ class ResultFrame(typing.NamedTuple):
         """Trimmed down version..."""
         return f"ResultFrame(result_file_index={self.result_file_index}, result_case_num={self.result_case_num}, global_result_case_num={self.global_result_case_num})"
 
+    def delete_old_files_if_needed(self):
+        if config.active_config.delete_old_result_files:
+            two_files_ago = self._replace(result_file_index=self.result_file_index-2)
+            old_res_file = two_files_ago.result_file
+            try:
+                os.remove(str(old_res_file))
+
+            except FileNotFoundError:
+                pass
+
+
     def get_next_result_frame(self, bending_load_factor: float, advance_result_case: bool) -> "ResultFrame":
 
         if advance_result_case:
@@ -606,6 +618,8 @@ class ResultFrame(typing.NamedTuple):
                     result_file_index=self.result_file_index + 1,
                     global_result_case_num=self.global_result_case_num + 1,
                 )
+
+                self.delete_old_files_if_needed()
 
             else:
                 working_new_frame = self._replace(
@@ -1058,8 +1072,8 @@ if __name__ == "__main__":
     #relaxation = PropRelax(0.5)
     relaxation = NoRelax()
 
-    # scaling = SpacedStepScaling(y_depth=0.1, spacing=0.6, amplitude=0.2, hole_width=0.11)
-    scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.05)
+    scaling = SpacedStepScaling(y_depth=0.1, spacing=0.6, amplitude=0.2, hole_width=0.11)
+    #scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.1)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
     # averaging = AveInRadius(0.02)
@@ -1074,7 +1088,7 @@ if __name__ == "__main__":
 
     run_params = RunParams(
         actuator=Actuator.e_local,
-        stress_end=480.0,
+        stress_end=425.0,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
