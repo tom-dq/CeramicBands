@@ -1074,13 +1074,13 @@ if __name__ == "__main__":
 
     run_params = RunParams(
         actuator=Actuator.e_local,
-        stress_end=405.0,
+        stress_end=480.0,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
         dilation_ratio=dilation_ratio,
-        n_steps_major=1,
+        n_steps_major=10,
         elem_ratio_per_iter=elem_ratio_per_iter,
         existing_prestrain_priority_factor=2,
     )

@@ -54,8 +54,9 @@ def _get_config():
             # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11.st7"),
             # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11-SD2.st7"),
             fn_working_image_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\pics"),
-            screenshot_res=st7.CanvasSize(1920, 1080),
-            #screenshot_res=st7.CanvasSize(3840, 2160),
+            # screenshot_res=st7.CanvasSize(1920, 1080),  # FHD
+            screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
+            #screenshot_res=st7.CanvasSize(3840, 2160), # 4K
             scratch_dir=pathlib.Path(r"C:\Temp"),
             solver=st7.SolverType.stQuasiStatic,
             qsa_steps_per_file=50,
