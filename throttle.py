@@ -6,8 +6,8 @@ import enum
 
 import typing
 
-from common_types import ElemVectorDict, T_Elem_Axis, InitialSetupModelData
-
+from common_types import ElemVectorDict, T_Elem_Axis, InitialSetupModelData, func_repr
+from tables import Table
 
 class StoppingCriterion(enum.Enum):
     volume_ratio = enum.auto()
@@ -122,6 +122,7 @@ class BaseThrottler:
             init_data: InitialSetupModelData,
             run_params,  # This is main.RunParams
             proposed_prestrains: typing.List[ElemPreStrainChangeData],
+            step_num_minor: int,
     ) -> typing.List[ElemPreStrainChangeData]:
         raise NotImplementedError()
 
@@ -172,6 +173,7 @@ class Throttler(BaseThrottler):
             init_data: InitialSetupModelData,
             run_params,  # This is main.RunParams
             proposed_prestrains: typing.List[ElemPreStrainChangeData],
+            step_num_minor: int,
     ) -> typing.List[ElemPreStrainChangeData]:
 
         proposed_prestrains.sort(
@@ -241,23 +243,36 @@ class Throttler(BaseThrottler):
 
 
 class RelaxedIncreaseDecrease(BaseThrottler):
-    _ratio: float
+    """Let all the elements increase or decrease as the iteration progresses, but don't always go the full
+        proposed amount."""
 
-    def __init__(self, ratio: float):
-        if not 0.0 <= ratio <= 1.0:
-            raise ValueError("Ratio needs to be between 0 and 1.")
+    _ratio_getter: typing.Callable[[int], float]
 
-        self._ratio = ratio
+    def __init__(self, ratio_getter: typing.Callable[[int], float]):
+
+        # Quick check the ratio getter function.
+        check_vals = list(range(1000)) + [10000, 100000, 10000000]
+        for step_num_minor in check_vals:
+            testing_ratio = ratio_getter(step_num_minor)
+
+            if not 0.0 <= testing_ratio <= 1.0:
+                raise ValueError(f"Ratio needs to be between 0 and 1. {ratio_getter}({step_num_minor}) = {testing_ratio}")
+
+        self._ratio_getter = ratio_getter
 
     def __str__(self) -> str:
-        return f"{self.__class__.__name__}(ratio={self._ratio})"
+        func_source = func_repr(self._ratio_getter)
+        return f"{self.__class__.__name__}({func_source})"
 
     def throttle(
             self,
             init_data: InitialSetupModelData,
             run_params,  # This is main.RunParams
             proposed_prestrains: typing.List[ElemPreStrainChangeData],
+            step_num_minor: int,
     ) -> typing.List[ElemPreStrainChangeData]:
 
-        scaled_down_proposed_strains = [epscd.scaled_down(self._ratio) for epscd in proposed_prestrains]
+        ratio = self._ratio_getter(step_num_minor)
+
+        scaled_down_proposed_strains = [epscd.scaled_down(ratio) for epscd in proposed_prestrains]
         return scaled_down_proposed_strains

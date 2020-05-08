@@ -28,6 +28,7 @@ class Config(typing.NamedTuple):
     ratched_prestrains_during_iterations: bool
     case_for_every_increment: bool
     record_result_history_in_db: bool
+    converged_delta_prestrain: float
 
 
     def summary_strings(self) -> typing.Iterable[str]:
@@ -49,8 +50,8 @@ def _get_config():
 
     if this_env == Environment.uni_desktop:
         return Config(
-            # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 12-SingleGrade.st7"),
-            fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11.st7"),
+            fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 12-SingleGrade.st7"),
+            # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11.st7"),
             # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11-SD2.st7"),
             fn_working_image_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\pics"),
             screenshot_res=st7.CanvasSize(1920, 1080),
@@ -64,6 +65,7 @@ def _get_config():
             ratched_prestrains_during_iterations=False,
             case_for_every_increment=False,
             record_result_history_in_db=False,
+            converged_delta_prestrain=1e-6,
         )
 
     elif this_env == Environment.samsung_laptop:

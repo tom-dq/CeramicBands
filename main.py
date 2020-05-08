@@ -39,7 +39,7 @@ TABLE_BENDING_ID = 5
 
 STRESS_START = 400
 
-NUM_PLATE_RES_RETRIES = 10
+NUM_PLATE_RES_RETRIES = 50
 
 #fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD2.st7")
 #fn_working_image_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3-pics")
@@ -439,6 +439,7 @@ def incremental_element_update_list(
         ratchet: Ratchet,
         previous_prestrain_update: PrestrainUpdate,
         result_strain: ElemVectorDict,
+        step_num_minor: int,
 ) -> PrestrainUpdate:
     """Gets the subset of elements which should be "yielded", based on the stress."""
 
@@ -471,7 +472,7 @@ def incremental_element_update_list(
             result_strain_val=minor_acuator_input_current_flat[key] * ratchet.scaling.get_x_scale_factor(key),
         )
         for key, val in new_prestrains_all.items()
-        if val != old_prestrains.get(key, 0.0)
+        if abs(val - old_prestrains.get(key, 0.0)) > config.active_config.converged_delta_prestrain
     ]
 
     if TEMP_ELEMS_OF_INTEREST:
@@ -504,9 +505,13 @@ def incremental_element_update_list(
 
         print()
 
-
-    # Get the top N elements.
-    proposed_prestrains_subset = list(ratchet.throttler.throttle(init_data, run_params, proposed_prestrains_changes))
+    # Get the working set of prestrain updates.
+    proposed_prestrains_subset = ratchet.throttler.throttle(
+        init_data,
+        run_params,
+        proposed_prestrains_changes,
+        step_num_minor
+    )
 
     top_n_new = {
         (elem_strain_inc_data.elem_num, elem_strain_inc_data.axis): elem_strain_inc_data.proposed_prestrain_val
@@ -853,6 +858,13 @@ def main(run_params: RunParams):
 
     # Allow a maximum of 10% of the elements to yield in a given step.
     n_steps_minor_max = math.inf
+
+    for summary_string in run_params.summary_strings():
+        print(summary_string.strip())
+        
+    for summary_string in config.active_config.summary_strings():
+        print(summary_string.strip())
+
     print(f"Limiting to {n_steps_minor_max} steps per load increment - only {run_params.elem_ratio_per_iter:%} can yield.")
 
     working_dir = directories.get_unique_sub_dir(config.active_config.fn_working_image_base)
@@ -958,6 +970,7 @@ def main(run_params: RunParams):
                     ratchet=ratchet,
                     previous_prestrain_update=prestrain_update,
                     result_strain=result_strain,
+                    step_num_minor=step_num_minor,
                 )
 
                 new_count = prestrain_update.updated_this_round
@@ -1045,26 +1058,29 @@ if __name__ == "__main__":
     #relaxation = PropRelax(0.5)
     relaxation = NoRelax()
 
-    scaling = SpacedStepScaling(y_depth=0.25, spacing=0.6, amplitude=0.2, hole_width=0.11)
-    # scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.03)
+    # scaling = SpacedStepScaling(y_depth=0.1, spacing=0.6, amplitude=0.2, hole_width=0.11)
+    scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.05)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
     # averaging = AveInRadius(0.02)
     averaging = NoAve()
 
+    def throttle_ratio_decay(step_num_minor):
+        return (step_num_minor+1)**-0.5
+
     # throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
     # throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
-    throttler = RelaxedIncreaseDecrease(ratio=0.25)
+    throttler = RelaxedIncreaseDecrease(ratio_getter=throttle_ratio_decay)
 
     run_params = RunParams(
         actuator=Actuator.e_local,
-        stress_end=500.0,
+        stress_end=405.0,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
         dilation_ratio=dilation_ratio,
-        n_steps_major=5,
+        n_steps_major=1,
         elem_ratio_per_iter=elem_ratio_per_iter,
         existing_prestrain_priority_factor=2,
     )

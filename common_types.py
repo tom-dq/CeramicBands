@@ -1,3 +1,4 @@
+import inspect
 import typing
 import collections
 import st7
@@ -66,6 +67,18 @@ class InitialSetupModelData(typing.NamedTuple):
     elem_conns: typing.Dict[int, typing.Tuple[int, ...]]
     elem_volume: typing.Dict[int, float]
     elem_volume_ratio: typing.Dict[int, float]
+
+
+def func_repr(f) -> str:
+    """Returns something like the source of the function..."""
+    source = inspect.getsource(f)
+    source_lines = source.strip().splitlines()
+    if len(source_lines) > 2:
+        print(source)
+        raise ValueError("Only meant for one liners, not this!")
+
+    return f"{source_lines[0]}  {source_lines[1].strip()}"
+
 
 
 # TEMP_ELEMS_OF_INTEREST = {4001, 4002, 4003, 4004, 4201,}
