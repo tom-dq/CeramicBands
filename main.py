@@ -1045,7 +1045,7 @@ def create_load_case(model, case_name):
 
 
 if __name__ == "__main__":
-    dilation_ratio = 0.01   # 0.8% expansion, according to Jerome
+    dilation_ratio = 0.008   # 0.8% expansion, according to Jerome
     elem_ratio_per_iter = 0.00005
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
@@ -1056,8 +1056,8 @@ if __name__ == "__main__":
     # scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.03)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
-    # averaging = AveInRadius(0.05)
-    averaging = NoAve()
+    averaging = AveInRadius(0.02)
+    # averaging = NoAve()
 
     # throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
     throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
