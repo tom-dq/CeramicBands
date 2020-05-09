@@ -1,13 +1,19 @@
 import abc
+import collections
 import math
 import random
 import typing
 
 import st7
-from common_types import T_ScaleKey
+from common_types import T_ScaleKey, InitialSetupModelData, ElemVectorDict
 
 
 class Scaling:
+
+    _adjacent_strain_factor: typing.Optional[float] = None
+    _adjacent_elements: typing.Dict[int, typing.Dict[int, float]]  # Elem -> Adj_Elem -> Weight
+    _working_prestrain_vals: typing.Dict[T_ScaleKey, float]
+
     """Scales the "Yield Stress" according to some criterion."""
     @abc.abstractmethod
     def get_x_scale_factor(self, scale_key: T_ScaleKey) -> float:
@@ -16,9 +22,51 @@ class Scaling:
     def __str__(self):
         return self.__class__.__name__
 
-    def assign_centroids(self, elem_centroid: typing.Dict[int, st7.Vector3]):
+    def assign_centroids(self, init_data: InitialSetupModelData):
         """This is not used by all the methods."""
         pass
+
+    def assign_working_results(self, previous_iteration_results: ElemVectorDict):
+        self._working_prestrain_vals = { (elem, idx): val for (elem, idx, val) in previous_iteration_results.as_single_values() }
+
+    def determine_adjacency(self, init_data: InitialSetupModelData):
+        """Weighted element-to-neighbour. One shared node -> 1/12 contib. Two shared nodes -> 1/6 contrib."""
+
+        node_to_elems = collections.defaultdict(set)
+        for elem, conn in init_data.elem_conns.items():
+            for node in conn:
+                node_to_elems[node].add(elem)
+
+        adj_elems = dict()
+        for elem, conn in init_data.elem_conns.items():
+            this_elem_weighs = collections.Counter()
+            for node in conn:
+                other_elems = node_to_elems[node].copy()
+                other_elems.remove(elem)
+
+                for other_elem in other_elems:
+                    this_elem_weighs[other_elem] += 1
+
+            weighted_contribs = {other_elem: count / 12 for other_elem, count in this_elem_weighs.items()}
+            adj_elems[elem] = weighted_contribs
+
+        self._adjacent_elements = adj_elems
+
+    def _get_adj_elem_scale_factor(self, scale_key: T_ScaleKey) -> float:
+        """Optionally give the input strains a boost if the neighbors have yielded."""
+
+        if not self._adjacent_strain_factor:
+            return 0.0
+
+        adj_elem_contribs = 0.0
+        elem, direction = scale_key
+        for adj_elem, neightbor_factor in self._adjacent_elements[elem].items():
+            adj_scale_key = (adj_elem, direction)
+            adj_elem_contribs += neightbor_factor * self._working_prestrain_vals.get(adj_scale_key, 0.0)
+
+        boost_factor = abs(adj_elem_contribs) / self._adjacent_strain_factor
+
+        return boost_factor
 
 
 class NoScaling(Scaling):
@@ -66,7 +114,9 @@ class CentroidAwareScaling(Scaling):
     def _scale_factor_one_elem(self, cent: st7.Vector3):
         raise NotImplementedError()
 
-    def assign_centroids(self, elem_centroid: typing.Dict[int, st7.Vector3]):
+    def assign_centroids(self, init_data: InitialSetupModelData):
+        elem_centroid = init_data.elem_centroid
+
         # Find out how deep the elements go.
         self._y_max = max(xyz.y for xyz in elem_centroid.values())
 
@@ -82,9 +132,12 @@ class CentroidAwareScaling(Scaling):
             blank_out_bottom_elems = self._no_base_yield_modifier(elem_cent)
             self._elem_scale_fact[elem_num] = self._scale_factor_one_elem(elem_cent) * blank_out_bottom_elems
 
+        self.determine_adjacency(init_data)
+
     def get_x_scale_factor(self, scale_key: T_ScaleKey) -> float:
         elem_num, _ = scale_key[:]
-        return self._elem_scale_fact[elem_num]
+        strained_neighbor_boost = self._get_adj_elem_scale_factor(scale_key)
+        return self._elem_scale_fact[elem_num] + strained_neighbor_boost
 
     def _no_base_yield_modifier(self, elem_cent) -> float:
         if elem_cent.y < self._y_no_yielding_below:
@@ -127,12 +180,13 @@ class SpacedStepScaling(CentroidAwareScaling):
 
     _hole_width: float
 
-    def __init__(self, y_depth: float, spacing: float, amplitude: float, hole_width: float):
+    def __init__(self, y_depth: float, spacing: float, amplitude: float, hole_width: float, adj_neighbor_factor: float):
         self._elem_scale_fact = dict()
         self._y_depth = y_depth
         self._spacing = spacing
         self._amplitude = amplitude
         self._hole_width = hole_width
+        self._adjacent_strain_factor = adj_neighbor_factor
 
     def _scale_factor_one_elem(self, cent: st7.Vector3):
         x, y, _ = cent[:]
@@ -176,11 +230,12 @@ class SingleHoleCentre(CentroidAwareScaling):
 
     _hole_width: float
 
-    def __init__(self, y_depth: float, amplitude: float, hole_width: float):
+    def __init__(self, y_depth: float, amplitude: float, hole_width: float, adj_neighbor_factor: float):
         self._elem_scale_fact = dict()
         self._y_depth = y_depth
         self._amplitude = amplitude
         self._hole_width = hole_width
+        self._adjacent_strain_factor = adj_neighbor_factor
 
     def _scale_factor_one_elem(self, cent: st7.Vector3):
         x, y, _ = cent[:]

@@ -453,6 +453,7 @@ def incremental_element_update_list(
         return elem_idx_val[2]
 
     def candidate_strains(res_dict):
+        ratchet.scaling.assign_working_results(previous_prestrain_update.elem_prestrains_iteration_set)
         all_res = ratchet.get_all_proposed_values(elem_results=res_dict)
         return {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_res.as_single_values()}
 
@@ -917,7 +918,7 @@ def main(run_params: RunParams):
         init_data = initial_setup(model, current_result_frame)
         db.add_element_connections(init_data.elem_conns)
 
-        scaling.assign_centroids(init_data.elem_centroid)
+        scaling.assign_centroids(init_data)
         averaging.populate_radius(init_data.node_xyz, init_data.elem_conns)
 
         # Dummy init values
@@ -1072,7 +1073,7 @@ if __name__ == "__main__":
     #relaxation = PropRelax(0.5)
     relaxation = NoRelax()
 
-    scaling = SpacedStepScaling(y_depth=0.1, spacing=0.6, amplitude=0.2, hole_width=0.11)
+    scaling = SpacedStepScaling(y_depth=0.1, spacing=0.6, amplitude=0.2, hole_width=0.11, adj_neighbor_factor=dilation_ratio)
     #scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.1)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
@@ -1088,7 +1089,7 @@ if __name__ == "__main__":
 
     run_params = RunParams(
         actuator=Actuator.e_local,
-        stress_end=550.0,
+        stress_end=440.0,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
