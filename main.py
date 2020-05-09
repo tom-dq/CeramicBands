@@ -1073,7 +1073,7 @@ if __name__ == "__main__":
     #relaxation = PropRelax(0.5)
     relaxation = NoRelax()
 
-    scaling = SpacedStepScaling(y_depth=0.1, spacing=0.6, amplitude=0.2, hole_width=0.11, adj_neighbor_factor=dilation_ratio)
+    scaling = SpacedStepScaling(y_depth=0.1, spacing=0.6, amplitude=0.2, hole_width=0.11, adj_strain_factor=0.1 / dilation_ratio)
     #scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.1)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
