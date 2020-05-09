@@ -1080,7 +1080,7 @@ if __name__ == "__main__":
     averaging = NoAve()
 
     def throttle_ratio_decay(step_num_minor):
-        return (step_num_minor+1)**-0.5
+        return (step_num_minor+1)**-0.7
 
     # throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
     # throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
@@ -1088,13 +1088,13 @@ if __name__ == "__main__":
 
     run_params = RunParams(
         actuator=Actuator.e_local,
-        stress_end=425.0,
+        stress_end=550.0,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
         dilation_ratio=dilation_ratio,
-        n_steps_major=10,
+        n_steps_major=8,
         elem_ratio_per_iter=elem_ratio_per_iter,
         existing_prestrain_priority_factor=2,
     )
