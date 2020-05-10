@@ -1073,7 +1073,7 @@ if __name__ == "__main__":
     #relaxation = PropRelax(0.5)
     relaxation = NoRelax()
 
-    scaling = SpacedStepScaling(y_depth=0.1, spacing=0.6, amplitude=0.2, hole_width=0.11, adj_strain_factor=0.5 / dilation_ratio)
+    scaling = SpacedStepScaling(y_depth=0.04, spacing=0.2, amplitude=0.5, hole_width=0.04, adj_strain_factor=0.0 / dilation_ratio)
     #scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.1)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
@@ -1089,13 +1089,13 @@ if __name__ == "__main__":
 
     run_params = RunParams(
         actuator=Actuator.e_local,
-        stress_end=420.0,
+        stress_end=440.0,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
         dilation_ratio=dilation_ratio,
-        n_steps_major=8,
+        n_steps_major=10,
         elem_ratio_per_iter=elem_ratio_per_iter,
         existing_prestrain_priority_factor=2,
     )
