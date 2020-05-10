@@ -1066,14 +1066,14 @@ def create_load_case(model, case_name):
 
 
 if __name__ == "__main__":
-    dilation_ratio = 0.008   # 0.8% expansion, according to Jerome
+    dilation_ratio = 0.02   # 0.8% expansion, according to Jerome
     elem_ratio_per_iter = 0.0005
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
     #relaxation = PropRelax(0.5)
     relaxation = NoRelax()
 
-    scaling = SpacedStepScaling(y_depth=0.04, spacing=0.2, amplitude=0.5, hole_width=0.04, adj_strain_factor=0.0 / dilation_ratio)
+    scaling = SpacedStepScaling(y_depth=0.04, spacing=0.2, amplitude=0.5, hole_width=0.04, adj_strain_factor=0.1 / dilation_ratio)
     #scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.1)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
