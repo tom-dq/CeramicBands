@@ -122,6 +122,7 @@ class BaseThrottler:
             init_data: InitialSetupModelData,
             run_params,  # This is main.RunParams
             proposed_prestrains: typing.List[ElemPreStrainChangeData],
+            step_num_major: int,
             step_num_minor: int,
     ) -> typing.List[ElemPreStrainChangeData]:
         raise NotImplementedError()
@@ -173,6 +174,7 @@ class Throttler(BaseThrottler):
             init_data: InitialSetupModelData,
             run_params,  # This is main.RunParams
             proposed_prestrains: typing.List[ElemPreStrainChangeData],
+            step_num_major: int,
             step_num_minor: int,
     ) -> typing.List[ElemPreStrainChangeData]:
 
@@ -246,14 +248,14 @@ class RelaxedIncreaseDecrease(BaseThrottler):
     """Let all the elements increase or decrease as the iteration progresses, but don't always go the full
         proposed amount."""
 
-    _ratio_getter: typing.Callable[[int], float]
+    _ratio_getter: typing.Callable[[int, int], float]
 
-    def __init__(self, ratio_getter: typing.Callable[[int], float]):
+    def __init__(self, ratio_getter: typing.Callable[[int, int], float]):
 
         # Quick check the ratio getter function.
         check_vals = list(range(1000)) + [10000, 100000, 10000000]
         for step_num_minor in check_vals:
-            testing_ratio = ratio_getter(step_num_minor)
+            testing_ratio = ratio_getter(1, step_num_minor)
 
             if not 0.0 <= testing_ratio <= 1.0:
                 raise ValueError(f"Ratio needs to be between 0 and 1. {ratio_getter}({step_num_minor}) = {testing_ratio}")
@@ -261,18 +263,18 @@ class RelaxedIncreaseDecrease(BaseThrottler):
         self._ratio_getter = ratio_getter
 
     def __str__(self) -> str:
-        func_source = func_repr(self._ratio_getter)
-        return f"{self.__class__.__name__}({func_source})"
+        return f"{self.__class__.__name__}(ratio_getter)"
 
     def throttle(
             self,
             init_data: InitialSetupModelData,
             run_params,  # This is main.RunParams
             proposed_prestrains: typing.List[ElemPreStrainChangeData],
+            step_num_major: int,
             step_num_minor: int,
     ) -> typing.List[ElemPreStrainChangeData]:
 
-        ratio = self._ratio_getter(step_num_minor)
+        ratio = self._ratio_getter(step_num_major, step_num_minor)
 
         scaled_down_proposed_strains = [epscd.scaled_down(ratio) for epscd in proposed_prestrains]
         return scaled_down_proposed_strains

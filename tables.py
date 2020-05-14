@@ -8,13 +8,18 @@ from common_types import XY
 
 
 class Table:
+    _data_set: bool = False
     data: typing.Tuple[XY] = None
     _data_x: typing.Tuple[float] = None
     max_abs_y: float
 
     """Keeps track of some xy data"""
 
-    def __init__(self, data: typing.Sequence[XY]):
+    def __init__(self):
+        self._data_set = False
+
+    def set_table_data(self, data: typing.Sequence[XY]):
+        """This is a method so the data can be adjusted without loosing the reference to the object."""
 
         # Fail if it's not sorted, or if any compare equal.
         tuple_data = tuple(data)
@@ -26,7 +31,12 @@ class Table:
         self._data_x = tuple(xy.x for xy in self.data)
         self.max_abs_y = max(abs(xy.y) for xy in self.data)
 
+        self._data_set = True
+
     def interp(self, x: float) -> float:
+
+        if not self._data_set:
+            raise ValueError("Need to call .set_table_data(data) first.")
 
         # If we're off the botton or top, just return the final value.
         if x <= self._data_x[0]:
@@ -58,10 +68,17 @@ class Table:
         return low.y + delta_x * grad
 
     def min_val(self) -> float:
+
+        if not self._data_set:
+            raise ValueError("Need to call .set_table_data(data) first.")
+
         return self.data[0].y
 
     def with_appended_datapoint(self, xy: XY) -> "Table":
         """Build the next bit of a step-wise sequence."""
+
+        if not self._data_set:
+            raise ValueError("Need to call .set_table_data(data) first.")
 
         # TODO - this could certainly be made more robust...
 
@@ -89,10 +106,16 @@ class Table:
             new_points.append(xy._replace(x=xy.x + EPS))
             new_data = self.data + tuple(new_points)
 
-        return Table(new_data)
+        working_table = Table()
+        working_table.set_table_data(new_data)
+        return working_table
 
     def as_flat_doubles(self) -> typing.Sequence[float]:
         """To go into the Strand7 API, with everything flattened."""
+
+        if not self._data_set:
+            raise ValueError("Need to call .set_table_data(data) first.")
+
         for (x, y) in self.data:
             yield x
             yield y

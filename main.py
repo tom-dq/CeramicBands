@@ -19,6 +19,8 @@ import config
 
 from averaging import Averaging, AveInRadius, NoAve
 from common_types import XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST
+from parameter_trend import ParameterTrend
+import parameter_trend
 from relaxation import Relaxation, NoRelax
 from scaling import Scaling, SingleHoleCentre, SpacedStepScaling
 from tables import Table
@@ -87,15 +89,14 @@ class Actuator(enum.Enum):
 
 class RunParams(typing.NamedTuple):
     actuator: Actuator
-    stress_end: float
     scaling: Scaling
     averaging: Averaging
     relaxation: Relaxation
     throttler: BaseThrottler
-    dilation_ratio: float
     n_steps_major: int
     elem_ratio_per_iter: float
     existing_prestrain_priority_factor: float
+    parameter_trend: ParameterTrend
 
     def summary_strings(self) -> typing.Iterable[str]:
         yield "RunParams:\n"
@@ -103,6 +104,9 @@ class RunParams(typing.NamedTuple):
             field_val = getattr(self, field_name)
             if field_type in (Actuator,):
                 output_str = field_val.nice_name()
+
+            elif field_type in (ParameterTrend,):
+                yield from field_val.summary_strings()
 
             else:
                 output_str = str(field_val)
@@ -440,6 +444,7 @@ def incremental_element_update_list(
         ratchet: Ratchet,
         previous_prestrain_update: PrestrainUpdate,
         result_strain: ElemVectorDict,
+        step_num_major: int,
         step_num_minor: int,
 ) -> PrestrainUpdate:
     """Gets the subset of elements which should be "yielded", based on the stress."""
@@ -512,6 +517,7 @@ def incremental_element_update_list(
         init_data,
         run_params,
         proposed_prestrains_changes,
+        step_num_major,
         step_num_minor
     )
 
@@ -550,16 +556,6 @@ def incremental_element_update_list(
         this_update_time=this_update_time,
         update_completed_at_time=update_completed_at_time,
     )
-
-
-
-def make_fn(working_dir: pathlib.Path, actuator: Actuator, n_steps: int, scaling, averaging, stress_start, stress_end, dilation_ratio, relaxation, elem_ratio_per_iter, existing_prestrain_priority_factor) -> pathlib.Path:
-    """Makes the base Strand7 model name."""
-    new_stem = config.active_config.fn_st7_base.stem + f" - {actuator.name} {stress_start} to {stress_end} DilRat={dilation_ratio} Steps={n_steps} {scaling} {averaging} {relaxation} ElemRatio={elem_ratio_per_iter} ExistingPriority={existing_prestrain_priority_factor}"
-
-    new_name = new_stem + config.active_config.fn_st7_base.suffix
-    return working_dir / new_name
-    #return config.fn_st7_base.with_name(new_name)
 
 
 def fn_append(fn_orig: pathlib.Path, extra_bit) -> pathlib.Path:
@@ -836,36 +832,37 @@ def initial_setup(model: st7.St7Model, initial_result_frame: ResultFrame) -> Ini
     )
 
 
-def _make_prestrain_table(run_params: RunParams) -> Table:
+def _update_prestrain_table(run_params: RunParams, table: Table, major_iter: int, minor_iter: int):
+    stress_end = run_params.parameter_trend.stress_end(major_iter, minor_iter)
+    dilation_ratio = run_params.parameter_trend.dilation_ratio(major_iter, minor_iter)
+
     if run_params.actuator.input_result == st7.PlateResultType.rtPlateStress:
-        prestrain_table = Table([
+        table_data = [
             XY(0.0, 0.0),
             XY(STRESS_START, 0.0),
-            XY(run_params.stress_end, -1 * run_params.dilation_ratio),
-            XY(run_params.stress_end + 200, -1 * run_params.dilation_ratio),
-        ])
+            XY(stress_end, -1 * dilation_ratio),
+            XY(stress_end + 200, -1 * dilation_ratio),
+        ]
 
     elif run_params.actuator.input_result == st7.PlateResultType.rtPlateStrain:
         youngs_mod = 220000  # Hacky way!
-        prestrain_table = Table([
+        table_data = [
             XY(0.0, 0.0),
             XY(STRESS_START / youngs_mod, 0.0),
-            XY(run_params.stress_end / youngs_mod, -1 * run_params.dilation_ratio),
-            XY((run_params.stress_end + 200) / youngs_mod, -1 * run_params.dilation_ratio),
-        ])
+            XY(stress_end / youngs_mod, -1 * dilation_ratio),
+            XY((stress_end + 200) / youngs_mod, -1 * dilation_ratio),
+        ]
 
     else:
         raise ValueError(run_params.actuator.input_result)
 
-    return prestrain_table
+    table.set_table_data(table_data)
 
 
 
 def main(run_params: RunParams):
-
-    prestrain_table = _make_prestrain_table(run_params)
     ratchet = Ratchet(
-        prestrain_table,
+        table=Table(),
         scaling=run_params.scaling,
         averaging=run_params.averaging,
         relaxation=run_params.relaxation,
@@ -889,13 +886,16 @@ def main(run_params: RunParams):
 
     shutil.copy2(config.active_config.fn_st7_base, fn_st7)
 
+    load_time_table = Table()
+    load_time_table.set_table_data([XY(0.0, 0.0), XY(config.active_config.qsa_time_step_size, 0.0)])
+
     current_result_frame = ResultFrame(
         st7_file=fn_st7,
         configuration=config.active_config,
         result_file_index=0,
         result_case_num=1,
         global_result_case_num=1,
-        load_time_table=Table([XY(0.0, 0.0), XY(config.active_config.qsa_time_step_size, 0.0)]),
+        load_time_table=load_time_table,
         prev_result_case=None,
     )
 
@@ -979,12 +979,15 @@ def main(run_params: RunParams):
                     write_out_screenshot(model_window, current_result_frame)
                     write_out_to_db(db, init_data, step_num_major, step_num_minor, results, current_result_frame, prestrain_update)
 
+                _update_prestrain_table(run_params, ratchet.table, step_num_major, step_num_minor)
+
                 prestrain_update = incremental_element_update_list(
                     init_data=init_data,
                     run_params=run_params,
                     ratchet=ratchet,
                     previous_prestrain_update=prestrain_update,
                     result_strain=result_strain,
+                    step_num_major=step_num_major,
                     step_num_minor=step_num_minor,
                 )
 
@@ -1066,38 +1069,44 @@ def create_load_case(model, case_name):
 
 
 if __name__ == "__main__":
-    dilation_ratio = 0.02   # 0.8% expansion, according to Jerome
+    dilation_ratio_ref = 0.02   # 0.8% expansion, according to Jerome
     elem_ratio_per_iter = 0.0005
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
     #relaxation = PropRelax(0.5)
     relaxation = NoRelax()
 
-    scaling = SpacedStepScaling(y_depth=0.04, spacing=0.2, amplitude=0.5, hole_width=0.04, adj_strain_factor=0.1 / dilation_ratio)
+    scaling = SpacedStepScaling(y_depth=0.04, spacing=0.2, amplitude=0.5, hole_width=0.04, adj_strain_factor=0.1 / dilation_ratio_ref)
     #scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.1)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
     # averaging = AveInRadius(0.02)
     averaging = NoAve()
 
-    def throttle_ratio_decay(step_num_minor):
-        return (step_num_minor+1)**-0.7
-
     # throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
     # throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
-    throttler = RelaxedIncreaseDecrease(ratio_getter=throttle_ratio_decay)
+
+    const_440 = parameter_trend.Constant(440)
+    taper_down = parameter_trend.ExponetialDecayFunctionMinorInc(-0.8, 800, 405)
+
+    parameter_trend = ParameterTrend(
+        throttler_relaxation=parameter_trend.ExponetialDecayFunctionMinorInc(-0.7),
+        stress_end=taper_down,
+        dilation_ratio=parameter_trend.Constant(dilation_ratio_ref),
+    )
+
+    throttler = RelaxedIncreaseDecrease(ratio_getter=parameter_trend.throttler_relaxation)
 
     run_params = RunParams(
         actuator=Actuator.e_local,
-        stress_end=440.0,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        dilation_ratio=dilation_ratio,
         n_steps_major=10,
         elem_ratio_per_iter=elem_ratio_per_iter,
         existing_prestrain_priority_factor=2,
+        parameter_trend=parameter_trend,
     )
 
     main(run_params)
