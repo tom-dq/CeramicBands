@@ -294,7 +294,7 @@ def write_out_screenshot(model_window: st7.St7ModelWindow, current_result_frame:
     compress_png(current_result_frame.image_file)
 
 
-def write_out_to_db(db: history.DB, init_data: InitialSetupModelData, step_num_major, step_num_minor, results: st7.St7Results, current_result_frame: "ResultFrame", prestrain_update: PrestrainUpdate):
+def write_out_to_db(db: history.DB, init_data: InitialSetupModelData, current_inc: parameter_trend.CurrentInc, results: st7.St7Results, current_result_frame: "ResultFrame", prestrain_update: PrestrainUpdate):
 
     if not config.active_config.record_result_history_in_db:
         return
@@ -303,8 +303,8 @@ def write_out_to_db(db: history.DB, init_data: InitialSetupModelData, step_num_m
     db_res_case = history.ResultCase(
         num=None,
         name=str(current_result_frame),
-        major_inc=step_num_major,
-        minor_inc=step_num_minor,
+        major_inc=current_inc.major_inc,
+        minor_inc=current_inc.minor_inc,
     )
 
     db_case_num = db.add(db_res_case)
@@ -444,8 +444,6 @@ def incremental_element_update_list(
         ratchet: Ratchet,
         previous_prestrain_update: PrestrainUpdate,
         result_strain: ElemVectorDict,
-        step_num_major: int,
-        step_num_minor: int,
 ) -> PrestrainUpdate:
     """Gets the subset of elements which should be "yielded", based on the stress."""
 
@@ -517,8 +515,6 @@ def incremental_element_update_list(
         init_data,
         run_params,
         proposed_prestrains_changes,
-        step_num_major,
-        step_num_minor
     )
 
     top_n_new = {
@@ -832,9 +828,9 @@ def initial_setup(model: st7.St7Model, initial_result_frame: ResultFrame) -> Ini
     )
 
 
-def _update_prestrain_table(run_params: RunParams, table: Table, major_iter: int, minor_iter: int):
-    stress_end = run_params.parameter_trend.stress_end(major_iter, minor_iter)
-    dilation_ratio = run_params.parameter_trend.dilation_ratio(major_iter, minor_iter)
+def _update_prestrain_table(run_params: RunParams, table: Table, current_inc: parameter_trend.CurrentInc):
+    stress_end = run_params.parameter_trend.stress_end(current_inc)
+    dilation_ratio = run_params.parameter_trend.dilation_ratio(current_inc)
 
     if run_params.actuator.input_result == st7.PlateResultType.rtPlateStress:
         table_data = [
@@ -886,6 +882,9 @@ def main(run_params: RunParams):
 
     shutil.copy2(config.active_config.fn_st7_base, fn_st7)
 
+    pt_plot_fn = str(working_dir / "A-ParameterTrend.png")
+    parameter_trend.save_parameter_plot(run_params.parameter_trend, pt_plot_fn)
+
     load_time_table = Table()
     load_time_table.set_table_data([XY(0.0, 0.0), XY(config.active_config.qsa_time_step_size, 0.0)])
 
@@ -933,28 +932,28 @@ def main(run_params: RunParams):
         previous_load_factor = 0.0
 
         # old_prestrain_values = ElemVectorDict()
-        for step_num_major in range(run_params.n_steps_major):
-
-            # Perform an iterative update in which only a certain proportion of the elements can "yield" at once.
-            minor_step_iter = itertools.count()
-            step_num_minor = next(minor_step_iter)
-
-            def step_name():
-                return f"{step_num_major + 1}.{step_num_minor}"
+        for _ in range(run_params.n_steps_major):
+            run_params.parameter_trend.current_inc.inc_major()
 
             # Get the results from the last major step.
             with model.open_results(current_result_frame.result_file) as results:
                 write_out_screenshot(model_window, current_result_frame)
-                write_out_to_db(db, init_data, step_num_major, step_num_minor, results, current_result_frame, prestrain_update)
+                write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update)
 
             # Update the model with the new load
-            this_load_factor = (step_num_major+1) / run_params.n_steps_major
+            this_load_factor = (run_params.parameter_trend.current_inc.major_inc + 1) / run_params.n_steps_major
 
-            prestrain_load_case_num = create_load_case(model, step_name())
+            prestrain_load_case_num = create_load_case(model, run_params.parameter_trend.current_inc.step_name())
             apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_locked_in)
 
             # Add the increment, or overwrite it
-            current_result_frame = add_increment(model, current_result_frame, this_load_factor, step_name(), advance_result_case=True)
+            current_result_frame = add_increment(
+                model,
+                current_result_frame,
+                this_load_factor,
+                run_params.parameter_trend.current_inc.step_name(),
+                advance_result_case=True
+            )
             set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
 
             # Make sure we're starting from the last case
@@ -962,9 +961,9 @@ def main(run_params: RunParams):
 
             relaxation.set_current_relaxation(previous_load_factor, this_load_factor)
 
-            step_num_minor = next(minor_step_iter)
+            run_params.parameter_trend.current_inc.inc_minor()
             new_count = math.inf
-            while (new_count > 0) and (step_num_minor < n_steps_minor_max):
+            while (new_count > 0) and (run_params.parameter_trend.current_inc.minor_inc < n_steps_minor_max):
 
                 model.St7SaveFile()
                 model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
@@ -977,9 +976,9 @@ def main(run_params: RunParams):
                     result_strain_raw = get_results(run_params.actuator, results, current_result_frame.result_case_num)
                     result_strain = update_to_include_prestrains(run_params.actuator, result_strain_raw, prestrain_update.elem_prestrains_iteration_set)
                     write_out_screenshot(model_window, current_result_frame)
-                    write_out_to_db(db, init_data, step_num_major, step_num_minor, results, current_result_frame, prestrain_update)
+                    write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update)
 
-                _update_prestrain_table(run_params, ratchet.table, step_num_major, step_num_minor)
+                _update_prestrain_table(run_params, ratchet.table, run_params.parameter_trend.current_inc)
 
                 prestrain_update = incremental_element_update_list(
                     init_data=init_data,
@@ -987,13 +986,11 @@ def main(run_params: RunParams):
                     ratchet=ratchet,
                     previous_prestrain_update=prestrain_update,
                     result_strain=result_strain,
-                    step_num_major=step_num_major,
-                    step_num_minor=step_num_minor,
                 )
 
                 new_count = prestrain_update.updated_this_round
                 update_bits = [
-                    f"{step_name()}/{run_params.n_steps_major}",
+                    f"{run_params.parameter_trend.current_inc.step_name()}/{run_params.n_steps_major}",
                     f"Updated {new_count}",
                     f"Left {prestrain_update.not_updated_this_round}",
                     f"Total {prestrain_update.prestrained_overall}",
@@ -1006,10 +1003,10 @@ def main(run_params: RunParams):
                 # Only continue if there is updating to do.
                 if prestrain_update.updated_this_round > 0:
                     if config.active_config.case_for_every_increment:
-                        prestrain_load_case_num = create_load_case(model, step_name())
+                        prestrain_load_case_num = create_load_case(model, run_params.parameter_trend.current_inc.step_name())
 
                     # Add the next step
-                    current_result_frame = add_increment(model, current_result_frame, this_load_factor, step_name(), advance_result_case=True)
+                    current_result_frame = add_increment(model, current_result_frame, this_load_factor, run_params.parameter_trend.current_inc.step_name(), advance_result_case=True)
                     set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
 
                     # Make sure we're starting from the last case
@@ -1023,7 +1020,7 @@ def main(run_params: RunParams):
                             ratchet.update_minimum(True, (elem, idx), val)
 
                     # Keep track of the old results...
-                    step_num_minor = next(minor_step_iter)
+                    run_params.parameter_trend.current_inc.inc_minor()
 
                     set_max_iters(model, config.active_config.max_iters, use_major=True)
 
@@ -1058,7 +1055,7 @@ def main(run_params: RunParams):
         # Save the image of pre-strain results from the maximum load step.
         with model.open_results(current_result_frame.result_file) as results, model.St7CreateModelWindow(dont_really_make=False) as model_window:
             write_out_screenshot(model_window, current_result_frame)
-            write_out_to_db(db, init_data, step_num_major, step_num_minor, results, current_result_frame, prestrain_update)
+            write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update)
 
 
 def create_load_case(model, case_name):
@@ -1076,9 +1073,6 @@ if __name__ == "__main__":
     #relaxation = PropRelax(0.5)
     relaxation = NoRelax()
 
-    scaling = SpacedStepScaling(y_depth=0.04, spacing=0.2, amplitude=0.5, hole_width=0.04, adj_strain_factor=0.1 / dilation_ratio_ref)
-    #scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.1)
-    #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
     # averaging = AveInRadius(0.02)
     averaging = NoAve()
@@ -1087,15 +1081,23 @@ if __name__ == "__main__":
     # throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
 
     const_440 = parameter_trend.Constant(440)
-    taper_down = parameter_trend.ExponetialDecayFunctionMinorInc(-0.8, 800, 405)
+    taper_down = parameter_trend.ExponetialDecayFunctionMinorInc(-0.8, 600, 405)
 
-    parameter_trend = ParameterTrend(
+    linear_decrease = parameter_trend.TableInterpolateMinor([XY(0, 0.02), XY(50, 0.008)])
+
+    pt = ParameterTrend(
         throttler_relaxation=parameter_trend.ExponetialDecayFunctionMinorInc(-0.7),
-        stress_end=taper_down,
-        dilation_ratio=parameter_trend.Constant(dilation_ratio_ref),
+        stress_end=const_440,
+        dilation_ratio=linear_decrease,
+        adj_strain_ratio=parameter_trend.Constant(0.0),
+        current_inc=parameter_trend.CurrentInc(),
     )
 
-    throttler = RelaxedIncreaseDecrease(ratio_getter=parameter_trend.throttler_relaxation)
+    scaling = SpacedStepScaling(pt=pt, y_depth=0.04, spacing=0.2, amplitude=0.5, hole_width=0.04)
+    #scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.1)
+    #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
+
+    throttler = RelaxedIncreaseDecrease()
 
     run_params = RunParams(
         actuator=Actuator.e_local,
@@ -1106,7 +1108,7 @@ if __name__ == "__main__":
         n_steps_major=10,
         elem_ratio_per_iter=elem_ratio_per_iter,
         existing_prestrain_priority_factor=2,
-        parameter_trend=parameter_trend,
+        parameter_trend=pt,
     )
 
     main(run_params)

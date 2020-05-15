@@ -4,15 +4,16 @@ import math
 import random
 import typing
 
+import parameter_trend
 import st7
 from common_types import T_ScaleKey, InitialSetupModelData, ElemVectorDict
 
 
 class Scaling:
 
-    _adjacent_strain_factor: typing.Optional[float] = None
     _adjacent_elements: typing.Dict[int, typing.Dict[int, float]]  # Elem -> Adj_Elem -> Weight
     _working_prestrain_vals: typing.Dict[T_ScaleKey, float]
+    _parameter_trend: parameter_trend.ParameterTrend
 
     """Scales the "Yield Stress" according to some criterion."""
     @abc.abstractmethod
@@ -55,7 +56,12 @@ class Scaling:
     def _get_adj_elem_scale_factor(self, scale_key: T_ScaleKey) -> float:
         """Optionally give the input strains a boost if the neighbors have yielded."""
 
-        if not self._adjacent_strain_factor:
+        adj_strain_factor = (
+                self._parameter_trend.adj_strain_ratio(self._parameter_trend.current_inc) /
+                self._parameter_trend.dilation_ratio(self._parameter_trend.current_inc)
+        )
+
+        if not adj_strain_factor:
             return 0.0
 
         adj_elem_contribs = 0.0
@@ -64,7 +70,7 @@ class Scaling:
             adj_scale_key = (adj_elem, direction)
             adj_elem_contribs += neightbor_factor * self._working_prestrain_vals.get(adj_scale_key, 0.0)
 
-        boost_factor = abs(adj_elem_contribs) * self._adjacent_strain_factor
+        boost_factor = abs(adj_elem_contribs) * adj_strain_factor
 
         return boost_factor
 
@@ -180,14 +186,13 @@ class SpacedStepScaling(CentroidAwareScaling):
 
     _hole_width: float
 
-    def __init__(self, y_depth: float, spacing: float, amplitude: float, hole_width: float, adj_strain_factor: float):
+    def __init__(self, pt: parameter_trend.ParameterTrend, y_depth: float, spacing: float, amplitude: float, hole_width: float):
         self._elem_scale_fact = dict()
         self._y_depth = y_depth
         self._spacing = spacing
         self._amplitude = amplitude
         self._hole_width = hole_width
-
-        self._adjacent_strain_factor = adj_strain_factor
+        self._parameter_trend = pt
 
     def _scale_factor_one_elem(self, cent: st7.Vector3):
         x, y, _ = cent[:]
@@ -223,7 +228,7 @@ class SpacedStepScaling(CentroidAwareScaling):
             return 1.0
 
     def __str__(self):
-        return f"{self.__class__.__name__}(spacing={self._spacing}, amplitude={self._amplitude}, y_depth={self._y_depth}, hole_width={self._hole_width}, adj_strain_factor={self._adjacent_strain_factor})"
+        return f"{self.__class__.__name__}(spacing={self._spacing}, amplitude={self._amplitude}, y_depth={self._y_depth}, hole_width={self._hole_width})"
 
 
 class SingleHoleCentre(CentroidAwareScaling):
@@ -231,12 +236,12 @@ class SingleHoleCentre(CentroidAwareScaling):
 
     _hole_width: float
 
-    def __init__(self, y_depth: float, amplitude: float, hole_width: float, adj_neighbor_factor: float):
+    def __init__(self, pt: parameter_trend.ParameterTrend, y_depth: float, amplitude: float, hole_width: float):
         self._elem_scale_fact = dict()
         self._y_depth = y_depth
         self._amplitude = amplitude
         self._hole_width = hole_width
-        self._adjacent_strain_factor = adj_neighbor_factor
+        self._parameter_trend = pt
 
     def _scale_factor_one_elem(self, cent: st7.Vector3):
         x, y, _ = cent[:]
@@ -257,7 +262,6 @@ class SingleHoleCentre(CentroidAwareScaling):
 
         else:
             return 1.0
-
 
     def __str__(self):
         return f"{self.__class__.__name__}(y_depth={self._y_depth}, amplitude={self._amplitude}, hole_width={self._hole_width}, )"
