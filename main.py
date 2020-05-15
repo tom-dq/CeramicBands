@@ -1066,7 +1066,7 @@ def create_load_case(model, case_name):
 
 
 if __name__ == "__main__":
-    dilation_ratio_ref = 0.02   # 0.8% expansion, according to Jerome
+    dilation_ratio_ref = 0.008   # 0.8% expansion, according to Jerome
     elem_ratio_per_iter = 0.0005
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
@@ -1082,18 +1082,21 @@ if __name__ == "__main__":
 
     const_440 = parameter_trend.Constant(440)
     taper_down = parameter_trend.ExponetialDecayFunctionMinorInc(-0.8, 600, 405)
+    linear_600_405 = parameter_trend.TableInterpolateMinor([XY(0, 600), XY(50, 405)])
 
+    const_0_8_pc = parameter_trend.Constant(0.008)
     linear_decrease = parameter_trend.TableInterpolateMinor([XY(0, 0.02), XY(50, 0.008)])
 
     pt = ParameterTrend(
-        throttler_relaxation=parameter_trend.ExponetialDecayFunctionMinorInc(-0.7),
-        stress_end=const_440,
-        dilation_ratio=linear_decrease,
+        throttler_relaxation=parameter_trend.ExponetialDecayFunctionMinorInc(-0.6),
+        stress_end=linear_600_405,
+        dilation_ratio=const_0_8_pc,
         adj_strain_ratio=parameter_trend.Constant(0.0),
         current_inc=parameter_trend.CurrentInc(),
     )
 
-    scaling = SpacedStepScaling(pt=pt, y_depth=0.04, spacing=0.2, amplitude=0.5, hole_width=0.04)
+    # scaling = SpacedStepScaling(pt=pt, y_depth=0.04, spacing=0.2, amplitude=0.5, hole_width=0.04)
+    scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
     #scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.1)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
