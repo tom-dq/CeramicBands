@@ -1079,19 +1079,31 @@ if __name__ == "__main__":
 
     # throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
     # throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
+    throttler = RelaxedIncreaseDecrease()
 
+    # Throttle relaxation
+    exp_0_7 = parameter_trend.ExponetialDecayFunctionMinorInc(-0.7, init_val=0.5, start_at=60)
+
+    # Stress End
     const_440 = parameter_trend.Constant(440)
     taper_down = parameter_trend.ExponetialDecayFunctionMinorInc(-0.8, 600, 405)
     linear_600_405 = parameter_trend.TableInterpolateMinor([XY(0, 600), XY(50, 405)])
+    linear_500_404 = parameter_trend.TableInterpolateMinor([XY(0, 500), XY(10, 500), XY(25, 404)])
 
-    const_0_8_pc = parameter_trend.Constant(0.008)
+    # Dilation Ratio
+    const_dilation_ratio = parameter_trend.Constant(0.008)
     linear_decrease = parameter_trend.TableInterpolateMinor([XY(0, 0.02), XY(50, 0.008)])
 
+    # Adjacent Strain Ratio
+    zero = parameter_trend.Constant(0.0)
+    one_to_zero = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(10, 1), XY(50, 0)])
+    remove_after_50 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(50, 1), XY(60, 0)])
+
     pt = ParameterTrend(
-        throttler_relaxation=parameter_trend.ExponetialDecayFunctionMinorInc(-0.6),
-        stress_end=linear_600_405,
-        dilation_ratio=const_0_8_pc,
-        adj_strain_ratio=parameter_trend.Constant(0.0),
+        throttler_relaxation=exp_0_7,
+        stress_end=linear_500_404,
+        dilation_ratio=const_dilation_ratio,
+        adj_strain_ratio=remove_after_50,
         current_inc=parameter_trend.CurrentInc(),
     )
 
@@ -1100,7 +1112,7 @@ if __name__ == "__main__":
     #scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.1)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
-    throttler = RelaxedIncreaseDecrease()
+
 
     run_params = RunParams(
         actuator=Actuator.e_local,
@@ -1108,7 +1120,7 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=10,
+        n_steps_major=4,
         elem_ratio_per_iter=elem_ratio_per_iter,
         existing_prestrain_priority_factor=2,
         parameter_trend=pt,

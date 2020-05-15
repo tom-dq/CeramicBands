@@ -61,8 +61,9 @@ class ExponetialDecayFunctionMinorInc(ParameterGetter):
     _exponent: float = None
     _final: float
     _delta: float
+    _start_at: int
 
-    def __init__(self, exponent: float, init_val: float = 1.0, final_val: float = 0.0):
+    def __init__(self, exponent: float, init_val: float = 1.0, final_val: float = 0.0, start_at: int = 0):
 
         if exponent >= 0:
             raise ValueError("Does not go to zero!")
@@ -70,9 +71,14 @@ class ExponetialDecayFunctionMinorInc(ParameterGetter):
         self._exponent = exponent
         self._final = final_val
         self._delta = (init_val - final_val)
+        self._start_at = start_at
 
     def __call__(self, current_inc: CurrentInc) -> float:
-        return self._delta * (current_inc.minor_inc + 1) ** self._exponent + self._final
+        if current_inc.minor_inc <= self._start_at:
+            return self._final + self._delta
+
+        else:
+            return self._delta * (current_inc.minor_inc - self._start_at) ** self._exponent + self._final
 
     def __str__(self):
         return f"(minor_iter+1) ** {self._exponent}"
@@ -89,7 +95,7 @@ class TableInterpolateMinor(ParameterGetter):
         return self._table.interp(current_inc.minor_inc)
 
     def __str__(self):
-        return f"Table.interp(minor_iter), T = {self._table}"
+        return f"Table.interp(minor_iter), Table({self._table.data})"
 
 
 class LineData(typing.NamedTuple):

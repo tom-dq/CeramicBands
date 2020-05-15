@@ -245,7 +245,7 @@ class RelaxedIncreaseDecrease(BaseThrottler):
         proposed amount."""
 
     def __str__(self) -> str:
-        return f"{self.__class__.__name__}(ratio_getter)"
+        return f"{self.__class__.__name__}()"
 
     def throttle(
             self,
