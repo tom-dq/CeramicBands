@@ -56,6 +56,7 @@ class Actuator(enum.Enum):
     s_XX = enum.auto()
     s_local = enum.auto()
     e_local = enum.auto()
+    e_xx_only = enum.auto()
 
     def nice_name(self) -> str:
         if self == Actuator.S11:
@@ -72,6 +73,9 @@ class Actuator(enum.Enum):
 
         elif self == Actuator.e_local:
             return "Local Directional Strain"
+
+        elif self == Actuator.e_xx_only:
+            return "Strain local xx only"
 
         else:
             raise ValueError(self)
@@ -371,6 +375,12 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
             st7.St7API.ipPlateLocalzz,
         ]
 
+    elif phase_change_actuator == Actuator.e_xx_only:
+        res_sub_type = st7.PlateResultSubType.stPlateLocal
+        index_list = [
+            st7.St7API.ipPlateLocalxx,
+        ]
+
     else:
         raise ValueError(phase_change_actuator)
 
@@ -404,6 +414,10 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
             raise ValueError()
 
         result_values = [res_array.results[index] for index in index_list]
+
+        while len(result_values) < 3:
+            result_values.append(0.0)
+
         return st7.Vector3(*result_values)
 
     raw_dict = {plate_num: one_plate_result(plate_num) for plate_num in results.model.entity_numbers(st7.Entity.tyPLATE)}
@@ -428,7 +442,7 @@ def update_to_include_prestrains(
 ) -> ElemVectorDict:
     """Make sure we include the applied pre-strains..."""
 
-    if actuator == Actuator.e_local:
+    if actuator in (Actuator.e_local, Actuator.e_xx_only):
         return ElemVectorDict({
             plate_num: one_res + old_prestrain_values.get(plate_num, st7.Vector3(0.0, 0.0, 0.0)) for
             plate_num, one_res in minor_acuator_input_current_raw.items()
@@ -1091,7 +1105,7 @@ if __name__ == "__main__":
     linear_500_401 = parameter_trend.TableInterpolateMinor([XY(0, 500), XY(10, 500), XY(25, 401)])
 
     # Dilation Ratio
-    const_dilation_ratio = parameter_trend.Constant(0.02)
+    const_dilation_ratio = parameter_trend.Constant(0.008)
     linear_decrease = parameter_trend.TableInterpolateMinor([XY(0, 0.02), XY(50, 0.008)])
 
     # Adjacent Strain Ratio
@@ -1115,7 +1129,7 @@ if __name__ == "__main__":
 
 
     run_params = RunParams(
-        actuator=Actuator.e_local,
+        actuator=Actuator.e_xx_only,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
