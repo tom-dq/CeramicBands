@@ -52,7 +52,7 @@ def _get_config():
         return Config(
             # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 12-SingleGrade.st7"),
             # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11.st7"),
-            fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 13.st7"),
+            fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 13-SD8.st7"),
             fn_working_image_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\pics"),
             # screenshot_res=st7.CanvasSize(1920, 1080),  # FHD
             screenshot_res=st7.CanvasSize(2560, 1440),  # QHD

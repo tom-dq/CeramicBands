@@ -85,7 +85,7 @@ class Actuator(enum.Enum):
         if self in (Actuator.S11, Actuator.SvM, Actuator.s_XX, Actuator.s_local):
             return st7.PlateResultType.rtPlateStress
 
-        elif self == Actuator.e_local:
+        elif self in (Actuator.e_local, Actuator.e_xx_only):
             return st7.PlateResultType.rtPlateStrain
 
         else:
@@ -1105,7 +1105,7 @@ if __name__ == "__main__":
     linear_500_401 = parameter_trend.TableInterpolateMinor([XY(0, 500), XY(10, 500), XY(25, 401)])
 
     # Dilation Ratio
-    const_dilation_ratio = parameter_trend.Constant(0.008)
+    const_dilation_ratio = parameter_trend.Constant(0.02)
     linear_decrease = parameter_trend.TableInterpolateMinor([XY(0, 0.02), XY(50, 0.008)])
 
     # Adjacent Strain Ratio
