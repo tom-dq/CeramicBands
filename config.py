@@ -59,7 +59,7 @@ def _get_config():
             # screenshot_res=st7.CanvasSize(3840, 2160), # 4K
             scratch_dir=pathlib.Path(r"C:\Temp"),
             solver=st7.SolverType.stQuasiStatic,
-            qsa_steps_per_file=50,
+            qsa_steps_per_file=10,
             qsa_time_step_size=0.1,
             max_iters=MaxIters(major_step=5, minor_step=1),
             delete_old_result_files=True,

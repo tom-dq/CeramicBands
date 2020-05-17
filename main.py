@@ -1088,10 +1088,10 @@ if __name__ == "__main__":
     const_440 = parameter_trend.Constant(440)
     taper_down = parameter_trend.ExponetialDecayFunctionMinorInc(-0.8, 600, 405)
     linear_600_405 = parameter_trend.TableInterpolateMinor([XY(0, 600), XY(50, 405)])
-    linear_500_404 = parameter_trend.TableInterpolateMinor([XY(0, 500), XY(10, 500), XY(25, 404)])
+    linear_500_401 = parameter_trend.TableInterpolateMinor([XY(0, 500), XY(10, 500), XY(25, 401)])
 
     # Dilation Ratio
-    const_dilation_ratio = parameter_trend.Constant(0.008)
+    const_dilation_ratio = parameter_trend.Constant(0.02)
     linear_decrease = parameter_trend.TableInterpolateMinor([XY(0, 0.02), XY(50, 0.008)])
 
     # Adjacent Strain Ratio
@@ -1101,14 +1101,14 @@ if __name__ == "__main__":
 
     pt = ParameterTrend(
         throttler_relaxation=exp_0_7,
-        stress_end=linear_500_404,
+        stress_end=linear_500_401,
         dilation_ratio=const_dilation_ratio,
         adj_strain_ratio=remove_after_50,
         current_inc=parameter_trend.CurrentInc(),
     )
 
-    # scaling = SpacedStepScaling(pt=pt, y_depth=0.04, spacing=0.2, amplitude=0.5, hole_width=0.04)
-    scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
+    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.08, amplitude=0.5, hole_width=0.02)
+    # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
     #scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.1)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
@@ -1120,7 +1120,7 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=4,
+        n_steps_major=2,
         elem_ratio_per_iter=elem_ratio_per_iter,
         existing_prestrain_priority_factor=2,
         parameter_trend=pt,
@@ -1130,4 +1130,4 @@ if __name__ == "__main__":
 
 
 # Combine to one video with "C:\Utilities\ffmpeg-20181212-32601fb-win64-static\bin\ffmpeg.exe -f image2 -r 12 -i Case-%04d.png -vcodec libx264 -profile:v high444 -refs 16 -crf 0 out.mp4"
-
+# Or to an x265 video with "C:\Utilities\ffmpeg-20181212-32601fb-win64-static\bin\ffmpeg.exe -f image2 -r 30 -i Case-%04d.png -c:v libx265 out265.mp4"
