@@ -38,7 +38,7 @@ class Scaling:
             for node in conn:
                 node_to_elems[node].add(elem)
 
-        adj_elems = dict()
+        adj_elems = {}
         for elem, conn in init_data.elem_conns.items():
             this_elem_weighs = collections.Counter()
             for node in conn:
@@ -156,7 +156,7 @@ class CosineScaling(CentroidAwareScaling):
     """Does a cosine based on the element position."""
 
     def __init__(self, y_depth: float, spacing: float, amplitude: float):
-        self._elem_scale_fact = dict()
+        self._elem_scale_fact = {}
         self._y_depth = y_depth
         self._spacing = spacing
         self._amplitude = amplitude
@@ -187,7 +187,7 @@ class SpacedStepScaling(CentroidAwareScaling):
     _hole_width: float
 
     def __init__(self, pt: parameter_trend.ParameterTrend, y_depth: float, spacing: float, amplitude: float, hole_width: float):
-        self._elem_scale_fact = dict()
+        self._elem_scale_fact = {}
         self._y_depth = y_depth
         self._spacing = spacing
         self._amplitude = amplitude
@@ -237,7 +237,7 @@ class SingleHoleCentre(CentroidAwareScaling):
     _hole_width: float
 
     def __init__(self, pt: parameter_trend.ParameterTrend, y_depth: float, amplitude: float, hole_width: float):
-        self._elem_scale_fact = dict()
+        self._elem_scale_fact = {}
         self._y_depth = y_depth
         self._amplitude = amplitude
         self._hole_width = hole_width

@@ -68,9 +68,6 @@ class Actuator(enum.Enum):
         elif self == Actuator.s_XX:
             return "XX Global Stress"
 
-        elif self == Actuator.s_XX:
-            return "Local Directional Stress"
-
         elif self == Actuator.e_local:
             return "Local Directional Strain"
 
