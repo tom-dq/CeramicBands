@@ -9,7 +9,6 @@ import datetime
 import contextlib
 from PIL import Image
 
-
 import st7
 import pathlib
 import math
