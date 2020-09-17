@@ -7,6 +7,7 @@ import st7
 class Environment(enum.Enum):
     uni_desktop = enum.auto()
     samsung_laptop = enum.auto()
+    macbook_bootcamp = enum.auto()
 
 
 class MaxIters(typing.NamedTuple):
@@ -42,7 +43,7 @@ class Config(typing.NamedTuple):
 
 
 def _get_env() -> Environment:
-    return Environment.uni_desktop
+    return Environment.macbook_bootcamp
 
 
 def _get_config():
@@ -54,6 +55,25 @@ def _get_config():
             # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11.st7"),
             fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 13-SD8.st7"),
             fn_working_image_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\pics"),
+            # screenshot_res=st7.CanvasSize(1920, 1080),  # FHD
+            screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
+            # screenshot_res=st7.CanvasSize(3840, 2160), # 4K
+            scratch_dir=pathlib.Path(r"C:\Temp"),
+            solver=st7.SolverType.stQuasiStatic,
+            qsa_steps_per_file=10,
+            qsa_time_step_size=0.1,
+            max_iters=MaxIters(major_step=5, minor_step=1),
+            delete_old_result_files=True,
+            ratched_prestrains_during_iterations=False,
+            case_for_every_increment=False,
+            record_result_history_in_db=False,
+            converged_delta_prestrain=1e-6,
+        )
+
+    elif this_env == Environment.macbook_bootcamp:
+        return Config(
+            fn_st7_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v1.st7"),
+            fn_working_image_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v1\pics"),
             # screenshot_res=st7.CanvasSize(1920, 1080),  # FHD
             screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
             # screenshot_res=st7.CanvasSize(3840, 2160), # 4K
