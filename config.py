@@ -72,8 +72,8 @@ def _get_config():
 
     elif this_env == Environment.macbook_bootcamp:
         return Config(
-            fn_st7_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v1.st7"),
-            fn_working_image_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v1\pics"),
+            fn_st7_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v5\Test 13.st7"),
+            fn_working_image_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v5\pics"),
             # screenshot_res=st7.CanvasSize(1920, 1080),  # FHD
             screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
             # screenshot_res=st7.CanvasSize(3840, 2160), # 4K
