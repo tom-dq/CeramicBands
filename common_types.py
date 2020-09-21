@@ -1,6 +1,8 @@
 import inspect
 import typing
 import collections
+import enum
+
 import st7
 
 class XY(typing.NamedTuple):
@@ -17,19 +19,29 @@ T_ResultDict = typing.Dict[int, st7.Vector3]
 
 T_Elem_Axis = typing.Tuple[int, int]  # E.g, (2354, 0) -> Elem 2354, x axis.
 
+
+class SingleValue(typing.NamedTuple):
+    elem: T_Elem
+    axis: T_Direction
+    value: float
+
+    @property
+    def id_key(self):
+        return (self.elem, self.axis)
+
 class ElemVectorDict(dict):
     """Handy subclass to iterate over the individual values."""
 
-    def as_single_values(self) -> typing.Iterable[ typing.Tuple[T_Elem, int, float]]:
+    def as_single_values(self) -> typing.Iterable[ SingleValue]:
         for elem, xyz in self.items():
-            yield from ( (elem, idx, val) for idx, val in enumerate(xyz))
+            yield from ( SingleValue(elem, idx, val) for idx, val in enumerate(xyz))
 
     def copy(self):
         """Make copy return a "ElemVectorDict", not a dict."""
         return type(self)(self)
 
     @classmethod
-    def from_single_values(cls, fill_zeros_for_incomplete: bool, single_vals: typing.Iterable[ typing.Tuple[T_Elem, int, float]]) -> "ElemVectorDict":
+    def from_single_values(cls, fill_zeros_for_incomplete: bool, single_vals: typing.Iterable[SingleValue]) -> "ElemVectorDict":
         elem_to_idx_to_val = collections.defaultdict(dict)
         for elem, idx, val in single_vals:
             elem_to_idx_to_val[elem][idx] = val
@@ -78,6 +90,51 @@ def func_repr(f) -> str:
         raise ValueError("Only meant for one liners, not this!")
 
     return f"{source_lines[0]}  {source_lines[1].strip()}"
+
+
+
+class Actuator(enum.Enum):
+    """The value used to ratchet up the prestrain."""
+    S11 = enum.auto()
+    SvM = enum.auto()
+    s_XX = enum.auto()
+    s_local = enum.auto()
+    e_local = enum.auto()
+    e_xx_only = enum.auto()
+    e_11 = enum.auto()
+
+    def nice_name(self) -> str:
+        if self == Actuator.S11:
+            return "Principal 11 Stress"
+
+        elif self == Actuator.SvM:
+            return "vM Stress"
+
+        elif self == Actuator.s_XX:
+            return "XX Global Stress"
+
+        elif self == Actuator.e_local:
+            return "Local Directional Strain"
+
+        elif self == Actuator.e_xx_only:
+            return "Strain local xx only"
+
+        elif self == Actuator.e_11:
+            return "Principal 11 Strain"
+
+        else:
+            raise ValueError(self)
+
+    @property
+    def input_result(self) -> st7.PlateResultType:
+        if self in (Actuator.S11, Actuator.SvM, Actuator.s_XX, Actuator.s_local):
+            return st7.PlateResultType.rtPlateStress
+
+        elif self in (Actuator.e_local, Actuator.e_xx_only, Actuator.e_11):
+            return st7.PlateResultType.rtPlateStrain
+
+        else:
+            raise ValueError(self)
 
 
 

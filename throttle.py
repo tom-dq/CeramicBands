@@ -2,11 +2,12 @@
 
 """Throttling controls the elements which get updated at a given iteration, rather than just updating all of them"""
 import abc
+import collections
 import enum
 
 import typing
 
-from common_types import ElemVectorDict, T_Elem_Axis, InitialSetupModelData, func_repr
+from common_types import ElemVectorDict, T_Elem_Axis, InitialSetupModelData, func_repr, Actuator
 from tables import Table
 
 class StoppingCriterion(enum.Enum):
@@ -114,6 +115,18 @@ class ElemPreStrainChangeData(typing.NamedTuple):
         else:
             raise ValueError(stopping_criterion)
 
+    @staticmethod
+    def princ_transform_scale(actuator: Actuator, factor: float, all_epscd: typing.Iterable["ElemPreStrainChangeData"]):
+        """Does the scale-down on the principal axis"""
+
+        # Scales down the magnitusde and the angle...
+
+        OLD, NEW = 5, 6
+        
+        elem_to_data = collections.defaultdict(dict)
+        for epscd in all_epscd:
+            for key, val in ( (OLD, epscd.old_prestrain_val), (NEW, epscd.new_proposed_prestrain))
+        raise ValueError("Up to dhere....")
 
 class BaseThrottler:
     @abc.abstractmethod

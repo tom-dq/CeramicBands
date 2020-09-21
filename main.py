@@ -17,7 +17,7 @@ import shutil
 import config
 
 from averaging import Averaging, AveInRadius, NoAve
-from common_types import XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST
+from common_types import SingleValue, XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST, Actuator
 from parameter_trend import ParameterTrend
 import parameter_trend
 from relaxation import Relaxation, NoRelax
@@ -48,48 +48,7 @@ NUM_PLATE_RES_RETRIES = 50
 
 #screenshot_res = st7.CanvasSize(1920, 1200)
 
-class Actuator(enum.Enum):
-    """The value used to ratchet up the prestrain."""
-    S11 = enum.auto()
-    SvM = enum.auto()
-    s_XX = enum.auto()
-    s_local = enum.auto()
-    e_local = enum.auto()
-    e_xx_only = enum.auto()
-    e_11 = enum.auto()
 
-    def nice_name(self) -> str:
-        if self == Actuator.S11:
-            return "Principal 11 Stress"
-
-        elif self == Actuator.SvM:
-            return "vM Stress"
-
-        elif self == Actuator.s_XX:
-            return "XX Global Stress"
-
-        elif self == Actuator.e_local:
-            return "Local Directional Strain"
-
-        elif self == Actuator.e_xx_only:
-            return "Strain local xx only"
-
-        elif self == Actuator.e_11:
-            return "Principal 11 Strain"
-
-        else:
-            raise ValueError(self)
-
-    @property
-    def input_result(self) -> st7.PlateResultType:
-        if self in (Actuator.S11, Actuator.SvM, Actuator.s_XX, Actuator.s_local):
-            return st7.PlateResultType.rtPlateStress
-
-        elif self in (Actuator.e_local, Actuator.e_xx_only, Actuator.e_11):
-            return st7.PlateResultType.rtPlateStrain
-
-        else:
-            raise ValueError(self)
 
 class RunParams(typing.NamedTuple):
     actuator: Actuator
@@ -166,11 +125,12 @@ class Ratchet:
         if TEMP_ELEMS_OF_INTEREST:
             print("Unaveraged:")
 
-        for elem_id, idx, result_strain_raw in elem_results.as_single_values():
+        # for elem_id, idx, result_strain_raw in elem_results.as_single_values():
+        for sv in elem_results.as_single_values():
 
             # Apply scaling
-            scale_key = (elem_id, idx)
-            stress_scaled = self.scaling.get_x_scale_factor(scale_key) * result_strain_raw
+            scale_key = (sv.elem, sv.axis)
+            stress_scaled = self.scaling.get_x_scale_factor(scale_key) * sv.value
 
             # Do the stress-to-prestrain lookup
             strain_raw = self.table.interp(stress_scaled)
@@ -182,12 +142,11 @@ class Ratchet:
             strain_relaxed_ratcheted = self.update_minimum(False, scale_key, strain_relaxed)
 
             if TEMP_ELEMS_OF_INTEREST:
-                if elem_id in TEMP_ELEMS_OF_INTEREST and idx == 0:
-                    print(elem_id, result_strain_raw, strain_raw, strain_relaxed, strain_relaxed_ratcheted, sep='\t')
-
+                if sv.elem in TEMP_ELEMS_OF_INTEREST and sv.axis == 0:
+                    print(sv.elem, sv.value, strain_raw, strain_relaxed, strain_relaxed_ratcheted, sep='\t')
 
             # Save the unaveraged results
-            idx_to_elem_to_unaveraged[idx][elem_id] = strain_relaxed_ratcheted
+            idx_to_elem_to_unaveraged[sv.axis][sv.elem] = strain_relaxed_ratcheted
 
         # Perform averaging on a per-index basis (so the x-prestrain is only averaged with other x-prestrain.)
         single_vals = []
@@ -204,7 +163,7 @@ class Ratchet:
                 ratchet_key = (elem_id, idx)
 
                 ratchet_value = self.update_minimum(LOCK_IN, ratchet_key, prestrain_val)
-                single_vals.append( (elem_id, idx, ratchet_value))
+                single_vals.append( SingleValue(elem_id, idx, ratchet_value))
 
                 if TEMP_ELEMS_OF_INTEREST:
                     if elem_id in TEMP_ELEMS_OF_INTEREST and idx == 0:
@@ -461,26 +420,17 @@ def incremental_element_update_list(
 ) -> PrestrainUpdate:
     """Gets the subset of elements which should be "yielded", based on the stress."""
 
-    def id_key(elem_idx_val):
-        """Return elem, idx"""
-        return elem_idx_val[0:2]
-
-    def val(elem_idx_val):
-        """Return abs(val)"""
-        return elem_idx_val[2]
-
     def candidate_strains(res_dict):
         ratchet.scaling.assign_working_results(previous_prestrain_update.elem_prestrains_iteration_set)
         all_res = ratchet.get_all_proposed_values(elem_results=res_dict)
-        return {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_res.as_single_values()}
+        return {sv.id_key: sv.value for sv in all_res.as_single_values()}
 
     # Use the current stress or strain results to choose the new elements.
-    minor_acuator_input_current_flat = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in result_strain.as_single_values()}
+    minor_acuator_input_current_flat = {sv.id_key: sv.value for sv in result_strain.as_single_values()}
 
     new_prestrains_all = candidate_strains(result_strain)
 
-    old_prestrains = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in previous_prestrain_update.elem_prestrains_iteration_set.as_single_values()}
-    increased_prestrains_OLD = {key: val for key, val in new_prestrains_all.items() if abs(val) > abs(old_prestrains.get(key, 0.0))}
+    old_prestrains = {sv.id_key: sv.value for sv in previous_prestrain_update.elem_prestrains_iteration_set.as_single_values()}
 
     proposed_prestrains_changes = [
         ElemPreStrainChangeData(
@@ -542,7 +492,7 @@ def incremental_element_update_list(
     # Build the new pre-strain dictionary out of old and new values.
     # old_strain_single_vals = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_prev_strain.as_single_values()}
     combined_final_single_values = {**old_prestrains, **top_n_new}
-    single_vals_out = [ (elem, idx, val) for (elem, idx), val in combined_final_single_values.items()]
+    single_vals_out = [ SingleValue(elem, idx, val) for (elem, idx), val in combined_final_single_values.items()]
     total_out = sum(1 for _, _, val in single_vals_out if abs(val))
 
     # Work out now much additional dilation has been introduced.
@@ -1030,8 +980,8 @@ def main(run_params: RunParams):
 
                     if config.active_config.ratched_prestrains_during_iterations:
                         # Update the ratchet settings for the one we did ramp up.
-                        for elem, idx, val in prestrain_update.elem_prestrains_iteration_set.as_single_values():
-                            ratchet.update_minimum(True, (elem, idx), val)
+                        for sv in prestrain_update.elem_prestrains_iteration_set.as_single_values():
+                            ratchet.update_minimum(True, sv.id_key, sv.value)
 
                     # Keep track of the old results...
                     run_params.parameter_trend.current_inc.inc_minor()
@@ -1059,8 +1009,8 @@ def main(run_params: RunParams):
             previous_load_factor = this_load_factor
 
             # Update the ratchet for what's been locked in.
-            for elem, idx, val in prestrain_update.elem_prestrains_locked_in.as_single_values():
-                ratchet.update_minimum(True, (elem, idx), val)
+            for sv in prestrain_update.elem_prestrains_locked_in.as_single_values():
+                ratchet.update_minimum(True, sv.id_key, sv.value)
 
             relaxation.flush_previous_values()
 

@@ -28,7 +28,7 @@ class Scaling:
         pass
 
     def assign_working_results(self, previous_iteration_results: ElemVectorDict):
-        self._working_prestrain_vals = { (elem, idx): val for (elem, idx, val) in previous_iteration_results.as_single_values() }
+        self._working_prestrain_vals = { sv.id_key: sv.value for sv in previous_iteration_results.as_single_values() }
 
     def determine_adjacency(self, init_data: InitialSetupModelData):
         """Weighted element-to-neighbour. One shared node -> 1/12 contib. Two shared nodes -> 1/6 contrib."""
