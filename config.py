@@ -54,7 +54,7 @@ def _get_config():
             # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 12-SingleGrade.st7"),
             # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11.st7"),
             fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 13-SD8.st7"),
-            fn_working_image_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\pics"),
+            fn_working_image_base=pathlib.Path(r"E:\Simulations\CeramicBands\v6\pics"),
             # screenshot_res=st7.CanvasSize(1920, 1080),  # FHD
             screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
             # screenshot_res=st7.CanvasSize(3840, 2160), # 4K
@@ -72,11 +72,9 @@ def _get_config():
 
     elif this_env == Environment.macbook_bootcamp:
         return Config(
-            fn_st7_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v5\Test 13.st7"),
-            fn_working_image_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v5\pics"),
-            # screenshot_res=st7.CanvasSize(1920, 1080),  # FHD
+            fn_st7_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v6-Ratio\20x06.st7"),
+            fn_working_image_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v6-Ratio\pics"),
             screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
-            # screenshot_res=st7.CanvasSize(3840, 2160), # 4K
             scratch_dir=pathlib.Path(r"C:\Temp"),
             solver=st7.SolverType.stQuasiStatic,
             qsa_steps_per_file=10,

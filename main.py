@@ -56,6 +56,7 @@ class Actuator(enum.Enum):
     s_local = enum.auto()
     e_local = enum.auto()
     e_xx_only = enum.auto()
+    e_11 = enum.auto()
 
     def nice_name(self) -> str:
         if self == Actuator.S11:
@@ -73,6 +74,9 @@ class Actuator(enum.Enum):
         elif self == Actuator.e_xx_only:
             return "Strain local xx only"
 
+        elif self == Actuator.e_11:
+            return "Principal 11 Strain"
+
         else:
             raise ValueError(self)
 
@@ -81,7 +85,7 @@ class Actuator(enum.Enum):
         if self in (Actuator.S11, Actuator.SvM, Actuator.s_XX, Actuator.s_local):
             return st7.PlateResultType.rtPlateStress
 
-        elif self in (Actuator.e_local, Actuator.e_xx_only):
+        elif self in (Actuator.e_local, Actuator.e_xx_only, Actuator.e_11):
             return st7.PlateResultType.rtPlateStrain
 
         else:
@@ -363,7 +367,7 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
             st7.St7API.ipPlateGlobalXX,
         ]
 
-    elif phase_change_actuator in (Actuator.s_local, Actuator.e_local):
+    elif phase_change_actuator in (Actuator.s_local, Actuator.e_local, Actuator.e_11):
         res_sub_type = st7.PlateResultSubType.stPlateLocal
         index_list = [
             st7.St7API.ipPlateLocalxx,
@@ -438,7 +442,7 @@ def update_to_include_prestrains(
 ) -> ElemVectorDict:
     """Make sure we include the applied pre-strains..."""
 
-    if actuator in (Actuator.e_local, Actuator.e_xx_only):
+    if actuator in (Actuator.e_local, Actuator.e_xx_only, Actuator.e_11):
         return ElemVectorDict({
             plate_num: one_res + old_prestrain_values.get(plate_num, st7.Vector3(0.0, 0.0, 0.0)) for
             plate_num, one_res in minor_acuator_input_current_raw.items()
