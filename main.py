@@ -326,12 +326,23 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
             st7.St7API.ipPlateGlobalXX,
         ]
 
-    elif phase_change_actuator in (Actuator.s_local, Actuator.e_local, Actuator.e_11):
+    elif phase_change_actuator in (Actuator.s_local, Actuator.e_local):
         res_sub_type = st7.PlateResultSubType.stPlateLocal
         index_list = [
             st7.St7API.ipPlateLocalxx,
             st7.St7API.ipPlateLocalyy,
             st7.St7API.ipPlateLocalzz,
+        ]
+
+    elif phase_change_actuator == Actuator.e_11:
+        res_sub_type = st7.PlateResultSubType.stPlateLocal
+        index_list = [
+            st7.St7API.ipPlateLocalxx,
+            st7.St7API.ipPlateLocalyy,
+            st7.St7API.ipPlateLocalzz,
+            st7.St7API.ipPlateLocalxy,
+            st7.St7API.ipPlateLocalyz,
+            st7.St7API.ipPlateLocalzx,
         ]
 
     elif phase_change_actuator == Actuator.e_xx_only:
@@ -374,10 +385,14 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
 
         result_values = [res_array.results[index] for index in index_list]
 
-        while len(result_values) < 3:
+        while len(result_values) < 6:
             result_values.append(0.0)
 
-        return st7.Vector3(*result_values)
+        if phase_change_actuator.input_result == st7.PlateResultType.rtPlateStrain:
+            return st7.StrainTensor(*result_values)
+
+        else:
+            raise ValueError("Only doing strains now!")
 
     raw_dict = {plate_num: one_plate_result(plate_num) for plate_num in results.model.entity_numbers(st7.Entity.tyPLATE)}
     return ElemVectorDict(raw_dict)
@@ -423,25 +438,27 @@ def incremental_element_update_list(
     def candidate_strains(res_dict):
         ratchet.scaling.assign_working_results(previous_prestrain_update.elem_prestrains_iteration_set)
         all_res = ratchet.get_all_proposed_values(elem_results=res_dict)
-        return {sv.id_key: sv.value for sv in all_res.as_single_values()}
+        return all_res.as_single_values_for_actuation(run_params.actuator)
 
     # Use the current stress or strain results to choose the new elements.
-    minor_acuator_input_current_flat = {sv.id_key: sv.value for sv in result_strain.as_single_values()}
+    minor_acuator_input_current_flat = result_strain.as_single_values_for_actuation(run_params.actuator)
 
     new_prestrains_all = candidate_strains(result_strain)
 
-    old_prestrains = {sv.id_key: sv.value for sv in previous_prestrain_update.elem_prestrains_iteration_set.as_single_values()}
+    old_prestrains = previous_prestrain_update.elem_prestrains_iteration_set.as_single_values_for_actuation(run_params.actuator)
 
     proposed_prestrains_changes = [
         ElemPreStrainChangeData(
             elem_num=key[0],
             axis=key[1],
-            proposed_prestrain_val=val,
-            old_prestrain_val=old_prestrains.get(key, 0.0),
+            proposed_prestrain_val=sv.value,
+            old_prestrain_val=old_prestrains[key].value,
             result_strain_val=minor_acuator_input_current_flat[key] * ratchet.scaling.get_x_scale_factor(key),
+            eigen_vector_proposed=sv.eigen_vector,
+            eigen_vector_old=old_prestrains[key].eigen_vector,
         )
-        for key, val in new_prestrains_all.items()
-        if abs(val - old_prestrains.get(key, 0.0)) > config.active_config.converged_delta_prestrain
+        for key, sv in new_prestrains_all.items()
+        if abs(sv.value - old_prestrains[key].value) > config.active_config.converged_delta_prestrain
     ]
 
     if TEMP_ELEMS_OF_INTEREST:
@@ -475,30 +492,31 @@ def incremental_element_update_list(
         print()
 
     # Get the working set of prestrain updates.
+    # TODO - maybe add the principal stuff in here too?
     proposed_prestrains_subset = ratchet.throttler.throttle(
         init_data,
         run_params,
         proposed_prestrains_changes,
     )
 
-    top_n_new = {
-        (elem_strain_inc_data.elem_num, elem_strain_inc_data.axis): elem_strain_inc_data.proposed_prestrain_val
-        for elem_strain_inc_data in proposed_prestrains_subset }
+    top_n_new = {sv.id_key: sv for sv in (epscd.to_single_value() for epscd in proposed_prestrains_subset)}
+
+    #top_n_new = {
+    #    (elem_strain_inc_data.elem_num, elem_strain_inc_data.axis): elem_strain_inc_data.proposed_prestrain_val
+    #    for elem_strain_inc_data in proposed_prestrains_subset }
 
     # top_n_new = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_new_sorted[0:num_allowed]}
     new_count = len(top_n_new)
     left_over_count = max(0, len(proposed_prestrains_changes) - new_count)
 
     # Build the new pre-strain dictionary out of old and new values.
-    # old_strain_single_vals = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in minor_prev_strain.as_single_values()}
     combined_final_single_values = {**old_prestrains, **top_n_new}
-    single_vals_out = [ SingleValue(elem, idx, val) for (elem, idx), val in combined_final_single_values.items()]
-    total_out = sum(1 for _, _, val in single_vals_out if abs(val))
+    total_out = sum(1 for sv in combined_final_single_values if abs(sv.value))
 
     # Work out now much additional dilation has been introduced.
     extra_dilation = [
-        (elem_idx, val - old_prestrains.get(elem_idx, 0.0))
-        for elem_idx, val in top_n_new.items()
+        (elem_idx, sv.value - old_prestrains[elem_idx].value)
+        for elem_idx, sv in top_n_new.items()
     ]
 
     extra_dilation_norm = sum(init_data.elem_volume[elem_idx[0]] * abs(val) for elem_idx, val in extra_dilation)
@@ -506,9 +524,13 @@ def incremental_element_update_list(
     update_completed_at_time = datetime.datetime.now()
     this_update_time = update_completed_at_time - previous_prestrain_update.update_completed_at_time
 
+    # In case we need an eigenvector-reverse thing to rotate the principal back, compute that now.
+    key_to_eig_vector = {key: sv.eigen_vector for key, sv in old_prestrains.items()}
+
+
     return PrestrainUpdate(
         elem_prestrains_locked_in=previous_prestrain_update.elem_prestrains_locked_in,
-        elem_prestrains_iteration_set=ElemVectorDict.from_single_values(True, single_vals_out),
+        elem_prestrains_iteration_set=ElemVectorDict.from_single_values(True, combined_final_single_values),
         updated_this_round=new_count,
         not_updated_this_round=left_over_count,
         prestrained_overall=total_out,

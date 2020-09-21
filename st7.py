@@ -7,6 +7,8 @@ import typing
 import ctypes
 import pathlib
 
+import numpy
+
 T_Path = typing.Union[pathlib.Path, str]
 
 def chk(iErr):
@@ -208,7 +210,6 @@ class TableType(enum.Enum):
 
 
 
-
 class Vector3(typing.NamedTuple):
     x: float
     y: float
@@ -262,6 +263,82 @@ class Vector3(typing.NamedTuple):
 
     def __abs__(self):
         return (self.x**2 + self.y**2 + self.z**2)**0.5
+
+
+class StrainTensor(typing.NamedTuple):
+    xx: float
+    yy: float
+    zz: float
+    xy: float
+    yz: float
+    zx: float
+
+    def __radd__(self, other):
+        # This is just a convenience so I can use "sum" rather than "reduce with operator.add"...
+        if isinstance(other, StrainTensor):
+            return self.__add__(other)
+
+        elif isinstance(other, int):
+            if other == 0:
+                return self
+
+            else:
+                raise ValueError("Can only add to a zero int, and I probably shouldn't even be doing that.")
+
+        else:
+            raise TypeError(other)
+
+
+    def __add__(self, other):
+        if not isinstance(other, StrainTensor):
+            raise TypeError(other)
+
+        return StrainTensor(
+            xx=self.xx + other.xx,
+            yy=self.yy + other.yy,
+            zz=self.zz + other.zz,
+            xy=self.xy + other.xy,
+            yz=self.yz + other.yz,
+            zx=self.zx + other.zx,
+        )
+
+    def __sub__(self, other):
+        if not isinstance(other, StrainTensor):
+            raise TypeError(other)
+
+        return StrainTensor(
+            xx=self.xx - other.xx,
+            yy=self.yy - other.yy,
+            zz=self.zz - other.zz,
+            xy=self.xy - other.xy,
+            yz=self.yz - other.yz,
+            zx=self.zx - other.zx,
+        )
+
+    def __truediv__(self, other):
+        if not isinstance(other, (int, float)):
+            raise TypeError(other)
+
+        return StrainTensor(
+            xx=self.xx / other,
+            yy=self.yy / other,
+            zz=self.zz / other,
+            xy=self.xy / other,
+            yz=self.yz / other,
+            zx=self.zx / other,
+        )
+
+    def __abs__(self):
+        # Does the max principal make sense as an "abs" value? Not really sure...
+        w = numpy.linalg.eigvals(self.as_np_array())
+        return max(w)
+
+    def as_np_array(self) -> numpy.array:
+        return numpy.array([
+            [self.xx, 0.5*self.xy, 0.5*self.zx],
+            [0.5*self.xy, self.yy, 0.5*self.yz],
+            [0.5*self.zx, 0.5*self.yz, self.zz],
+        ])
 
 
 class CanvasSize(typing.NamedTuple):

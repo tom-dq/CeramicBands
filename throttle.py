@@ -7,7 +7,10 @@ import enum
 
 import typing
 
-from common_types import ElemVectorDict, T_Elem_Axis, InitialSetupModelData, func_repr, Actuator
+import numpy
+from numpy.linalg.linalg import eig
+
+from common_types import ElemVectorDict, SingleValue, T_Elem_Axis, InitialSetupModelData, func_repr, Actuator
 from tables import Table
 
 class StoppingCriterion(enum.Enum):
@@ -55,6 +58,8 @@ class ElemPreStrainChangeData(typing.NamedTuple):
     proposed_prestrain_val: float
     old_prestrain_val: float
     result_strain_val: float
+    eigen_vector_old: typing.Optional[numpy.array]
+    eigen_vector_proposed: typing.Optional[numpy.array]
 
     def scaled_down(self, factor: float) -> "ElemPreStrainChangeData":
         """Taper off the full value."""
@@ -125,8 +130,18 @@ class ElemPreStrainChangeData(typing.NamedTuple):
         
         elem_to_data = collections.defaultdict(dict)
         for epscd in all_epscd:
-            for key, val in ( (OLD, epscd.old_prestrain_val), (NEW, epscd.new_proposed_prestrain))
-        raise ValueError("Up to dhere....")
+            for key, val in ( (OLD, epscd.old_prestrain_val), (NEW, epscd.new_proposed_prestrain)):
+                pass
+
+        raise ValueError("Up to here....")
+
+    def to_single_value(self) -> SingleValue:
+        return SingleValue(
+            elem=self.elem_num,
+            axis=self.axis,
+            value=self.proposed_prestrain_val,
+            eigen_vector=self.eigen_vector_proposed,
+        )
 
 class BaseThrottler:
     @abc.abstractmethod
