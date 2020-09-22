@@ -116,7 +116,7 @@ class Ratchet:
     def copy(self) -> "Ratchet":
         return self.__copy__()
 
-    def get_all_proposed_values(self, elem_results: ElemVectorDict) -> ElemVectorDict:
+    def get_all_proposed_values(self, actuator: Actuator, elem_results: ElemVectorDict) -> typing.List[SingleValue]:
         """Ratchet up the table and return the value. This is done independently for each axis.
         If 'lock_in' is set, the ratchet is "moved up". Otherwise, it's just like peeking at what the value would have been."""
 
@@ -126,7 +126,11 @@ class Ratchet:
             print("Unaveraged:")
 
         # for elem_id, idx, result_strain_raw in elem_results.as_single_values():
-        for sv in elem_results.as_single_values():
+        # At this stage, don't average the eigenvector... seems a bit iffy!
+        elem_to_eigen_vector = {}
+        for sv in elem_results.as_single_values_for_actuation(actuator).values():
+
+            elem_to_eigen_vector[sv.elem] = sv.eigen_vector
 
             # Apply scaling
             scale_key = (sv.elem, sv.axis)
@@ -143,7 +147,7 @@ class Ratchet:
 
             if TEMP_ELEMS_OF_INTEREST:
                 if sv.elem in TEMP_ELEMS_OF_INTEREST and sv.axis == 0:
-                    print(sv.elem, sv.value, strain_raw, strain_relaxed, strain_relaxed_ratcheted, sep='\t')
+                    print(sv.elem, sv.value, strain_raw, strain_relaxed, strain_relaxed_ratcheted, sv.eigen_vector, sep='\t')
 
             # Save the unaveraged results
             idx_to_elem_to_unaveraged[sv.axis][sv.elem] = strain_relaxed_ratcheted
@@ -163,14 +167,15 @@ class Ratchet:
                 ratchet_key = (elem_id, idx)
 
                 ratchet_value = self.update_minimum(LOCK_IN, ratchet_key, prestrain_val)
-                single_vals.append( SingleValue(elem_id, idx, ratchet_value))
+                single_vals.append( SingleValue(elem_id, idx, ratchet_value, elem_to_eigen_vector[elem_id]))
 
                 if TEMP_ELEMS_OF_INTEREST:
                     if elem_id in TEMP_ELEMS_OF_INTEREST and idx == 0:
                         print(elem_id, prestrain_val, ratchet_value, sep='\t')
 
         # self.min_y_so_far is now updated - compose that back into the return results.
-        return ElemVectorDict.from_single_values(False, single_vals)
+        # return ElemVectorDict.from_single_values(False, single_vals)
+        return single_vals
 
     def update_minimum(self, lock_in: bool, scale_key, y_val) -> float:
         maybe_old_min = self.min_y_so_far.get(scale_key, math.inf)
@@ -437,8 +442,9 @@ def incremental_element_update_list(
 
     def candidate_strains(res_dict):
         ratchet.scaling.assign_working_results(previous_prestrain_update.elem_prestrains_iteration_set)
-        all_res = ratchet.get_all_proposed_values(elem_results=res_dict)
-        return all_res.as_single_values_for_actuation(run_params.actuator)
+
+        # TODO - UP TO HERE, trying to get the principal single values working...
+        return ratchet.get_all_proposed_values(run_params.actuator, elem_results=res_dict)
 
     # Use the current stress or strain results to choose the new elements.
     minor_acuator_input_current_flat = result_strain.as_single_values_for_actuation(run_params.actuator)
@@ -447,7 +453,7 @@ def incremental_element_update_list(
 
     old_prestrains = previous_prestrain_update.elem_prestrains_iteration_set.as_single_values_for_actuation(run_params.actuator)
 
-    proposed_prestrains_changes = [
+    proposed_prestrains_changes_all = [
         ElemPreStrainChangeData(
             elem_num=key[0],
             axis=key[1],
@@ -458,8 +464,9 @@ def incremental_element_update_list(
             eigen_vector_old=old_prestrains[key].eigen_vector,
         )
         for key, sv in new_prestrains_all.items()
-        if abs(sv.value - old_prestrains[key].value) > config.active_config.converged_delta_prestrain
     ]
+
+    proposed_prestrains_changes = [espcd for espcd in proposed_prestrains_changes_all if espcd.proposed_change() > config.active_config.converged_delta_prestrain]
 
     if TEMP_ELEMS_OF_INTEREST:
         old_TEMP = {elem_idx: val for elem_idx, val in old_prestrains.items() if elem_idx[0] in TEMP_ELEMS_OF_INTEREST}
@@ -523,10 +530,6 @@ def incremental_element_update_list(
 
     update_completed_at_time = datetime.datetime.now()
     this_update_time = update_completed_at_time - previous_prestrain_update.update_completed_at_time
-
-    # In case we need an eigenvector-reverse thing to rotate the principal back, compute that now.
-    key_to_eig_vector = {key: sv.eigen_vector for key, sv in old_prestrains.items()}
-
 
     return PrestrainUpdate(
         elem_prestrains_locked_in=previous_prestrain_update.elem_prestrains_locked_in,
@@ -1075,13 +1078,13 @@ if __name__ == "__main__":
 
 
     run_params = RunParams(
-        actuator=Actuator.e_xx_only,
+        actuator=Actuator.e_11,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=2,
-        n_steps_minor_max=math.inf,
+        n_steps_major=1,
+        n_steps_minor_max=2,
         existing_prestrain_priority_factor=2,
         parameter_trend=pt,
     )

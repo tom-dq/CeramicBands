@@ -164,7 +164,7 @@ class ElemVectorDict(dict):
         elem_to_idx_to_eig = collections.defaultdict(dict)
 
         single_vals = list(single_vals)
-        eig_is_none = (sv.eigen_vector == None for sv in single_vals)
+        eig_is_none = [sv.eigen_vector is None for sv in single_vals]
         if all(eig_is_none):
             do_eigens = False
 
@@ -173,6 +173,8 @@ class ElemVectorDict(dict):
 
         else:
             raise ValueError("Got some with and some without eigenvectors...")
+
+        print(f"{do_eigens = }")
 
         for sv in single_vals:
             elem_to_idx_to_val[sv.elem][sv.axis] = sv.value
@@ -201,11 +203,11 @@ class ElemVectorDict(dict):
         def make_xyz_from_eigens(elem, idx_to_val):
             # Back-rotate the from pricipal to local using the eigenvectors
             N = len(idx_to_val)
-            vects = numpy.zeros(shape=(N, N))
+            vects = numpy.zeros(shape=(3, N))
             vals = numpy.zeros(shape=(N,))
 
             eigens = elem_to_idx_to_eig[elem]
-            for idx, val in idx_to_val:
+            for idx, val in idx_to_val.items():
                 vals[idx] = val
                 vects[:, idx] = eigens[idx]
 
@@ -218,7 +220,6 @@ class ElemVectorDict(dict):
                 yz=2.0 * float(matrix_with_shears[1, 2]),
                 zx=2.0 * float(matrix_with_shears[0, 2]),
             )
-
 
         if do_eigens:
             make_xyz = make_xyz_from_eigens
@@ -276,4 +277,4 @@ def test_local_princ():
 
 # TEMP_ELEMS_OF_INTEREST = {4001, 4002, 4003, 4004, 4201,}
 # TEMP_ELEMS_OF_INTEREST = {8606, 8597, 8704,}
-TEMP_ELEMS_OF_INTEREST = set()
+TEMP_ELEMS_OF_INTEREST = {582,}
