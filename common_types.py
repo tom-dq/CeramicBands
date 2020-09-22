@@ -141,7 +141,7 @@ class ElemVectorDict(dict):
                     )
 
 
-    def as_single_values_for_actuation(self, actuator: Actuator) -> SingleValueWithMissingDict[T_ScaleKey, SingleValue]:
+    def as_single_values_for_actuation(self, actuator: Actuator) -> SingleValueWithMissingDict:
         if actuator.needs_principal_rotation:
             raw = self._as_principal_values()
 
@@ -161,7 +161,7 @@ class ElemVectorDict(dict):
     @classmethod
     def from_single_values(cls, fill_zeros_for_incomplete: bool, single_vals: typing.Iterable[SingleValue]) -> "ElemVectorDict":
         elem_to_idx_to_val = collections.defaultdict(dict)
-        elem_to_idx_to_eig = dict()
+        elem_to_idx_to_eig = collections.defaultdict(dict)
 
         single_vals = list(single_vals)
         eig_is_none = (sv.eigen_vector == None for sv in single_vals)

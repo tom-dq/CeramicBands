@@ -239,7 +239,7 @@ def apply_prestrain(model: st7.St7Model, case_num: int, elem_to_ratio: typing.Di
     """Apply all the prestrains"""
 
     for plate_num, prestrain_val in elem_to_ratio.items():
-        prestrain = st7.Vector3(x=prestrain_val.x, y=prestrain_val.y, z=prestrain_val.z)
+        prestrain = st7.Vector3(x=prestrain_val.xx, y=prestrain_val.yy, z=prestrain_val.zz)
         model.St7SetPlatePreLoad3(plate_num, case_num, st7.PreLoadType.plPlatePreStrain, prestrain)
 
 
@@ -418,7 +418,7 @@ def update_to_include_prestrains(
 
     if actuator in (Actuator.e_local, Actuator.e_xx_only, Actuator.e_11):
         return ElemVectorDict({
-            plate_num: one_res + old_prestrain_values.get(plate_num, st7.Vector3(0.0, 0.0, 0.0)) for
+            plate_num: one_res + old_prestrain_values.get(plate_num, st7.StrainTensor(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)) for
             plate_num, one_res in minor_acuator_input_current_raw.items()
         })
 
@@ -453,7 +453,7 @@ def incremental_element_update_list(
             axis=key[1],
             proposed_prestrain_val=sv.value,
             old_prestrain_val=old_prestrains[key].value,
-            result_strain_val=minor_acuator_input_current_flat[key] * ratchet.scaling.get_x_scale_factor(key),
+            result_strain_val=minor_acuator_input_current_flat[key].value * ratchet.scaling.get_x_scale_factor(key),
             eigen_vector_proposed=sv.eigen_vector,
             eigen_vector_old=old_prestrains[key].eigen_vector,
         )
@@ -510,7 +510,7 @@ def incremental_element_update_list(
     left_over_count = max(0, len(proposed_prestrains_changes) - new_count)
 
     # Build the new pre-strain dictionary out of old and new values.
-    combined_final_single_values = {**old_prestrains, **top_n_new}
+    combined_final_single_values = {**old_prestrains, **top_n_new}.values()
     total_out = sum(1 for sv in combined_final_single_values if abs(sv.value))
 
     # Work out now much additional dilation has been introduced.
@@ -1053,7 +1053,7 @@ def create_load_case(model, case_name):
 
 if __name__ == "__main__":
     dilation_ratio_ref = 0.008   # 0.8% expansion, according to Jerome
-    elem_ratio_per_iter = 0.0005
+    elem_ratio_per_iter = 0.00005
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
     #relaxation = PropRelax(0.5)
