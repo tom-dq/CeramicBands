@@ -1043,6 +1043,7 @@ if __name__ == "__main__":
 
     # Throttle relaxation
     exp_0_7 = parameter_trend.ExponetialDecayFunctionMinorInc(-0.7, init_val=0.5, start_at=60)
+    gradual_relax = parameter_trend.TableInterpolateMinor([XY(0, 0.4), XY(50, 0.4), XY(70, 0.3), XY(100, 0.2), XY(200, 0.15)])
 
     # Stress End
     const_440 = parameter_trend.Constant(440)
@@ -1052,7 +1053,7 @@ if __name__ == "__main__":
 
     # Dilation Ratio
     const_dilation_ratio = parameter_trend.Constant(0.008)
-    linear_decrease = parameter_trend.TableInterpolateMinor([XY(0, 0.02), XY(50, 0.008)])
+    linear_decrease = parameter_trend.TableInterpolateMinor([XY(0, 0.02), XY(120, 0.008)])
 
     # Adjacent Strain Ratio
     zero = parameter_trend.Constant(0.0)
@@ -1060,16 +1061,16 @@ if __name__ == "__main__":
     remove_after_50 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(50, 1), XY(60, 0)])
 
     pt = ParameterTrend(
-        throttler_relaxation=exp_0_7,
+        throttler_relaxation=gradual_relax,
         stress_end=linear_500_401,
-        dilation_ratio=const_dilation_ratio,
+        dilation_ratio=linear_decrease,
         adj_strain_ratio=remove_after_50,
         current_inc=parameter_trend.CurrentInc(),
     )
 
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.1, amplitude=0.5, hole_width=0.02)
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
-    scaling = SingleHoleCentre(pt=pt, y_depth=0.25, amplitude=0.2, hole_width=0.1)
+    scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=0.02)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
 
 
