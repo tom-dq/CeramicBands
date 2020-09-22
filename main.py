@@ -57,7 +57,7 @@ class RunParams(typing.NamedTuple):
     relaxation: Relaxation
     throttler: BaseThrottler
     n_steps_major: int
-    elem_ratio_per_iter: float
+    n_steps_minor_max: int
     existing_prestrain_priority_factor: float
     parameter_trend: ParameterTrend
 
@@ -571,13 +571,9 @@ class ResultFrame(typing.NamedTuple):
                 pass
 
 
-    def get_next_result_frame(self, bending_load_factor: float, advance_result_case: bool) -> "ResultFrame":
+    def get_next_result_frame(self, bending_load_factor: float) -> "ResultFrame":
 
-        if advance_result_case:
-            proposed_new_result_case_num = self.result_case_num + 1
-
-        else:
-            proposed_new_result_case_num = self.result_case_num
+        proposed_new_result_case_num = self.result_case_num + 1
 
         this_case_with_no_history = self._replace(prev_result_case=None)
 
@@ -657,8 +653,8 @@ class ResultFrame(typing.NamedTuple):
         return self.configuration.qsa_time_step_size * self.global_result_case_num
 
 
-def add_increment(model: st7.St7Model, result_frame: ResultFrame, this_load_factor, inc_name, advance_result_case) -> ResultFrame:
-    next_result_frame = result_frame.get_next_result_frame(this_load_factor, advance_result_case)
+def add_increment(model: st7.St7Model, result_frame: ResultFrame, this_load_factor, inc_name) -> ResultFrame:
+    next_result_frame = result_frame.get_next_result_frame(this_load_factor)
 
     if result_frame.configuration.solver == st7.SolverType.stNonlinearStatic:
         model.St7AddNLAIncrement(STAGE, inc_name)
@@ -673,6 +669,8 @@ def add_increment(model: st7.St7Model, result_frame: ResultFrame, this_load_fact
 
     else:
         raise ValueError("sovler type")
+
+    set_restart_for(model, next_result_frame)
 
     return next_result_frame
 
@@ -840,6 +838,19 @@ def _update_prestrain_table(run_params: RunParams, table: Table, current_inc: pa
 
     table.set_table_data(table_data)
 
+def _print_update_line(run_params: RunParams, prestrain_update: PrestrainUpdate):
+
+    update_bits = [
+        f"{run_params.parameter_trend.current_inc.step_name()}/{run_params.n_steps_major}",
+        f"Updated {prestrain_update.updated_this_round}",
+        f"Left {prestrain_update.not_updated_this_round}",
+        f"Total {prestrain_update.prestrained_overall}",
+        f"Norm {prestrain_update.update_ratio}",
+        f"TimeDelta {prestrain_update.this_update_time.total_seconds():1.3f}"
+        #str(ratchet.status_update()),
+    ]
+    
+    print("\t".join(update_bits))
 
 
 def main(run_params: RunParams):
@@ -851,15 +862,12 @@ def main(run_params: RunParams):
         throttler=run_params.throttler)
 
     # Allow a maximum of 10% of the elements to yield in a given step.
-    n_steps_minor_max = math.inf
 
     for summary_string in run_params.summary_strings():
         print(summary_string.strip())
         
     for summary_string in config.active_config.summary_strings():
         print(summary_string.strip())
-
-    print(f"Limiting to {n_steps_minor_max} steps per load increment - only {run_params.elem_ratio_per_iter:%} can yield.")
 
     working_dir = directories.get_unique_sub_dir(config.active_config.fn_working_image_base)
 
@@ -891,10 +899,6 @@ def main(run_params: RunParams):
     print(f"Working directory: {working_dir}")
     print()
 
-    state = state_tracker.default_state
-    print("Signal files:")
-    state.print_signal_file_names(working_dir)
-
     with contextlib.ExitStack() as exit_stack:
         model = exit_stack.enter_context(st7.St7Model(fn_st7, config.active_config.scratch_dir))
         model_window = exit_stack.enter_context(model.St7CreateModelWindow(DONT_MAKE_MODEL_WINDOW))
@@ -909,22 +913,20 @@ def main(run_params: RunParams):
         # Dummy init values
         prestrain_update = PrestrainUpdate.zero()
 
-        # Assume the elements are evenly sized. Factor of 2 is for x and y.
-        n_updates_per_iter = round(2 * run_params.elem_ratio_per_iter * len(model.entity_numbers(st7.Entity.tyPLATE)))
-
         set_max_iters(model, config.active_config.max_iters, use_major=True)
         model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
 
         previous_load_factor = 0.0
 
-        # old_prestrain_values = ElemVectorDict()
         for _ in range(run_params.n_steps_major):
             run_params.parameter_trend.current_inc.inc_major()
 
+            
             # Get the results from the last major step.
             with model.open_results(current_result_frame.result_file) as results:
                 write_out_screenshot(model_window, current_result_frame)
                 write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update)
+
 
             # Update the model with the new load
             this_load_factor = (run_params.parameter_trend.current_inc.major_inc + 1) / run_params.n_steps_major
@@ -937,20 +939,19 @@ def main(run_params: RunParams):
                 model,
                 current_result_frame,
                 this_load_factor,
-                run_params.parameter_trend.current_inc.step_name(),
-                advance_result_case=True
+                run_params.parameter_trend.current_inc.step_name()
             )
             set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
-
-            # Make sure we're starting from the last case
-            set_restart_for(model, current_result_frame)
-
+        
             relaxation.set_current_relaxation(previous_load_factor, this_load_factor)
 
             run_params.parameter_trend.current_inc.inc_minor()
             new_count = math.inf
-            while (new_count > 0) and (run_params.parameter_trend.current_inc.minor_inc < n_steps_minor_max):
 
+            def should_do_another_minor_iteration(new_count, minor_inc: int) -> bool:
+                return (new_count > 0) and (minor_inc < run_params.n_steps_minor_max)
+
+            while should_do_another_minor_iteration(new_count, run_params.parameter_trend.current_inc.minor_inc):
                 model.St7SaveFile()
                 model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
 
@@ -975,57 +976,31 @@ def main(run_params: RunParams):
                 )
 
                 new_count = prestrain_update.updated_this_round
-                update_bits = [
-                    f"{run_params.parameter_trend.current_inc.step_name()}/{run_params.n_steps_major}",
-                    f"Updated {new_count}",
-                    f"Left {prestrain_update.not_updated_this_round}",
-                    f"Total {prestrain_update.prestrained_overall}",
-                    f"Norm {prestrain_update.update_ratio}",
-                    f"TimeDelta {prestrain_update.this_update_time.total_seconds():1.3f}"
-                    #str(ratchet.status_update()),
-                ]
-                print("\t".join(update_bits))
+                _print_update_line(run_params, prestrain_update)
 
-                # Only continue if there is updating to do.
-                if prestrain_update.updated_this_round > 0:
-                    if config.active_config.case_for_every_increment:
-                        prestrain_load_case_num = create_load_case(model, run_params.parameter_trend.current_inc.step_name())
+                # Apply prestrains etc to the upcoming increment.
+                if config.active_config.case_for_every_increment:
+                    prestrain_load_case_num = create_load_case(model, run_params.parameter_trend.current_inc.step_name())
 
-                    # Add the next step
-                    current_result_frame = add_increment(model, current_result_frame, this_load_factor, run_params.parameter_trend.current_inc.step_name(), advance_result_case=True)
-                    set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
+                # Add the next step
+                current_result_frame = add_increment(model, current_result_frame, this_load_factor, run_params.parameter_trend.current_inc.step_name())
+                set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
 
-                    # Make sure we're starting from the last case
-                    set_restart_for(model, current_result_frame)
+                apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_iteration_set)
 
-                    apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_iteration_set)
+                if config.active_config.ratched_prestrains_during_iterations:
+                    # Update the ratchet settings for the one we did ramp up.
+                    for sv in prestrain_update.elem_prestrains_iteration_set.as_single_values():
+                        ratchet.update_minimum(True, sv.id_key, sv.value)
 
-                    if config.active_config.ratched_prestrains_during_iterations:
-                        # Update the ratchet settings for the one we did ramp up.
-                        for sv in prestrain_update.elem_prestrains_iteration_set.as_single_values():
-                            ratchet.update_minimum(True, sv.id_key, sv.value)
+                # Keep track of the old results...
+                run_params.parameter_trend.current_inc.inc_minor()
 
-                    # Keep track of the old results...
-                    run_params.parameter_trend.current_inc.inc_minor()
+                set_max_iters(model, config.active_config.max_iters, use_major=True)
 
-                    set_max_iters(model, config.active_config.max_iters, use_major=True)
-
-                # Update the state.
-                state = state.update_from_fn(working_dir)
-                if state.need_to_write_st7():
-                    model.St7SaveFile()
-
-                if state.execution == state_tracker.Execution.pause:
-                    _ = input("Press enter to carry on...")
-                    state = state.unpause()
-
-                elif state.execution == state_tracker.Execution.stop:
-                    return
-
-            # Update the ratchet with the equilibrated results.
-            # for elem, idx, val in prestrain_update.elem_prestrains.as_single_values():
-            #     scale_key = (elem, idx)
-            #    ratchet.update_minimum(True, scale_key, val)
+            # Tack a final increment on the end so the result case is there as expected for the start of the following major increment.
+            model.St7SaveFile()
+            model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
 
             prestrain_update = prestrain_update.locked_in_prestrains()
             previous_load_factor = this_load_factor
@@ -1053,7 +1028,6 @@ def create_load_case(model, case_name):
 
 if __name__ == "__main__":
     dilation_ratio_ref = 0.008   # 0.8% expansion, according to Jerome
-    elem_ratio_per_iter = 0.00005
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
     #relaxation = PropRelax(0.5)
@@ -1077,7 +1051,7 @@ if __name__ == "__main__":
     linear_500_401 = parameter_trend.TableInterpolateMinor([XY(0, 500), XY(10, 500), XY(25, 401)])
 
     # Dilation Ratio
-    const_dilation_ratio = parameter_trend.Constant(0.02)
+    const_dilation_ratio = parameter_trend.Constant(0.008)
     linear_decrease = parameter_trend.TableInterpolateMinor([XY(0, 0.02), XY(50, 0.008)])
 
     # Adjacent Strain Ratio
@@ -1093,11 +1067,10 @@ if __name__ == "__main__":
         current_inc=parameter_trend.CurrentInc(),
     )
 
-    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.08, amplitude=0.5, hole_width=0.02)
+    # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.1, amplitude=0.5, hole_width=0.02)
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
-    #scaling = SingleHoleCentre(y_depth=0.25, amplitude=0.2, hole_width=0.1)
+    scaling = SingleHoleCentre(pt=pt, y_depth=0.25, amplitude=0.2, hole_width=0.1)
     #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
-
 
 
     run_params = RunParams(
@@ -1107,7 +1080,7 @@ if __name__ == "__main__":
         relaxation=relaxation,
         throttler=throttler,
         n_steps_major=2,
-        elem_ratio_per_iter=elem_ratio_per_iter,
+        n_steps_minor_max=math.inf,
         existing_prestrain_priority_factor=2,
         parameter_trend=pt,
     )

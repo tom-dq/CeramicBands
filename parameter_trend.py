@@ -37,6 +37,8 @@ class CurrentInc:
     def step_name(self) -> str:
         return f"{self.major_inc}.{self.minor_inc}"
 
+    def __str__(self) -> str:
+        return f"CurrentInc(major_inc={self.major_inc}, minor_inc={self.minor_inc})"
 
 class ParameterGetter:
     @abc.abstractmethod
