@@ -174,8 +174,6 @@ class ElemVectorDict(dict):
         else:
             raise ValueError("Got some with and some without eigenvectors...")
 
-        print(f"{do_eigens = }")
-
         for sv in single_vals:
             elem_to_idx_to_val[sv.elem][sv.axis] = sv.value
             elem_to_idx_to_eig[sv.elem][sv.axis] = sv.eigen_vector 
@@ -277,4 +275,5 @@ def test_local_princ():
 
 # TEMP_ELEMS_OF_INTEREST = {4001, 4002, 4003, 4004, 4201,}
 # TEMP_ELEMS_OF_INTEREST = {8606, 8597, 8704,}
-TEMP_ELEMS_OF_INTEREST = {582,}
+# TEMP_ELEMS_OF_INTEREST = {582,}
+TEMP_ELEMS_OF_INTEREST = set()

@@ -469,7 +469,7 @@ def incremental_element_update_list(
         for sv in new_prestrains_all
     ]
 
-    proposed_prestrains_changes = [espcd for espcd in proposed_prestrains_changes_all if espcd.proposed_change() > config.active_config.converged_delta_prestrain]
+    proposed_prestrains_changes = [espcd for espcd in proposed_prestrains_changes_all if abs(espcd.proposed_change()) > config.active_config.converged_delta_prestrain]
 
     if TEMP_ELEMS_OF_INTEREST:
         old_TEMP = {elem_idx: val for elem_idx, val in old_prestrains.items() if elem_idx[0] in TEMP_ELEMS_OF_INTEREST}
@@ -1087,8 +1087,8 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=1,
-        n_steps_minor_max=2,
+        n_steps_major=2,
+        n_steps_minor_max=1000000,
         existing_prestrain_priority_factor=2,
         parameter_trend=pt,
     )
