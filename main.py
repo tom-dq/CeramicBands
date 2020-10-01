@@ -443,10 +443,11 @@ def incremental_element_update_list(
 ) -> PrestrainUpdate:
     """Gets the subset of elements which should be "yielded", based on the stress."""
 
+    # TODO - refactor this so that the SingleValue array or dictionary is the internal working state, i.e., elem_prestrains_locked_in and elem_prestrains_iteration_set contain SingleValue objects not strain tensors.
+
     def candidate_strains(res_dict):
         ratchet.scaling.assign_working_results(previous_prestrain_update.elem_prestrains_iteration_set)
 
-        # TODO - UP TO HERE, trying to get the principal single values working...
         return ratchet.get_all_proposed_values(run_params.actuator, elem_results=res_dict)
 
     # Use the current stress or strain results to choose the new elements.
@@ -490,7 +491,7 @@ def incremental_element_update_list(
         def print_line(k):
             bits = [d.get(k, '..') for d in all_dicts]
             val_bits = [maybe_sv.value if isinstance(maybe_sv, SingleValue) else maybe_sv for maybe_sv in bits]
-            all_bits = [k] + val_bits
+            all_bits = [k[0]] + val_bits
             print(*all_bits, sep='\t')
 
         for k in all_keys:
@@ -521,7 +522,7 @@ def incremental_element_update_list(
     left_over_count = max(0, len(proposed_prestrains_changes) - new_count)
 
     # Build the new pre-strain dictionary out of old and new values.
-    combined_final_single_values = {**old_prestrains, **top_n_new}.values()
+    combined_final_single_values = list({**old_prestrains, **top_n_new}.values())
     total_out = sum(1 for sv in combined_final_single_values if abs(sv.value))
 
     # Work out now much additional dilation has been introduced.

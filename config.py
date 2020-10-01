@@ -82,7 +82,7 @@ def _get_config():
             max_iters=MaxIters(major_step=5, minor_step=1),
             delete_old_result_files=True,
             ratched_prestrains_during_iterations=False,
-            case_for_every_increment=False,
+            case_for_every_increment=True,
             record_result_history_in_db=False,
             converged_delta_prestrain=1e-6,
         )
