@@ -1,5 +1,6 @@
 """Some parameters need to be adjusted as the simulation
 progresses. This class deals with that."""
+import numbers
 from common_types import XY
 from tables import Table
 
@@ -98,6 +99,15 @@ class TableInterpolateMinor(ParameterGetter):
 
     def __str__(self):
         return f"Table.interp(minor_iter), Table({self._table.data})"
+
+
+    def __rmul__(self, other) -> "TableInterpolateMinor":
+        if not isinstance(other, numbers.Number):
+            raise TypeError(other)
+
+        scaled_table = self._table.copy_scaled(x_scale=1.0, y_scale=other)
+
+        return TableInterpolateMinor(scaled_table.data)
 
 
 class LineData(typing.NamedTuple):

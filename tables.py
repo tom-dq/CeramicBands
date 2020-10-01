@@ -1,6 +1,7 @@
 """Some bits and pieces to make working with Strand7 tables easier"""
 import bisect
 import math
+import numbers
 
 import typing
 
@@ -32,6 +33,15 @@ class Table:
         self.max_abs_y = max(abs(xy.y) for xy in self.data)
 
         self._data_set = True
+
+    def copy_scaled(self, x_scale: numbers.Number, y_scale: numbers.Number) -> "Table":
+        new_table = Table()
+
+        scaled_data = (XY(x=x_scale*d.x, y=y_scale*d.y) for d in self.data)
+        new_table.set_table_data(scaled_data)
+
+        return new_table
+
 
     def interp(self, x: float) -> float:
 

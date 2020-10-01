@@ -1047,8 +1047,8 @@ if __name__ == "__main__":
 
     # Throttle relaxation
     exp_0_7 = parameter_trend.ExponetialDecayFunctionMinorInc(-0.7, init_val=0.5, start_at=60)
-    gradual_relax_orig = parameter_trend.TableInterpolateMinor([XY(0, 0.4), XY(50, 0.4), XY(70, 0.3), XY(100, 0.2), XY(200, 0.15)])
-    gradual_relax = parameter_trend.TableInterpolateMinor([XY(0, 0.2), XY(50, 0.2), XY(70, 0.15), XY(100, 0.1), XY(200, 0.075)])
+    
+    gradual_relax_1_0 = parameter_trend.TableInterpolateMinor([XY(0, 1.0), XY(50, 1.0), XY(70, 0.65), XY(100, 0.5), XY(200, 0.3)])
 
     # Stress End
     const_440 = parameter_trend.Constant(440)
@@ -1066,7 +1066,7 @@ if __name__ == "__main__":
     remove_after_50 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(50, 1), XY(60, 0)])
 
     pt = ParameterTrend(
-        throttler_relaxation=gradual_relax,
+        throttler_relaxation=0.6 * gradual_relax_1_0,
         stress_end=linear_500_401,
         dilation_ratio=linear_decrease,
         adj_strain_ratio=remove_after_50,
