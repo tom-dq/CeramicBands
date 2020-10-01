@@ -246,27 +246,52 @@ tyGEOMETRYCOEDGE = 9
 tyGEOMETRYLOOP = 10"""
 
 
-    text3 = """spTreeStartNumber = 1
-spNumFrequency = 2
-spNumBucklingModes = 3
-spMaxIterationEig = 4
-spMaxIterationNonlin = 5
-spNumBeamSlicesSpectral = 6
-spMaxConjugateGradientIter = 7
-spMaxNumWarnings = 8
-spFiniteStrainDefinition = 9
-spBeamLength = 10
-spFormStiffMatrix = 11
-spMaxUpdateInterval = 12
-spFormNonlinHeatStiffMatrix = 13
-spExpandWorkingSet = 14
-spMinNumViscoUnits = 15
-spMaxNumViscoUnits = 16
-spCurveFitTimeUnit = 17
-spStaticAutoStepping = 18
-spBeamKgType = 19
-spDynamicAutoStepping = 20
-spMaxIterationHeat = 21"""
+    text3 = """ctBrickNone = 0
+ctBrickAspectRatioMin = 1
+ctBrickAspectRatioMax = 2
+ctBrickDeterminant = 3
+ctBrickInternalAngle = 4
+ctBrickMixedProduct = 5
+ctBrickDihedral = 6
+ctBrickVolume = 7
+ctBrickAxis1 = 8
+ctBrickAxis2 = 9
+ctBrickAxis3 = 10
+ctBrickNormalSupport = 11
+ctBrickLateralSupport = 12
+ctBrickSupportGap = 13
+ctBrickTemperature = 14
+ctBrickPreStressX = 15
+ctBrickPreStressY = 16
+ctBrickPreStressZ = 17
+ctBrickPreStressMagnitude = 18
+ctBrickPreStrainX = 19
+ctBrickPreStrainY = 20
+ctBrickPreStrainZ = 21
+ctBrickPreStrainMagnitude = 22
+ctBrickNormalPressure = 23
+ctBrickGlobalPressure = 24
+ctBrickGlobalPressureX = 25
+ctBrickGlobalPressureY = 26
+ctBrickGlobalPressureZ = 27
+ctBrickShearX = 28
+ctBrickShearY = 29
+ctBrickShearMagnitude = 30
+ctBrickNSMass = 31
+ctBrickDynamicFactor = 32
+ctBrickConvectionCoeff = 33
+ctBrickConvectionAmbient = 34
+ctBrickRadiationCoeff = 35
+ctBrickRadiationAmbient = 36
+ctBrickHeatFlux = 37
+ctBrickHeatSource = 38
+ctBrickSoilStressSV = 39
+ctBrickSoilStressK0 = 40
+ctBrickSoilStressSH = 41
+ctBrickSoilRatioOCR = 42
+ctBrickSoilRatioE0 = 43
+ctBrickSoilFluidLevel = 44
+ctBrickAgeAtFirstLoading = 45"""
 
 
     make_enum(text3)
