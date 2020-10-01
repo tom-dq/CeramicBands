@@ -130,6 +130,9 @@ class Ratchet:
         elem_to_eigen_vector = {}
         for sv in elem_results.as_single_values_for_actuation(actuator).values():
 
+            # e_11: sv[elem=1] = 0.007563815286591485
+            # e_xx: sv[elem=1] = ...?
+
             elem_to_eigen_vector[sv.elem] = sv.eigen_vector
 
             # Apply scaling
@@ -455,15 +458,15 @@ def incremental_element_update_list(
 
     proposed_prestrains_changes_all = [
         ElemPreStrainChangeData(
-            elem_num=key[0],
-            axis=key[1],
+            elem_num=sv.id_key[0],
+            axis=sv.id_key[1],
             proposed_prestrain_val=sv.value,
-            old_prestrain_val=old_prestrains[key].value,
-            result_strain_val=minor_acuator_input_current_flat[key].value * ratchet.scaling.get_x_scale_factor(key),
+            old_prestrain_val=old_prestrains[sv.id_key].value,
+            result_strain_val=minor_acuator_input_current_flat[sv.id_key].value * ratchet.scaling.get_x_scale_factor(sv.id_key),
             eigen_vector_proposed=sv.eigen_vector,
-            eigen_vector_old=old_prestrains[key].eigen_vector,
+            eigen_vector_old=old_prestrains[sv.id_key].eigen_vector,
         )
-        for key, sv in new_prestrains_all.items()
+        for sv in new_prestrains_all
     ]
 
     proposed_prestrains_changes = [espcd for espcd in proposed_prestrains_changes_all if espcd.proposed_change() > config.active_config.converged_delta_prestrain]
@@ -471,7 +474,7 @@ def incremental_element_update_list(
     if TEMP_ELEMS_OF_INTEREST:
         old_TEMP = {elem_idx: val for elem_idx, val in old_prestrains.items() if elem_idx[0] in TEMP_ELEMS_OF_INTEREST}
         res_TEMP = {elem_idx: val for elem_idx, val in minor_acuator_input_current_flat.items() if elem_idx[0] in TEMP_ELEMS_OF_INTEREST}
-        new_TEMP = {elem_idx: val for elem_idx, val in new_prestrains_all.items() if elem_idx[0] in TEMP_ELEMS_OF_INTEREST}
+        new_TEMP = {sv.id_key: sv for sv in new_prestrains_all if sv.elem in TEMP_ELEMS_OF_INTEREST}
         scale_facts_TEMP = {elem_idx: ratchet.scaling.get_x_scale_factor(elem_idx) for elem_idx in new_TEMP.keys()}
         increased_prestrains_TEMP = [elem_strain_inc for elem_strain_inc in proposed_prestrains_changes if elem_strain_inc.elem_num in TEMP_ELEMS_OF_INTEREST]
 
@@ -486,7 +489,8 @@ def incremental_element_update_list(
         print(*all_bits, sep='\t')
         def print_line(k):
             bits = [d.get(k, '..') for d in all_dicts]
-            all_bits = [k] + bits
+            val_bits = [maybe_sv.value if isinstance(maybe_sv, SingleValue) else maybe_sv for maybe_sv in bits]
+            all_bits = [k] + val_bits
             print(*all_bits, sep='\t')
 
         for k in all_keys:
