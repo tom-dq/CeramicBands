@@ -72,7 +72,20 @@ class ElemPreStrainChangeData(typing.NamedTuple):
 
         new_proposed_prestrain = self.old_prestrain_val + scaled_delta
 
-        return self._replace(proposed_prestrain_val=new_proposed_prestrain)
+        # Scale down the eigenvector, if needs be
+        if self.eigen_vector_old is None:
+            new_eigen_proposed = self.eigen_vector_proposed
+
+        else:
+            # Have to actually scale the eigenvector. Use the angle proportional to the value scaling delta
+
+            eigen_vector_delta = self.eigen_vector_proposed - self.eigen_vector_old
+            eigen_vector_new = self.eigen_vector_old + (factor*eigen_vector_delta)
+
+            norm = numpy.linalg.norm(eigen_vector_new)
+            new_eigen_proposed = eigen_vector_new / norm
+
+        return self._replace(proposed_prestrain_val=new_proposed_prestrain, eigen_vector_proposed=new_eigen_proposed)
 
     def proposed_change(self) -> float:
         return self.proposed_prestrain_val - self.old_prestrain_val

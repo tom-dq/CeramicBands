@@ -62,7 +62,7 @@ class Actuator(enum.Enum):
             return st7.PlateResultType.rtPlateStress
 
         elif self in (Actuator.e_local, Actuator.e_xx_only, Actuator.e_11):
-            return st7.PlateResultType.rtPlateStrain
+            return st7.PlateResultType.rtPlateTotalStrain
 
         else:
             raise ValueError(self)
@@ -275,5 +275,5 @@ def test_local_princ():
 
 # TEMP_ELEMS_OF_INTEREST = {4001, 4002, 4003, 4004, 4201,}
 # TEMP_ELEMS_OF_INTEREST = {8606, 8597, 8704,}
-TEMP_ELEMS_OF_INTEREST = {700,}
-# TEMP_ELEMS_OF_INTEREST = set()
+# TEMP_ELEMS_OF_INTEREST = {700,}
+TEMP_ELEMS_OF_INTEREST = set()

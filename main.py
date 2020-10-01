@@ -17,7 +17,7 @@ import shutil
 import config
 
 from averaging import Averaging, AveInRadius, NoAve
-from common_types import SingleValue, XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST, Actuator
+from common_types import SingleValue, XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST, Actuator, SingleValueWithMissingDict
 from parameter_trend import ParameterTrend
 import parameter_trend
 from relaxation import Relaxation, NoRelax
@@ -211,8 +211,8 @@ class Ratchet:
 
 
 class PrestrainUpdate(typing.NamedTuple):
-    elem_prestrains_locked_in: ElemVectorDict
-    elem_prestrains_iteration_set: ElemVectorDict
+    elem_prestrains_locked_in: typing.List[SingleValue]
+    elem_prestrains_iteration_set: typing.List[SingleValue]
     updated_this_round: int
     not_updated_this_round: int
     prestrained_overall: int
@@ -223,8 +223,8 @@ class PrestrainUpdate(typing.NamedTuple):
     @staticmethod
     def zero() -> "PrestrainUpdate":
         return PrestrainUpdate(
-            elem_prestrains_locked_in=ElemVectorDict(),
-            elem_prestrains_iteration_set=ElemVectorDict(),
+            elem_prestrains_locked_in=[],
+            elem_prestrains_iteration_set=[],
             updated_this_round=0,
             not_updated_this_round=0,
             prestrained_overall=0,
@@ -243,8 +243,10 @@ def compress_png(png_fn):
         image.save(png_fn, optimize=True, quality=95)
 
 
-def apply_prestrain(model: st7.St7Model, case_num: int, elem_to_ratio: typing.Dict[int, st7.Vector3]):
+def apply_prestrain(model: st7.St7Model, case_num: int, elem_prestrains: typing.List[SingleValue]):
     """Apply all the prestrains"""
+
+    elem_to_ratio = ElemVectorDict.from_single_values(True, elem_prestrains)
 
     for plate_num, prestrain_val in elem_to_ratio.items():
         prestrain = st7.Vector3(x=prestrain_val.xx, y=prestrain_val.yy, z=prestrain_val.zz)
@@ -294,6 +296,7 @@ def write_out_to_db(db: history.DB, init_data: InitialSetupModelData, current_in
     # Prestrains
     def make_prestrain_rows():
         for plate_num, pre_strain in prestrain_update.elem_prestrains_iteration_set.items():
+            raise ValueError("Time to write this conversion then.")
             pre_strain_mag = (pre_strain.x**2 + pre_strain.y**2)**0.5
             yield history.ContourValue(
                 result_case_num=db_case_num,
@@ -396,7 +399,7 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
         while len(result_values) < 6:
             result_values.append(0.0)
 
-        if phase_change_actuator.input_result == st7.PlateResultType.rtPlateStrain:
+        if phase_change_actuator.input_result == st7.PlateResultType.rtPlateTotalStrain:
             return st7.StrainTensor(*result_values)
 
         else:
@@ -443,8 +446,6 @@ def incremental_element_update_list(
 ) -> PrestrainUpdate:
     """Gets the subset of elements which should be "yielded", based on the stress."""
 
-    # TODO - refactor this so that the SingleValue array or dictionary is the internal working state, i.e., elem_prestrains_locked_in and elem_prestrains_iteration_set contain SingleValue objects not strain tensors.
-
     def candidate_strains(res_dict):
         ratchet.scaling.assign_working_results(previous_prestrain_update.elem_prestrains_iteration_set)
 
@@ -455,7 +456,7 @@ def incremental_element_update_list(
 
     new_prestrains_all = candidate_strains(result_strain)
 
-    old_prestrains = previous_prestrain_update.elem_prestrains_iteration_set.as_single_values_for_actuation(run_params.actuator)
+    old_prestrains = SingleValueWithMissingDict((sv.id_key, sv) for sv in previous_prestrain_update.elem_prestrains_iteration_set)
 
     proposed_prestrains_changes_all = [
         ElemPreStrainChangeData(
@@ -513,11 +514,6 @@ def incremental_element_update_list(
 
     top_n_new = {sv.id_key: sv for sv in (epscd.to_single_value() for epscd in proposed_prestrains_subset)}
 
-    #top_n_new = {
-    #    (elem_strain_inc_data.elem_num, elem_strain_inc_data.axis): elem_strain_inc_data.proposed_prestrain_val
-    #    for elem_strain_inc_data in proposed_prestrains_subset }
-
-    # top_n_new = {id_key(elem_idx_val): val(elem_idx_val) for elem_idx_val in all_new_sorted[0:num_allowed]}
     new_count = len(top_n_new)
     left_over_count = max(0, len(proposed_prestrains_changes) - new_count)
 
@@ -538,7 +534,7 @@ def incremental_element_update_list(
 
     return PrestrainUpdate(
         elem_prestrains_locked_in=previous_prestrain_update.elem_prestrains_locked_in,
-        elem_prestrains_iteration_set=ElemVectorDict.from_single_values(True, combined_final_single_values),
+        elem_prestrains_iteration_set=combined_final_single_values,
         updated_this_round=new_count,
         not_updated_this_round=left_over_count,
         prestrained_overall=total_out,
@@ -832,7 +828,7 @@ def _update_prestrain_table(run_params: RunParams, table: Table, current_inc: pa
             XY(stress_end + 200, -1 * dilation_ratio),
         ]
 
-    elif run_params.actuator.input_result == st7.PlateResultType.rtPlateStrain:
+    elif run_params.actuator.input_result == st7.PlateResultType.rtPlateTotalStrain:
         youngs_mod = 220000  # Hacky way!
         table_data = [
             XY(0.0, 0.0),
@@ -969,7 +965,7 @@ def main(run_params: RunParams):
                 # Get the results from the last minor step.
                 with model.open_results(current_result_frame.result_file) as results:
                     result_strain_raw = get_results(run_params.actuator, results, current_result_frame.result_case_num)
-                    result_strain = update_to_include_prestrains(run_params.actuator, result_strain_raw, prestrain_update.elem_prestrains_iteration_set)
+                    result_strain = result_strain_raw  # TEMP remove... update_to_include_prestrains(run_params.actuator, result_strain_raw, prestrain_update.elem_prestrains_iteration_set)
                     write_out_screenshot(model_window, current_result_frame)
                     write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update)
 
@@ -1051,7 +1047,8 @@ if __name__ == "__main__":
 
     # Throttle relaxation
     exp_0_7 = parameter_trend.ExponetialDecayFunctionMinorInc(-0.7, init_val=0.5, start_at=60)
-    gradual_relax = parameter_trend.TableInterpolateMinor([XY(0, 0.4), XY(50, 0.4), XY(70, 0.3), XY(100, 0.2), XY(200, 0.15)])
+    gradual_relax_orig = parameter_trend.TableInterpolateMinor([XY(0, 0.4), XY(50, 0.4), XY(70, 0.3), XY(100, 0.2), XY(200, 0.15)])
+    gradual_relax = parameter_trend.TableInterpolateMinor([XY(0, 0.2), XY(50, 0.2), XY(70, 0.15), XY(100, 0.1), XY(200, 0.075)])
 
     # Stress End
     const_440 = parameter_trend.Constant(440)
@@ -1088,7 +1085,7 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=2,
+        n_steps_major=4,
         n_steps_minor_max=1000000,
         existing_prestrain_priority_factor=2,
         parameter_trend=pt,

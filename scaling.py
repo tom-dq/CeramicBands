@@ -6,7 +6,7 @@ import typing
 
 import parameter_trend
 import st7
-from common_types import T_ScaleKey, InitialSetupModelData, ElemVectorDict
+from common_types import SingleValue, T_ScaleKey, InitialSetupModelData, ElemVectorDict
 
 
 class Scaling:
@@ -27,8 +27,8 @@ class Scaling:
         """This is not used by all the methods."""
         pass
 
-    def assign_working_results(self, previous_iteration_results: ElemVectorDict):
-        self._working_prestrain_vals = { sv.id_key: sv.value for sv in previous_iteration_results.as_single_values() }
+    def assign_working_results(self, previous_iteration_results: typing.List[SingleValue]):
+        self._working_prestrain_vals = { sv.id_key: sv.value for sv in previous_iteration_results }
 
     def determine_adjacency(self, init_data: InitialSetupModelData):
         """Weighted element-to-neighbour. One shared node -> 1/12 contib. Two shared nodes -> 1/6 contrib."""

@@ -91,6 +91,8 @@ class PlateResultType(enum.Enum):
     rtPlateEffectiveStress = St7API.rtPlateEffectiveStress
     rtPlateEffectiveForce = St7API.rtPlateEffectiveForce
     rtPlateNodeFlux = St7API.rtPlateNodeFlux
+    rtPlateTotalStrain = St7API.rtPlateTotalStrain
+    rtPlateTotalCurvature = St7API.rtPlateTotalCurvature
 
 
 class PlateResultSubType(enum.Enum):
