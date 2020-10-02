@@ -33,6 +33,7 @@ class Scaling:
     def determine_adjacency(self, init_data: InitialSetupModelData):
         """Weighted element-to-neighbour. One shared node -> 1/12 contib. Two shared nodes -> 1/6 contrib."""
 
+        # TODO - add "phantom elements" which are reflected over free boundaries.
         node_to_elems = collections.defaultdict(set)
         for elem, conn in init_data.elem_conns.items():
             for node in conn:
@@ -116,9 +117,25 @@ class CentroidAwareScaling(Scaling):
     _y_no_yielding_below: float
     _x_cent: float
 
+    # Put a thumb on the the scales and make it harder for the bigger elements (not the region of interest) to yield.
+    INHIBIT_LARGE_ELEMENTS_YIELDING = True
+
     @abc.abstractmethod
     def _scale_factor_one_elem(self, cent: st7.Vector3):
         raise NotImplementedError()
+
+    def _get_element_size_factors(self, init_data: InitialSetupModelData) -> typing.Dict[int, float]:
+        min_elem_size = min(vol for vol in init_data.elem_volume.values())
+
+        def scale_fact(vol):
+            if self.INHIBIT_LARGE_ELEMENTS_YIELDING:
+                return min_elem_size / vol
+
+            else:
+                return 1.0
+
+        return {elem_num: scale_fact(vol) for elem_num, vol in init_data.elem_volume.items()}
+
 
     def assign_centroids(self, init_data: InitialSetupModelData):
         elem_centroid = init_data.elem_centroid
@@ -134,9 +151,11 @@ class CentroidAwareScaling(Scaling):
         self._y_min = self._y_max - self._y_depth
         self._x_cent = 0.5 * (min(xyz.x for xyz in elem_centroid.values()) + max(xyz.x for xyz in elem_centroid.values()))
 
+        hard_for_big_elements_to_yield = self._get_element_size_factors(init_data)
+
         for elem_num, elem_cent in elem_centroid.items():
             blank_out_bottom_elems = self._no_base_yield_modifier(elem_cent)
-            self._elem_scale_fact[elem_num] = self._scale_factor_one_elem(elem_cent) * blank_out_bottom_elems
+            self._elem_scale_fact[elem_num] = self._scale_factor_one_elem(elem_cent) * blank_out_bottom_elems * hard_for_big_elements_to_yield[elem_num]
 
         self.determine_adjacency(init_data)
 
@@ -151,6 +170,7 @@ class CentroidAwareScaling(Scaling):
 
         else:
             return 1.0
+
 
 class CosineScaling(CentroidAwareScaling):
     """Does a cosine based on the element position."""

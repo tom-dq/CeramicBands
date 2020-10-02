@@ -59,9 +59,16 @@ class Constant(ParameterGetter):
     def __str__(self):
         return f"{self._const}"
 
+    def __rmul__(self, other) -> "Constant":
+        if not isinstance(other, numbers.Number):
+            raise TypeError(other)
+
+        return Constant(other * self._const)
+
 
 class ExponetialDecayFunctionMinorInc(ParameterGetter):
     _exponent: float = None
+    _init_val: float
     _final: float
     _delta: float
     _start_at: int
@@ -72,8 +79,9 @@ class ExponetialDecayFunctionMinorInc(ParameterGetter):
             raise ValueError("Does not go to zero!")
 
         self._exponent = exponent
+        self._init_val = init_val
         self._final = final_val
-        self._delta = (init_val - final_val)
+        self._delta = (self._init_val - self._final)
         self._start_at = start_at
 
     def __call__(self, current_inc: CurrentInc) -> float:
@@ -86,6 +94,16 @@ class ExponetialDecayFunctionMinorInc(ParameterGetter):
     def __str__(self):
         return f"(minor_iter+1) ** {self._exponent}"
 
+    def __rmul__(self, other) -> "ExponetialDecayFunctionMinorInc":
+        if not isinstance(other, numbers.Number):
+            raise TypeError(other)
+
+        return ExponetialDecayFunctionMinorInc(
+            exponent=self._exponent,
+            init_val=other * self._init_val,
+            final_val=other * self._final,
+            start_at=self._start_at,
+        )
 
 class TableInterpolateMinor(ParameterGetter):
     _table: Table

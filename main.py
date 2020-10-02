@@ -1055,6 +1055,7 @@ if __name__ == "__main__":
     taper_down = parameter_trend.ExponetialDecayFunctionMinorInc(-0.8, 600, 405)
     linear_600_405 = parameter_trend.TableInterpolateMinor([XY(0, 600), XY(50, 405)])
     linear_500_401 = parameter_trend.TableInterpolateMinor([XY(0, 500), XY(10, 500), XY(25, 401)])
+    linear_500_420 = parameter_trend.TableInterpolateMinor([XY(0, 500), XY(10, 500), XY(100, 420)])
 
     # Dilation Ratio
     const_dilation_ratio = parameter_trend.Constant(0.008)
@@ -1062,16 +1063,21 @@ if __name__ == "__main__":
 
     # Adjacent Strain Ratio
     zero = parameter_trend.Constant(0.0)
-    one_to_zero = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(10, 1), XY(50, 0)])
+    one = parameter_trend.Constant(1.0)
+    ten = parameter_trend.Constant(10.0)
+    one_to_zero_50 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(10, 1), XY(50, 0)])
+    one_to_zero_200 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(10, 1), XY(200, 0)])
     remove_after_50 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(50, 1), XY(60, 0)])
 
-    pt = ParameterTrend(
-        throttler_relaxation=0.6 * gradual_relax_1_0,
+    pt_baseline = ParameterTrend(
+        throttler_relaxation=0.3 * gradual_relax_1_0,
         stress_end=linear_500_401,
-        dilation_ratio=linear_decrease,
-        adj_strain_ratio=remove_after_50,
+        dilation_ratio=const_dilation_ratio,
+        adj_strain_ratio=one,
         current_inc=parameter_trend.CurrentInc(),
     )
+
+    pt = pt_baseline._replace(throttler_relaxation=parameter_trend.Constant(0.2))
 
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.1, amplitude=0.5, hole_width=0.02)
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
@@ -1085,7 +1091,7 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=4,
+        n_steps_major=3,
         n_steps_minor_max=1000000,
         existing_prestrain_priority_factor=2,
         parameter_trend=pt,
