@@ -72,7 +72,7 @@ def _get_config():
 
     elif this_env == Environment.macbook_bootcamp:
         return Config(
-            fn_st7_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v7-Wedge\TestC-Med.st7"),
+            fn_st7_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v7-Wedge\TestC-Fine.st7"),
             fn_working_image_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v7-Wedge\pics"),
             screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
             scratch_dir=pathlib.Path(r"C:\Temp"),

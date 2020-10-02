@@ -1077,7 +1077,9 @@ if __name__ == "__main__":
         current_inc=parameter_trend.CurrentInc(),
     )
 
-    pt = pt_baseline._replace(throttler_relaxation=parameter_trend.Constant(0.2))
+    pt = pt_baseline._replace(
+        throttler_relaxation=parameter_trend.Constant(0.2),
+        dilation_ratio=parameter_trend.Constant(0.016))
 
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.1, amplitude=0.5, hole_width=0.02)
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
