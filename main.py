@@ -60,6 +60,7 @@ class RunParams(typing.NamedTuple):
     n_steps_minor_max: int
     existing_prestrain_priority_factor: float
     parameter_trend: ParameterTrend
+    source_file_name: pathlib.Path
 
     def summary_strings(self) -> typing.Iterable[str]:
         yield "RunParams:\n"
@@ -878,7 +879,7 @@ def main(run_params: RunParams):
     fn_st7 = working_dir / "Model.st7"
     fn_db = working_dir / "history.db"
 
-    shutil.copy2(config.active_config.fn_st7_base, fn_st7)
+    shutil.copy2(config.active_config.fn_st7_base / run_params.source_file_name, fn_st7)
 
     pt_plot_fn = str(working_dir / "A-ParameterTrend.png")
     parameter_trend.save_parameter_plot(run_params.parameter_trend, pt_plot_fn)
@@ -1048,7 +1049,7 @@ if __name__ == "__main__":
     # Throttle relaxation
     exp_0_7 = parameter_trend.ExponetialDecayFunctionMinorInc(-0.7, init_val=0.5, start_at=60)
     
-    gradual_relax_1_0 = parameter_trend.TableInterpolateMinor([XY(0, 1.0), XY(50, 1.0), XY(70, 0.65), XY(100, 0.5), XY(200, 0.3)])
+    gradual_relax_1_0 = parameter_trend.TableInterpolateMinor([XY(0, 1.0), XY(50, 1.0), XY(70, 0.65), XY(100, 0.5), XY(200, 0.3), XY(500, 0.1)])
 
     # Stress End
     const_440 = parameter_trend.Constant(440)
@@ -1070,7 +1071,7 @@ if __name__ == "__main__":
     remove_after_50 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(50, 1), XY(60, 0)])
 
     pt_baseline = ParameterTrend(
-        throttler_relaxation=0.3 * gradual_relax_1_0,
+        throttler_relaxation=0.2 * gradual_relax_1_0,
         stress_end=linear_500_401,
         dilation_ratio=const_dilation_ratio,
         adj_strain_ratio=one,
@@ -1078,7 +1079,6 @@ if __name__ == "__main__":
     )
 
     pt = pt_baseline._replace(
-        throttler_relaxation=parameter_trend.Constant(0.2),
         dilation_ratio=parameter_trend.Constant(0.016))
 
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.1, amplitude=0.5, hole_width=0.02)
@@ -1088,15 +1088,16 @@ if __name__ == "__main__":
 
 
     run_params = RunParams(
-        actuator=Actuator.e_11,
+        actuator=Actuator.e_local,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=3,
-        n_steps_minor_max=1000000,
+        n_steps_major=8,
+        n_steps_minor_max=1200,
         existing_prestrain_priority_factor=2,
         parameter_trend=pt,
+        source_file_name=pathlib.Path("TestC-Fine.st7"),
     )
 
     main(run_params)

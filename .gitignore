@@ -3,3 +3,4 @@ St7API*.py
 Strand7 R3 API Manual*.pdf
 /venv/*
 *.pyc
+/.vscode/settings.json

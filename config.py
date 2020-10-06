@@ -43,7 +43,7 @@ class Config(typing.NamedTuple):
 
 
 def _get_env() -> Environment:
-    return Environment.macbook_bootcamp
+    return Environment.uni_desktop
 
 
 def _get_config():
@@ -53,8 +53,8 @@ def _get_config():
         return Config(
             # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 12-SingleGrade.st7"),
             # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11.st7"),
-            fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 13-SD8.st7"),
-            fn_working_image_base=pathlib.Path(r"E:\Simulations\CeramicBands\v6\pics"),
+            fn_st7_base=pathlib.Path(r"D:\Tom Wilson\Dropbox\Dropbox\PhD\Ceramic Bands Source Models\v7-Wedge"),
+            fn_working_image_base=pathlib.Path(r"E:\Simulations\CeramicBands\v7\pics"),
             # screenshot_res=st7.CanvasSize(1920, 1080),  # FHD
             screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
             # screenshot_res=st7.CanvasSize(3840, 2160), # 4K
@@ -72,7 +72,7 @@ def _get_config():
 
     elif this_env == Environment.macbook_bootcamp:
         return Config(
-            fn_st7_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v7-Wedge\TestC-Fine.st7"),
+            fn_st7_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v7-Wedge"),
             fn_working_image_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v7-Wedge\pics"),
             screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
             scratch_dir=pathlib.Path(r"C:\Temp"),
