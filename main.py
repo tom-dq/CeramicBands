@@ -995,7 +995,7 @@ def main(run_params: RunParams):
 
                 if config.active_config.ratched_prestrains_during_iterations:
                     # Update the ratchet settings for the one we did ramp up.
-                    for sv in prestrain_update.elem_prestrains_iteration_set.as_single_values():
+                    for sv in prestrain_update.elem_prestrains_iteration_set:
                         ratchet.update_minimum(True, sv.id_key, sv.value)
 
                 # Keep track of the old results...
@@ -1011,7 +1011,7 @@ def main(run_params: RunParams):
             previous_load_factor = this_load_factor
 
             # Update the ratchet for what's been locked in.
-            for sv in prestrain_update.elem_prestrains_locked_in.as_single_values():
+            for sv in prestrain_update.elem_prestrains_locked_in:
                 ratchet.update_minimum(True, sv.id_key, sv.value)
 
             relaxation.flush_previous_values()
@@ -1049,7 +1049,7 @@ if __name__ == "__main__":
     # Throttle relaxation
     exp_0_7 = parameter_trend.ExponetialDecayFunctionMinorInc(-0.7, init_val=0.5, start_at=60)
     
-    gradual_relax_1_0 = parameter_trend.TableInterpolateMinor([XY(0, 1.0), XY(50, 1.0), XY(70, 0.65), XY(100, 0.5), XY(200, 0.3), XY(500, 0.1)])
+    gradual_relax_1_0 = parameter_trend.TableInterpolateMinor([XY(0, 1.0), XY(50, 1.0), XY(70, 0.65), XY(100, 0.5), XY(200, 0.3), XY(500, 0.1), XY(1500, 0.05), XY(5000, 0.02), XY(20000, 0.01), XY(50000, 0.002)])
 
     # Stress End
     const_440 = parameter_trend.Constant(440)
@@ -1071,7 +1071,7 @@ if __name__ == "__main__":
     remove_after_50 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(50, 1), XY(60, 0)])
 
     pt_baseline = ParameterTrend(
-        throttler_relaxation=0.2 * gradual_relax_1_0,
+        throttler_relaxation=0.05 * gradual_relax_1_0,
         stress_end=linear_500_401,
         dilation_ratio=const_dilation_ratio,
         adj_strain_ratio=one,
@@ -1079,7 +1079,9 @@ if __name__ == "__main__":
     )
 
     pt = pt_baseline._replace(
-        dilation_ratio=parameter_trend.Constant(0.016))
+        throttler_relaxation=parameter_trend.Constant(0.01),
+        dilation_ratio=parameter_trend.Constant(0.016),
+        )
 
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.1, amplitude=0.5, hole_width=0.02)
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
@@ -1093,8 +1095,8 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=8,
-        n_steps_minor_max=1200,
+        n_steps_major=2,
+        n_steps_minor_max=5000,
         existing_prestrain_priority_factor=2,
         parameter_trend=pt,
         source_file_name=pathlib.Path("TestC-Fine.st7"),
