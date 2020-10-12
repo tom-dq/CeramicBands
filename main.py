@@ -259,6 +259,8 @@ def setup_model_window(model_window: st7.St7ModelWindow, case_num: int):
     model_window.St7SetWindowResultCase(case_num)
     model_window.St7SetEntityContourIndex(st7.Entity.tyPLATE, st7.PlateContour.ctPlatePreStrainMagnitude)
     model_window.St7SetDisplacementScale(5.0, st7.ScaleType.dsAbsolute)
+
+    
     model_window.St7RedrawModel(True)
 
 
@@ -1104,7 +1106,7 @@ if __name__ == "__main__":
         n_steps_minor_max=5000,
         existing_prestrain_priority_factor=2,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestC-Med.st7"),
+        source_file_name=pathlib.Path("TestE-Coarse.st7"),
     )
 
     main(run_params)

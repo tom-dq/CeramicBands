@@ -210,6 +210,38 @@ class TableType(enum.Enum):
     ttStrainTime = St7API.ttStrainTime
 
 
+class ContourSettingsStyle(typing.NamedTuple):
+    ipContourStyle: int
+    ipReverse: bool
+    ipSeparator: bool
+    ipBand1Colour: int
+    ipBand2Colour: int
+    ipSeparatorColour: int
+    ipLineBackColour: int
+    ipMonoColour: int
+    ipMinColour: int
+    ipMaxColour: int
+    ipLimitMin: bool
+    ipLimitMax: bool
+
+    @classmethod
+    def from_integer_array(cls, ints):
+        working_dict = {}
+        
+        for f, t in cls._field_types.items():
+            idx = getattr(St7API, f)
+            working_dict[f] = ints[idx]
+
+        return cls(**working_dict)
+
+    def to_integer_array(self):
+        arr = (100 * ctypes.c_long)()
+        for f, val in self._asdict().items():
+            idx = getattr(St7API, f)
+            arr[idx] = val
+
+        return arr
+                
 
 class Vector3(typing.NamedTuple):
     x: float
@@ -939,6 +971,13 @@ class St7ModelWindow:
 
     def St7SetDisplacementScale(self, disp_scale: float, scale_type: ScaleType):
         chk(St7API.St7SetDisplacementScale(self.uID, disp_scale, scale_type.value))
+
+    def St7GetEntityContourSettingsStyle(self, entity: Entity) -> ContourSettingsStyle:
+        # TODO - up to here. Need to normalise the contour limits when writing out a screenshot.
+        pass
+
+    def St7SetEntityContourSettingsStyle(self, entity: Entity, contour_settings_style: ContourSettingsStyle):
+        pass
 
 
 def _DummyClassFactory(name, BaseClass):
