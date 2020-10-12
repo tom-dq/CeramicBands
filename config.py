@@ -43,7 +43,7 @@ class Config(typing.NamedTuple):
 
 
 def _get_env() -> Environment:
-    return Environment.uni_desktop
+    return Environment.macbook_bootcamp
 
 
 def _get_config():

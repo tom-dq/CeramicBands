@@ -2,6 +2,7 @@
 
 import St7API
 import tempfile
+import dataclasses
 import enum
 import typing
 import ctypes
@@ -210,7 +211,61 @@ class TableType(enum.Enum):
     ttStrainTime = St7API.ttStrainTime
 
 
-class ContourSettingsStyle(typing.NamedTuple):
+@dataclasses.dataclass
+class St7ArrayBase:
+    """All those arrays of integers can inherit from this to get convenience conversion functions"""
+    @classmethod
+    def from_st7_array(cls, ints_or_floats):
+        working_dict = {}
+
+        for field in dataclasses.fields(cls):
+            idx = getattr(St7API, field.name)
+            working_dict[field.name] = field.type(ints_or_floats[idx])  # Convert to int 
+
+        return cls(**working_dict)
+
+    @classmethod
+    def make_empty_array(cls):
+        array = (cls.get_array_element_type() * cls.get_array_length())()
+        return array
+
+    def to_st7_array(self) -> ctypes.Array:
+        name_to_idx = {field.name: getattr(St7API, field.name) for field in dataclasses.fields(self)}
+
+        array = self.make_empty_array()
+
+        for field, value in dataclasses.asdict(self).items():
+            idx = name_to_idx[field]
+            array[idx] = value
+
+        return array
+
+    @classmethod
+    def get_array_length(cls) -> int:
+        # Have a buffer on there in case...
+        return 10 + max(getattr(St7API, field.name) for field in dataclasses.fields(cls))
+
+    @classmethod
+    def get_array_element_type(cls):
+        """Returns ctypes element type"""
+        all_types = {field.type for field in dataclasses.fields(cls)}
+
+        if all_types <= {int, bool}:
+            return ctypes.c_long
+
+        elif all_types == {float}:
+            return ctypes.c_double
+
+        else:
+            raise ValueError(all_types)
+
+
+
+
+
+
+@dataclasses.dataclass
+class ContourSettingsStyle(St7ArrayBase):
     ipContourStyle: int
     ipReverse: bool
     ipSeparator: bool
@@ -224,24 +279,6 @@ class ContourSettingsStyle(typing.NamedTuple):
     ipLimitMin: bool
     ipLimitMax: bool
 
-    @classmethod
-    def from_integer_array(cls, ints):
-        working_dict = {}
-        
-        for f, t in cls._field_types.items():
-            idx = getattr(St7API, f)
-            working_dict[f] = ints[idx]
-
-        return cls(**working_dict)
-
-    def to_integer_array(self):
-        arr = (100 * ctypes.c_long)()
-        for f, val in self._asdict().items():
-            idx = getattr(St7API, f)
-            arr[idx] = val
-
-        return arr
-                
 
 class Vector3(typing.NamedTuple):
     x: float
@@ -973,11 +1010,13 @@ class St7ModelWindow:
         chk(St7API.St7SetDisplacementScale(self.uID, disp_scale, scale_type.value))
 
     def St7GetEntityContourSettingsStyle(self, entity: Entity) -> ContourSettingsStyle:
-        # TODO - up to here. Need to normalise the contour limits when writing out a screenshot.
-        pass
+        array = ContourSettingsStyle.make_empty_array()
+        chk(St7API.St7GetEntityContourSettingsStyle(self.uID, entity.value, array))
+        return ContourSettingsStyle.from_st7_array(array)
 
     def St7SetEntityContourSettingsStyle(self, entity: Entity, contour_settings_style: ContourSettingsStyle):
-        pass
+        array = contour_settings_style.to_st7_array()
+        chk(St7API.St7SetEntityContourSettingsStyle(self.uID, entity.value, array))
 
 
 def _DummyClassFactory(name, BaseClass):

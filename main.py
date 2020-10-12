@@ -260,7 +260,10 @@ def setup_model_window(model_window: st7.St7ModelWindow, case_num: int):
     model_window.St7SetEntityContourIndex(st7.Entity.tyPLATE, st7.PlateContour.ctPlatePreStrainMagnitude)
     model_window.St7SetDisplacementScale(5.0, st7.ScaleType.dsAbsolute)
 
+    # Set the contour limits
+    contour_settings_style = model_window.St7GetEntityContourSettingsStyle(st7.Entity.tyPLATE)
     
+    # TODO -up to here
     model_window.St7RedrawModel(True)
 
 
