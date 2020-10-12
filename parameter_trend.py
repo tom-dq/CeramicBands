@@ -140,6 +140,7 @@ class ParameterTrend(typing.NamedTuple):
     stress_end: ParameterGetter
     dilation_ratio: ParameterGetter
     adj_strain_ratio: ParameterGetter
+    scaling_ratio: ParameterGetter  # Lets you remove the scaling over time. Does not remove the strained neighbor adjustment, which is controlled by adj_strain_ratio
     current_inc: CurrentInc
 
     @property

@@ -96,10 +96,12 @@ class RandomScaling(Scaling):
 
 
     def get_x_scale_factor(self, scale_key: T_ScaleKey) -> float:
+        parameter_trend_ratio = self._parameter_trend.scaling_ratio(self._parameter_trend.current_inc)
+
         if scale_key not in self._x_scaler:
             self._x_scaler[scale_key] = 1.0 + random.uniform(-1 * self._random_spread, self._random_spread)
 
-        return self._x_scaler[scale_key]
+        return parameter_trend_ratio * self._x_scaler[scale_key]
 
     def __str__(self):
         return f"{self.__class__.__name__}(random_spread={self._random_spread})"
@@ -162,7 +164,10 @@ class CentroidAwareScaling(Scaling):
     def get_x_scale_factor(self, scale_key: T_ScaleKey) -> float:
         elem_num, _ = scale_key[:]
         strained_neighbor_boost = self._get_adj_elem_scale_factor(scale_key)
-        return self._elem_scale_fact[elem_num] + strained_neighbor_boost
+
+        parameter_trend_ratio = self._parameter_trend.scaling_ratio(self._parameter_trend.current_inc)
+
+        return parameter_trend_ratio * self._elem_scale_fact[elem_num] + strained_neighbor_boost
 
     def _no_base_yield_modifier(self, elem_cent) -> float:
         if elem_cent.y < self._y_no_yielding_below:
@@ -175,7 +180,8 @@ class CentroidAwareScaling(Scaling):
 class CosineScaling(CentroidAwareScaling):
     """Does a cosine based on the element position."""
 
-    def __init__(self, y_depth: float, spacing: float, amplitude: float):
+    def __init__(self, pt: parameter_trend.ParameterTrend, y_depth: float, spacing: float, amplitude: float):
+        self._parameter_trend = pt
         self._elem_scale_fact = {}
         self._y_depth = y_depth
         self._spacing = spacing

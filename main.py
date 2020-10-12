@@ -21,7 +21,7 @@ from common_types import SingleValue, XY, ElemVectorDict, T_ResultDict, InitialS
 from parameter_trend import ParameterTrend
 import parameter_trend
 from relaxation import Relaxation, NoRelax
-from scaling import Scaling, SingleHoleCentre, SpacedStepScaling
+from scaling import Scaling, SingleHoleCentre, SpacedStepScaling, CosineScaling
 from tables import Table
 from throttle import Throttler, StoppingCriterion, Shape, ElemPreStrainChangeData, BaseThrottler, RelaxedIncreaseDecrease
 import history
@@ -912,7 +912,7 @@ def main(run_params: RunParams):
         init_data = initial_setup(model, current_result_frame)
         db.add_element_connections(init_data.elem_conns)
 
-        scaling.assign_centroids(init_data)
+        run_params.scaling.assign_centroids(init_data)
         averaging.populate_radius(init_data.node_xyz, init_data.elem_conns)
 
         # Dummy init values
@@ -1070,36 +1070,41 @@ if __name__ == "__main__":
     one_to_zero_200 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(10, 1), XY(200, 0)])
     remove_after_50 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(50, 1), XY(60, 0)])
 
+    # Scaling
+    remove_over_200 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(200, 0)])
+
     pt_baseline = ParameterTrend(
         throttler_relaxation=0.05 * gradual_relax_1_0,
         stress_end=linear_500_401,
         dilation_ratio=const_dilation_ratio,
         adj_strain_ratio=one,
+        scaling_ratio=remove_over_200,
         current_inc=parameter_trend.CurrentInc(),
     )
 
     pt = pt_baseline._replace(
-        throttler_relaxation=parameter_trend.Constant(0.01),
+        throttler_relaxation=parameter_trend.Constant(0.1),
         dilation_ratio=parameter_trend.Constant(0.016),
         )
 
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.1, amplitude=0.5, hole_width=0.02)
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
-    scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=0.02)
-    #scaling = CosineScaling(y_depth=0.25, spacing=0.4, amplitude=0.2)
+    # scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=0.02)
+    # scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.5)
+    scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
 
 
     run_params = RunParams(
         actuator=Actuator.e_local,
-        scaling=scaling,
+        scaling=scaling_cos,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=2,
+        n_steps_major=6,
         n_steps_minor_max=5000,
         existing_prestrain_priority_factor=2,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestC-Fine.st7"),
+        source_file_name=pathlib.Path("TestC-Med.st7"),
     )
 
     main(run_params)
