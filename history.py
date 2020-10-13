@@ -5,12 +5,27 @@ import pathlib
 import sqlite3
 import typing
 import enum
+import common_types
 
 
 class ContourKey(enum.Enum):
     prestrain_x = enum.auto()
     prestrain_y = enum.auto()
     prestrain_mag = enum.auto()
+
+    @staticmethod
+    def from_single_value(sv: common_types.SingleValue):
+        if sv.eigen_vector:
+            raise ValueError(sv)
+
+        if sv.axis == 0:
+            return ContourKey.prestrain_x
+
+        elif sv.axis == 1:
+            return ContourKey.prestrain_y
+
+        else:
+            raise ValueError(sv)
 
 
 class ResultCase(typing.NamedTuple):

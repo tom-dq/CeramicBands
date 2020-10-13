@@ -317,14 +317,12 @@ def write_out_to_db(db: history.DB, init_data: InitialSetupModelData, current_in
 
     # Prestrains
     def make_prestrain_rows():
-        for plate_num, pre_strain in prestrain_update.elem_prestrains_iteration_set.items():
-            raise ValueError("Time to write this conversion then.")
-            pre_strain_mag = (pre_strain.x**2 + pre_strain.y**2)**0.5
+        for sv in prestrain_update.elem_prestrains_iteration_set:
             yield history.ContourValue(
                 result_case_num=db_case_num,
-                contour_key_num=history.ContourKey.prestrain_mag.value,
-                elem_num=plate_num,
-                value=pre_strain_mag
+                contour_key_num=history.ContourKey.from_single_value(sv).value,
+                elem_num=sv.elem,
+                value=sv.value,
             )
 
     db.add_many(make_prestrain_rows())
