@@ -12,20 +12,30 @@ class ContourKey(enum.Enum):
     prestrain_x = enum.auto()
     prestrain_y = enum.auto()
     prestrain_mag = enum.auto()
+    total_strain_x = enum.auto()
+    total_strain_y = enum.auto()
+    total_strain_z = enum.auto()
 
     @staticmethod
-    def from_single_value(sv: common_types.SingleValue):
+    def from_single_value(sv: common_types.SingleValue, is_result_strain: bool):
+
         if sv.eigen_vector:
             raise ValueError(sv)
 
-        if sv.axis == 0:
-            return ContourKey.prestrain_x
-
-        elif sv.axis == 1:
-            return ContourKey.prestrain_y
+        if is_result_strain:
+            d = {
+                0: ContourKey.total_strain_x,
+                1: ContourKey.total_strain_y,
+                2: ContourKey.total_strain_z,
+            }
 
         else:
-            raise ValueError(sv)
+            d = {
+                0: ContourKey.prestrain_x,
+                1: ContourKey.prestrain_y,
+            }
+
+        return d[sv.axis]
 
 
 class ResultCase(typing.NamedTuple):

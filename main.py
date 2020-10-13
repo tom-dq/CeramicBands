@@ -289,7 +289,14 @@ def write_out_screenshot(run_params: RunParams, model_window: st7.St7ModelWindow
     compress_png(current_result_frame.image_file)
 
 
-def write_out_to_db(db: history.DB, init_data: InitialSetupModelData, current_inc: parameter_trend.CurrentInc, results: st7.St7Results, current_result_frame: "ResultFrame", prestrain_update: PrestrainUpdate):
+def write_out_to_db(
+    db: history.DB, 
+    init_data: InitialSetupModelData,
+     current_inc: parameter_trend.CurrentInc, 
+     results: st7.St7Results, 
+     current_result_frame: "ResultFrame", 
+     prestrain_update: PrestrainUpdate,
+     result_strain: typing.Iterable[SingleValue]):
 
     if not config.active_config.record_result_history_in_db:
         return
@@ -320,12 +327,24 @@ def write_out_to_db(db: history.DB, init_data: InitialSetupModelData, current_in
         for sv in prestrain_update.elem_prestrains_iteration_set:
             yield history.ContourValue(
                 result_case_num=db_case_num,
-                contour_key_num=history.ContourKey.from_single_value(sv).value,
+                contour_key_num=history.ContourKey.from_single_value(sv, False).value,
                 elem_num=sv.elem,
                 value=sv.value,
             )
 
     db.add_many(make_prestrain_rows())
+
+    # Result Strains
+    def make_result_strains():
+        for sv in result_strain:
+            yield history.ContourValue(
+                result_case_num=db_case_num,
+                contour_key_num=history.ContourKey.from_single_value(sv, True).value,
+                elem_num=sv.elem,
+                value=sv.value,
+            )
+
+    db.add_many(make_result_strains())
 
 
 def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_num: int) -> ElemVectorDict:
@@ -949,7 +968,7 @@ def main(run_params: RunParams):
             # Get the results from the last major step.
             with model.open_results(current_result_frame.result_file) as results:
                 write_out_screenshot(run_params, model_window, current_result_frame)
-                write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update)
+                write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, [])
 
 
             # Update the model with the new load
@@ -987,7 +1006,7 @@ def main(run_params: RunParams):
                     result_strain_raw = get_results(run_params.actuator, results, current_result_frame.result_case_num)
                     result_strain = result_strain_raw  # TEMP remove... update_to_include_prestrains(run_params.actuator, result_strain_raw, prestrain_update.elem_prestrains_iteration_set)
                     write_out_screenshot(run_params, model_window, current_result_frame)
-                    write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update)
+                    write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, result_strain.as_single_values())
 
                 _update_prestrain_table(run_params, ratchet.table, run_params.parameter_trend.current_inc)
 
@@ -1040,7 +1059,7 @@ def main(run_params: RunParams):
         # Save the image of pre-strain results from the maximum load step.
         with model.open_results(current_result_frame.result_file) as results, model.St7CreateModelWindow(dont_really_make=False) as model_window:
             write_out_screenshot(run_params, model_window, current_result_frame)
-            write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update)
+            write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, [])
 
 
 def create_load_case(model, case_name):
