@@ -280,6 +280,8 @@ class _St7ArrayBase:
 
     # Also TODO: support stuff like connection arrays? Or things where there is no ipAAA constant?
 
+    # Another TODO - it would be good to be able to convert to and from enums where they appear in an integer array.
+
     @classmethod
     def get_sub_arrays(cls) -> typing.Iterable[_InternalSubArrayDefinition]:
         
@@ -1192,11 +1194,7 @@ class St7ModelWindow:
         ints_arr = contour_settings_limit.get_single_sub_array_instance_of_type(ctypes.c_long).to_st7_array()
         doubles_arr = contour_settings_limit.get_single_sub_array_instance_of_type(ctypes.c_double).to_st7_array()
 
-        # TODO - get this working.
         chk(St7API.St7SetEntityContourSettingsLimits(self.uID, entity.value, ints_arr, doubles_arr))
-
-
-
 
 
 

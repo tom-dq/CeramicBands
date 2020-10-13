@@ -257,6 +257,8 @@ def apply_prestrain(model: st7.St7Model, case_num: int, elem_prestrains: typing.
 
 def setup_model_window(run_params: RunParams, model_window: st7.St7ModelWindow, case_num: int):
     model_window.St7SetPlateResultDisplay_None()
+
+    
     model_window.St7SetWindowResultCase(case_num)
     model_window.St7SetEntityContourIndex(st7.Entity.tyPLATE, st7.PlateContour.ctPlatePreStrainMagnitude)
     model_window.St7SetDisplacementScale(5.0, st7.ScaleType.dsAbsolute)
@@ -265,11 +267,17 @@ def setup_model_window(run_params: RunParams, model_window: st7.St7ModelWindow, 
     contour_settings_limit = model_window.St7GetEntityContourSettingsLimits(st7.Entity.tyPLATE)
 
     prestrain_contour_max = run_params.parameter_trend.dilation_ratio.get_max_value_returned()
-    new_contour_limits = dataclasses.replace(contour_settings_limit, ipSetMinLimit=True, ipSetMaxLimit=True, ipMinLimit=0.0, ipMaxLimit=prestrain_contour_max)
+    new_contour_limits = dataclasses.replace(contour_settings_limit, 
+        ipContourLimit=st7.St7API.clUserRange,
+        ipSetMinLimit=True, 
+        ipSetMaxLimit=True, 
+        ipMinLimit=0.0, 
+        ipMaxLimit=prestrain_contour_max
+        )
 
     model_window.St7SetEntityContourSettingsLimits(st7.Entity.tyPLATE, new_contour_limits)
 
-    contour_settings_style = model_window.St7GetEntityContourSettingsStyle(st7.Entity.tyPLATE)
+    # contour_settings_style = model_window.St7GetEntityContourSettingsStyle(st7.Entity.tyPLATE)
     
     # TODO -up to here
     model_window.St7RedrawModel(True)
@@ -1103,17 +1111,17 @@ if __name__ == "__main__":
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.1, amplitude=0.5, hole_width=0.02)
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
     # scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=0.02)
-    # scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.5)
-    scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
+    scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.5)
+    # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
 
 
     run_params = RunParams(
         actuator=Actuator.e_local,
-        scaling=scaling_cos,
+        scaling=scaling_big,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=6,
+        n_steps_major=4,
         n_steps_minor_max=5000,
         existing_prestrain_priority_factor=2,
         parameter_trend=pt,
