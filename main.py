@@ -1106,12 +1106,13 @@ if __name__ == "__main__":
     pt = pt_baseline._replace(
         throttler_relaxation=parameter_trend.Constant(0.1),
         dilation_ratio=parameter_trend.Constant(0.016),
+        scaling_ratio=one,
         )
 
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.1, amplitude=0.5, hole_width=0.02)
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
     # scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=0.02)
-    scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.5)
+    scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
 
 
@@ -1123,7 +1124,7 @@ if __name__ == "__main__":
         throttler=throttler,
         n_steps_major=4,
         n_steps_minor_max=5000,
-        existing_prestrain_priority_factor=2,
+        existing_prestrain_priority_factor=None,
         parameter_trend=pt,
         source_file_name=pathlib.Path("TestE-Coarse.st7"),
     )

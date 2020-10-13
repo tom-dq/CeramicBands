@@ -66,7 +66,7 @@ def _get_config():
             delete_old_result_files=True,
             ratched_prestrains_during_iterations=False,
             case_for_every_increment=False,
-            record_result_history_in_db=False,
+            record_result_history_in_db=True,
             converged_delta_prestrain=1e-6,
         )
 
@@ -83,7 +83,7 @@ def _get_config():
             delete_old_result_files=True,
             ratched_prestrains_during_iterations=False,
             case_for_every_increment=False,
-            record_result_history_in_db=False,
+            record_result_history_in_db=True,
             converged_delta_prestrain=1e-6,
         )
 
