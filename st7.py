@@ -242,6 +242,15 @@ class _InternalSubArrayDefinition(typing.NamedTuple):
         array = (self.elem_type * self.array_length)()
         return array
 
+    def instance_from_st7_array(self, ints_or_floats) -> "_InternalSubArrayInstance":
+        values = {}
+
+        for field in self.fields:
+            idx = getattr(St7API, field.name)
+            values[field.name] = field.type(ints_or_floats[idx])  # Convert to int if it's a bool
+
+        return _InternalSubArrayInstance(array_def=self, values=values)
+ 
 
 class _InternalSubArrayInstance(typing.NamedTuple):
     """Represents an instance of, say, the "Integers" argument of St7SetEntityContourSettingsLimits populated with values"""
