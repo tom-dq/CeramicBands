@@ -6,9 +6,8 @@ import dataclasses
 import enum
 import typing
 import ctypes
-import _ctypes
 import pathlib
-import itertools
+import collections
 
 import numpy
 
@@ -215,9 +214,11 @@ class TableType(enum.Enum):
     ttStrainTime = St7API.ttStrainTime
 
 
+_T_ctypes_type = typing.Union[typing.Type[ctypes.c_long], typing.Type[ctypes.c_double]]
+
 class _InternalSubArrayDefinition(typing.NamedTuple):
     """Represents, for example, the "Integers" argument of St7SetEntityContourSettingsLimits - how many values there are in there, what type they are, etc. """
-    elem_type: _ctypes.PyCSimpleType  # e.g., ctypes.c_long, ctypes.c_double  (not an instance like ctypes.c_long(34)... )
+    elem_type: _T_ctypes_type  # e.g., ctypes.c_long, ctypes.c_double  (not an instance like ctypes.c_long(34)... )
     fields: typing.List[dataclasses.Field]
     array_name_override: str
 
@@ -250,14 +251,21 @@ class _InternalSubArrayDefinition(typing.NamedTuple):
             values[field.name] = field.type(ints_or_floats[idx])  # Convert to int if it's a bool
 
         return _InternalSubArrayInstance(array_def=self, values=values)
- 
+
 
 class _InternalSubArrayInstance(typing.NamedTuple):
     """Represents an instance of, say, the "Integers" argument of St7SetEntityContourSettingsLimits populated with values"""
     array_def: _InternalSubArrayDefinition
     values: typing.Dict[str, typing.Union[bool, int, float]]
 
+    def to_st7_array(self):
+        working_array = self.array_def.make_empty_array()
 
+        for key, val in self.values.items():
+            idx = getattr(St7API, key)
+            working_array[idx] = val
+
+        return working_array
 
 
 @dataclasses.dataclass
@@ -290,9 +298,57 @@ class _St7ArrayBase:
             
             return c_type, array_name_override
 
-        sorted_fields = sorted(dataclasses.fields(cls), key=sub_array_key)
-        for (c_type, array_name_override), fields in itertools.groupby(sorted_fields, sub_array_key):
-            yield _InternalSubArrayDefinition(elem_type=c_type, fields=list(fields), array_name_override=array_name_override)
+        # Collect the sub-array keys
+        sub_array_list = collections.defaultdict(list)
+
+        for field in dataclasses.fields(cls):
+            sub_array_list[sub_array_key(field)].append(field)
+
+        for (c_type, array_name_override), fields in sub_array_list.items():
+            yield _InternalSubArrayDefinition(elem_type=c_type, fields=fields, array_name_override=array_name_override)
+
+
+    def get_sub_array_instances(self) -> typing.Iterable[_InternalSubArrayInstance]:
+        instance_values = dataclasses.asdict(self)
+
+        for sub_array_def in self.get_sub_arrays():
+            this_subarray_instance_values = {}
+            for field in sub_array_def.fields:
+                key = field.name
+                this_subarray_instance_values[key] = instance_values.pop(key)
+
+            yield _InternalSubArrayInstance(array_def=sub_array_def, values=this_subarray_instance_values)
+
+        if instance_values:
+            raise ValueError(f"did not find a sub-array for the following: {instance_values}")
+
+    @classmethod
+    def get_single_sub_array_of_type(cls, target_type: _T_ctypes_type) -> _InternalSubArrayDefinition:
+
+        all_matches = [sub_array for sub_array in cls.get_sub_arrays() if sub_array.elem_type == target_type]
+
+        if len(all_matches) == 1:
+            return all_matches.pop()
+
+        raise ValueError(f"Expected one array of type {target_type} - got {len(all_matches)}: {all_matches}")
+
+
+    def get_single_sub_array_instance_of_type(self, target_type: _T_ctypes_type) -> _InternalSubArrayInstance:
+        all_matches = [sub_array_inst for sub_array_inst in self.get_sub_array_instances() if sub_array_inst.array_def.elem_type == target_type]
+
+        if len(all_matches) == 1:
+            return all_matches.pop()
+
+        raise ValueError(f"Expected one array instance of type {target_type} - got {len(all_matches)}: {all_matches}")
+
+
+    @classmethod
+    def instance_from_sub_array_instances(cls, *sub_array_instances: _InternalSubArrayInstance) -> "_St7ArrayBase":
+        working_dict = {}
+        for sub_array_instance in sub_array_instances:
+            working_dict.update(sub_array_instance.values)
+
+        return cls(**working_dict)
 
     @classmethod
     def from_st7_array(cls, ints_or_floats):
@@ -303,7 +359,6 @@ class _St7ArrayBase:
             working_dict[field.name] = field.type(ints_or_floats[idx])  # Convert to int 
 
         return cls(**working_dict)
-
 
 
     def to_st7_array(self) -> ctypes.Array:
@@ -1101,16 +1156,48 @@ class St7ModelWindow:
         chk(St7API.St7SetDisplacementScale(self.uID, disp_scale, scale_type.value))
 
     def St7GetEntityContourSettingsStyle(self, entity: Entity) -> ContourSettingsStyle:
-        array = ContourSettingsStyle.make_empty_array()
-        chk(St7API.St7GetEntityContourSettingsStyle(self.uID, entity.value, array))
-        return ContourSettingsStyle.from_st7_array(array)
+        ints = ContourSettingsStyle.get_single_sub_array_of_type(ctypes.c_long)
+        ints_arr = ints.make_empty_array()
+
+        chk(St7API.St7GetEntityContourSettingsStyle(self.uID, entity.value, ints_arr))
+
+        ints_instance = ints.instance_from_st7_array(ints_arr)
+        return ContourSettingsStyle.instance_from_sub_array_instances(ints_instance)
+
 
     def St7SetEntityContourSettingsStyle(self, entity: Entity, contour_settings_style: ContourSettingsStyle):
-        array = contour_settings_style.to_st7_array()
-        chk(St7API.St7SetEntityContourSettingsStyle(self.uID, entity.value, array))
+        ints_arr = contour_settings_style.get_single_sub_array_instance_of_type(ctypes.c_long).to_st7_array()
+        chk(St7API.St7SetEntityContourSettingsStyle(self.uID, entity.value, ints_arr))
+
+
+    def St7GetEntityContourSettingsLimits(self, entity: Entity) -> ContourSettingsLimit:
+        ints = ContourSettingsLimit.get_single_sub_array_of_type(ctypes.c_long)
+        doubles = ContourSettingsLimit.get_single_sub_array_of_type(ctypes.c_double)
+
+        ints_arr = ints.make_empty_array()
+        doubles_arr = doubles.make_empty_array()
+
+        chk(St7API.St7GetEntityContourSettingsLimits(self.uID, entity.value, ints_arr, doubles_arr))
+
+        ints_instance = ints.instance_from_st7_array(ints_arr)
+        doubles_instance = doubles.instance_from_st7_array(doubles_arr)
+
+        contour_settings_limit = ContourSettingsLimit.instance_from_sub_array_instances(ints_instance, doubles_instance)
+
+        return contour_settings_limit
+
 
     def St7SetEntityContourSettingsLimits(self, entity: Entity, contour_settings_limit: ContourSettingsLimit):
-        pass
+        
+        ints_arr = contour_settings_limit.get_single_sub_array_instance_of_type(ctypes.c_long).to_st7_array()
+        doubles_arr = contour_settings_limit.get_single_sub_array_instance_of_type(ctypes.c_double).to_st7_array()
+
+        # TODO - get this working.
+        chk(St7API.St7SetEntityContourSettingsLimits(self.uID, entity.value, ints_arr, doubles_arr))
+
+
+
+
 
 
 

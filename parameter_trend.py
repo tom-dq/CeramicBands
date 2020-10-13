@@ -46,6 +46,13 @@ class ParameterGetter:
     def __call__(self, current_inc: CurrentInc) -> float:
         raise NotImplementedError()
 
+    def get_max_value_returned(self) -> float:
+        def make_values():
+            for i in range(1000000):
+                fake_curr_inc = CurrentInc(major_inc=None, minor_inc=i)
+                yield self(fake_curr_inc)
+
+        return max(make_values())
 
 class Constant(ParameterGetter):
     _const: float = None

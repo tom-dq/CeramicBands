@@ -1,3 +1,4 @@
+import dataclasses
 import itertools
 import os
 import random
@@ -254,21 +255,28 @@ def apply_prestrain(model: st7.St7Model, case_num: int, elem_prestrains: typing.
         model.St7SetPlatePreLoad3(plate_num, case_num, st7.PreLoadType.plPlatePreStrain, prestrain)
 
 
-def setup_model_window(model_window: st7.St7ModelWindow, case_num: int):
+def setup_model_window(run_params: RunParams, model_window: st7.St7ModelWindow, case_num: int):
     model_window.St7SetPlateResultDisplay_None()
     model_window.St7SetWindowResultCase(case_num)
     model_window.St7SetEntityContourIndex(st7.Entity.tyPLATE, st7.PlateContour.ctPlatePreStrainMagnitude)
     model_window.St7SetDisplacementScale(5.0, st7.ScaleType.dsAbsolute)
 
     # Set the contour limits
+    contour_settings_limit = model_window.St7GetEntityContourSettingsLimits(st7.Entity.tyPLATE)
+
+    prestrain_contour_max = run_params.parameter_trend.dilation_ratio.get_max_value_returned()
+    new_contour_limits = dataclasses.replace(contour_settings_limit, ipSetMinLimit=True, ipSetMaxLimit=True, ipMinLimit=0.0, ipMaxLimit=prestrain_contour_max)
+
+    model_window.St7SetEntityContourSettingsLimits(st7.Entity.tyPLATE, new_contour_limits)
+
     contour_settings_style = model_window.St7GetEntityContourSettingsStyle(st7.Entity.tyPLATE)
     
     # TODO -up to here
     model_window.St7RedrawModel(True)
 
 
-def write_out_screenshot(model_window: st7.St7ModelWindow, current_result_frame: "ResultFrame"):
-    setup_model_window(model_window, current_result_frame.result_case_num)
+def write_out_screenshot(run_params: RunParams, model_window: st7.St7ModelWindow, current_result_frame: "ResultFrame"):
+    setup_model_window(run_params, model_window, current_result_frame.result_case_num)
     model_window.St7ExportImage(current_result_frame.image_file, st7.ImageType.itPNG, config.active_config.screenshot_res.width, config.active_config.screenshot_res.height)
     compress_png(current_result_frame.image_file)
 
@@ -934,7 +942,7 @@ def main(run_params: RunParams):
             
             # Get the results from the last major step.
             with model.open_results(current_result_frame.result_file) as results:
-                write_out_screenshot(model_window, current_result_frame)
+                write_out_screenshot(run_params, model_window, current_result_frame)
                 write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update)
 
 
@@ -972,7 +980,7 @@ def main(run_params: RunParams):
                 with model.open_results(current_result_frame.result_file) as results:
                     result_strain_raw = get_results(run_params.actuator, results, current_result_frame.result_case_num)
                     result_strain = result_strain_raw  # TEMP remove... update_to_include_prestrains(run_params.actuator, result_strain_raw, prestrain_update.elem_prestrains_iteration_set)
-                    write_out_screenshot(model_window, current_result_frame)
+                    write_out_screenshot(run_params, model_window, current_result_frame)
                     write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update)
 
                 _update_prestrain_table(run_params, ratchet.table, run_params.parameter_trend.current_inc)
@@ -1025,7 +1033,7 @@ def main(run_params: RunParams):
 
         # Save the image of pre-strain results from the maximum load step.
         with model.open_results(current_result_frame.result_file) as results, model.St7CreateModelWindow(dont_really_make=False) as model_window:
-            write_out_screenshot(model_window, current_result_frame)
+            write_out_screenshot(run_params, model_window, current_result_frame)
             write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update)
 
 
