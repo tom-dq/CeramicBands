@@ -6,11 +6,15 @@ import dataclasses
 import enum
 import typing
 import ctypes
+import _ctypes
 import pathlib
+import itertools
 
 import numpy
 
 T_Path = typing.Union[pathlib.Path, str]
+
+_ARRAY_NAME = "array_name"
 
 def chk(iErr):
     if iErr != 0:
@@ -211,9 +215,76 @@ class TableType(enum.Enum):
     ttStrainTime = St7API.ttStrainTime
 
 
+class _InternalSubArrayDefinition(typing.NamedTuple):
+    """Represents, for example, the "Integers" argument of St7SetEntityContourSettingsLimits - how many values there are in there, what type they are, etc. """
+    elem_type: _ctypes.PyCSimpleType  # e.g., ctypes.c_long, ctypes.c_double  (not an instance like ctypes.c_long(34)... )
+    fields: typing.List[dataclasses.Field]
+    array_name_override: str
+
+    @property 
+    def array_name(self) -> str:
+        if self.array_name_override:
+            return self.array_name_override
+
+        lookups = {
+            ctypes.c_long: "Integers",
+            ctypes.c_double: "Doubles",
+        }
+
+        return lookups[self.elem_type]
+
+    @property
+    def array_length(self) -> int:
+        # Have a buffer on there in case...
+        return 10 + max(getattr(St7API, field.name) for field in self.fields)
+
+    def make_empty_array(self):
+        array = (self.elem_type * self.array_length)()
+        return array
+
+
+class _InternalSubArrayInstance(typing.NamedTuple):
+    """Represents an instance of, say, the "Integers" argument of St7SetEntityContourSettingsLimits populated with values"""
+    array_def: _InternalSubArrayDefinition
+    values: typing.Dict[str, typing.Union[bool, int, float]]
+
+
+
+
 @dataclasses.dataclass
-class St7ArrayBase:
-    """All those arrays of integers can inherit from this to get convenience conversion functions"""
+class _St7ArrayBase:
+    """All those arrays of integers can inherit from this to get convenience conversion functions."""
+
+    # TODO - future plan for functions in which there are multiple arrays of the same type,
+    #   like "St7GetBeamPropertyData" with two Doubles arrays:
+    #   Support custom field creation like this
+    #   ipAREA : float = field(metadata={"array_name": "SectionData"})
+    #   ipModulus : float = field(metadata={"array_name": "MaterialData"})
+
+    # Also TODO: support stuff like connection arrays? Or things where there is no ipAAA constant?
+
+    @classmethod
+    def get_sub_arrays(cls) -> typing.Iterable[_InternalSubArrayDefinition]:
+        
+        def sub_array_key(field: dataclasses.Field):
+
+            if field.type in {int, bool}:
+                c_type = ctypes.c_long
+
+            elif field.type == float:
+                c_type = ctypes.c_double
+
+            else:
+                raise ValueError(field)
+
+            array_name_override = field.metadata.get(_ARRAY_NAME, '')
+            
+            return c_type, array_name_override
+
+        sorted_fields = sorted(dataclasses.fields(cls), key=sub_array_key)
+        for (c_type, array_name_override), fields in itertools.groupby(sorted_fields, sub_array_key):
+            yield _InternalSubArrayDefinition(elem_type=c_type, fields=list(fields), array_name_override=array_name_override)
+
     @classmethod
     def from_st7_array(cls, ints_or_floats):
         working_dict = {}
@@ -224,10 +295,7 @@ class St7ArrayBase:
 
         return cls(**working_dict)
 
-    @classmethod
-    def make_empty_array(cls):
-        array = (cls.get_array_element_type() * cls.get_array_length())()
-        return array
+
 
     def to_st7_array(self) -> ctypes.Array:
         name_to_idx = {field.name: getattr(St7API, field.name) for field in dataclasses.fields(self)}
@@ -265,7 +333,7 @@ class St7ArrayBase:
 
 
 @dataclasses.dataclass
-class ContourSettingsStyle(St7ArrayBase):
+class ContourSettingsStyle(_St7ArrayBase):
     ipContourStyle: int
     ipReverse: bool
     ipSeparator: bool
@@ -278,6 +346,20 @@ class ContourSettingsStyle(St7ArrayBase):
     ipMaxColour: int
     ipLimitMin: bool
     ipLimitMax: bool
+
+
+@dataclasses.dataclass
+class ContourSettingsLimit(_St7ArrayBase):
+    ipContourLimit: int
+    ipContourMode: int
+    ipNumContours: int
+    ipSetMinLimit: bool
+    ipSetMaxLimit: bool
+
+    ipMinLimit: float
+    ipMaxLimit: float
+
+
 
 
 class Vector3(typing.NamedTuple):
@@ -1017,6 +1099,10 @@ class St7ModelWindow:
     def St7SetEntityContourSettingsStyle(self, entity: Entity, contour_settings_style: ContourSettingsStyle):
         array = contour_settings_style.to_st7_array()
         chk(St7API.St7SetEntityContourSettingsStyle(self.uID, entity.value, array))
+
+    def St7SetEntityContourSettingsLimits(self, entity: Entity, contour_settings_limit: ContourSettingsLimit):
+        pass
+
 
 
 def _DummyClassFactory(name, BaseClass):
