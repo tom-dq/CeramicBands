@@ -60,6 +60,7 @@ class ElemPreStrainChangeData(typing.NamedTuple):
     result_strain_val: float
     eigen_vector_old: typing.Optional[numpy.array]
     eigen_vector_proposed: typing.Optional[numpy.array]
+    elem_volume_ratio: float
 
     def scaled_down(self, factor: float) -> "ElemPreStrainChangeData":
         """Taper off the full value."""
@@ -155,6 +156,9 @@ class ElemPreStrainChangeData(typing.NamedTuple):
             value=self.proposed_prestrain_val,
             eigen_vector=self.eigen_vector_proposed,
         )
+
+    def vol_scaled_prestrain_contrib(self) -> float:
+        return self.elem_volume_ratio * self.proposed_prestrain_val
 
 class BaseThrottler:
     @abc.abstractmethod
@@ -291,11 +295,28 @@ class RelaxedIncreaseDecrease(BaseThrottler):
     def throttle(
             self,
             init_data: InitialSetupModelData,
+            previous_prestrain_update,
             run_params,  # This is main.RunParams
             proposed_prestrains: typing.List[ElemPreStrainChangeData],
     ) -> typing.List[ElemPreStrainChangeData]:
 
+        # First scaling - element by element based.
         ratio = run_params.parameter_trend.throttler_relaxation(run_params.parameter_trend.current_inc)
 
         scaled_down_proposed_strains = [epscd.scaled_down(ratio) for epscd in proposed_prestrains]
-        return scaled_down_proposed_strains
+
+        # Second scaling - limit the "overall" prestrain scaling to some limit.
+        total_this_iter = sum(epscd.vol_scaled_prestrain_contrib() for epscd in proposed_prestrains)
+        overall_delta = total_this_iter - previous_prestrain_update.overall_dilation_ratio_working_set
+        limit_delta = run_params.parameter_trend.overall_iterative_prestrain_delta_limit(run_params.parameter_trend.current_inc)
+        if abs(overall_delta) > limit_delta:
+            print("Scaling down!")
+
+            scaled_total_delta = abs(limit_delta / overall_delta)
+
+            final_scale = [epscd.scaled_down(scaled_total_delta) for epscd in proposed_prestrains]
+
+        else:
+            final_scale = proposed_prestrains
+
+        return final_scale

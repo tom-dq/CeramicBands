@@ -221,6 +221,7 @@ class PrestrainUpdate(typing.NamedTuple):
     update_ratio: float
     this_update_time: datetime.timedelta
     update_completed_at_time: datetime.datetime
+    overall_dilation_ratio_working_set: float  # This is the volume-scaled dilation ratio of the prestrains which are not locked in (the iteration)
 
     @staticmethod
     def zero() -> "PrestrainUpdate":
@@ -233,6 +234,7 @@ class PrestrainUpdate(typing.NamedTuple):
             update_ratio=0.0,
             this_update_time=datetime.timedelta(seconds=0),
             update_completed_at_time=datetime.datetime.now(),
+            overall_dilation_ratio_working_set=0.0,
         )
 
     def locked_in_prestrains(self) -> "PrestrainUpdate":
@@ -506,6 +508,7 @@ def incremental_element_update_list(
             result_strain_val=minor_acuator_input_current_flat[sv.id_key].value * ratchet.scaling.get_x_scale_factor(sv.id_key),
             eigen_vector_proposed=sv.eigen_vector,
             eigen_vector_old=old_prestrains[sv.id_key].eigen_vector,
+            elem_volume_ratio=init_data.elem_volume_ratio[sv.id_key[0]],
         )
         for sv in new_prestrains_all
     ]
@@ -547,6 +550,7 @@ def incremental_element_update_list(
     # TODO - maybe add the principal stuff in here too?
     proposed_prestrains_subset = ratchet.throttler.throttle(
         init_data,
+        previous_prestrain_update,
         run_params,
         proposed_prestrains_changes,
     )
@@ -580,6 +584,7 @@ def incremental_element_update_list(
         update_ratio=extra_dilation_norm,
         this_update_time=this_update_time,
         update_completed_at_time=update_completed_at_time,
+        overall_dilation_ratio_working_set=sum(epscd.vol_scaled_prestrain_contrib() for epscd in proposed_prestrains_subset)
     )
 
 
@@ -1117,6 +1122,7 @@ if __name__ == "__main__":
         dilation_ratio=const_dilation_ratio,
         adj_strain_ratio=one,
         scaling_ratio=remove_over_200,
+        overall_iterative_prestrain_delta_limit=one,
         current_inc=parameter_trend.CurrentInc(),
     )
 
@@ -1140,7 +1146,7 @@ if __name__ == "__main__":
         relaxation=relaxation,
         throttler=throttler,
         n_steps_major=4,
-        n_steps_minor_max=5000,
+        n_steps_minor_max=1000,
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
         source_file_name=pathlib.Path("TestE-Coarse.st7"),
