@@ -306,7 +306,7 @@ class RelaxedIncreaseDecrease(BaseThrottler):
         scaled_down_proposed_strains = [epscd.scaled_down(ratio) for epscd in proposed_prestrains]
 
         # Second scaling - limit the "overall" prestrain scaling to some limit.
-        total_this_iter = sum(epscd.vol_scaled_prestrain_contrib() for epscd in proposed_prestrains)
+        total_this_iter = sum(epscd.vol_scaled_prestrain_contrib() for epscd in scaled_down_proposed_strains)
         overall_delta = total_this_iter - previous_prestrain_update.overall_dilation_ratio_working_set
         limit_delta = run_params.parameter_trend.overall_iterative_prestrain_delta_limit(run_params.parameter_trend.current_inc)
         if abs(overall_delta) > limit_delta:
@@ -317,6 +317,6 @@ class RelaxedIncreaseDecrease(BaseThrottler):
             final_scale = [epscd.scaled_down(scaled_total_delta) for epscd in proposed_prestrains]
 
         else:
-            final_scale = proposed_prestrains
+            final_scale = scaled_down_proposed_strains
 
         return final_scale

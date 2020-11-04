@@ -11,6 +11,7 @@ import common_types
 class ContourKey(enum.Enum):
     prestrain_x = enum.auto()
     prestrain_y = enum.auto()
+    prestrain_z = enum.auto()  # This comes up in the iteration bit
     prestrain_mag = enum.auto()
     total_strain_x = enum.auto()
     total_strain_y = enum.auto()
@@ -33,6 +34,8 @@ class ContourKey(enum.Enum):
             d = {
                 0: ContourKey.prestrain_x,
                 1: ContourKey.prestrain_y,
+                2: ContourKey.prestrain_z,
+
             }
 
         return d[sv.axis]

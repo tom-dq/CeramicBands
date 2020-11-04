@@ -1117,8 +1117,8 @@ if __name__ == "__main__":
     remove_over_200 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(200, 0)])
 
     pt_baseline = ParameterTrend(
-        throttler_relaxation=0.05 * gradual_relax_1_0,
-        stress_end=linear_500_401,
+        throttler_relaxation=0.33 * one,
+        stress_end=const_440,
         dilation_ratio=const_dilation_ratio,
         adj_strain_ratio=one,
         scaling_ratio=remove_over_200,
@@ -1145,7 +1145,7 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=4,
+        n_steps_major=5,
         n_steps_minor_max=1000,
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
