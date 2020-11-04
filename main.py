@@ -1120,7 +1120,7 @@ if __name__ == "__main__":
         throttler_relaxation=0.33 * one,
         stress_end=const_440,
         dilation_ratio=const_dilation_ratio,
-        adj_strain_ratio=one,
+        adj_strain_ratio=0.1 * one,
         scaling_ratio=remove_over_200,
         overall_iterative_prestrain_delta_limit=one,
         current_inc=parameter_trend.CurrentInc(),
@@ -1149,7 +1149,7 @@ if __name__ == "__main__":
         n_steps_minor_max=1000,
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestE-Coarse.st7"),
+        source_file_name=pathlib.Path("TestE-Fine.st7"),
     )
 
     main(run_params)
