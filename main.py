@@ -1118,7 +1118,7 @@ if __name__ == "__main__":
 
     pt_baseline = ParameterTrend(
         throttler_relaxation=0.33 * one,
-        stress_end=const_440,
+        stress_end=480 * one,
         dilation_ratio=const_dilation_ratio,
         adj_strain_ratio=0.1 * one,
         scaling_ratio=remove_over_200,
