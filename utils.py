@@ -1,12 +1,13 @@
 # Some handy bits and pieces
 
+import shutil
 from PIL import Image
 import os
 import time
 import multiprocessing
 import typing
 
-BASE_DIR = r"E:\Simulations\CeramicBands\v5"
+BASE_DIR = r"C:\Simulations\CeramicBandsData\LocalTest\v7-Wedge\pics"
 
 def tally():
     for base, dirs, files in os.walk(BASE_DIR):
@@ -52,6 +53,23 @@ def compress_existing_images():
         pool.join()
 
 
+def extract_final_images():
+    final_image_dir = os.path.join(BASE_DIR, "_LastPics")
+
+    def dirs_and_last_pngs():
+        for base, dirs, files in os.walk(BASE_DIR):
+            png_files = list(os.path.join(base, f) for f in files if os.path.splitext(f)[1].lower() == '.png')
+            if len(png_files) > 5:
+                png_files.sort()
+                yield base, png_files[-1]
+
+    for dir_name, one_png in dirs_and_last_pngs():
+        just_dir = os.path.split(dir_name)[1]
+        just_fn = os.path.split(one_png)[1]
+        out_name = f"{just_dir}_{just_fn}"
+
+        out_fn = os.path.join(final_image_dir, out_name)
+        shutil.copy2(one_png, out_fn)
 
 
 def make_enum(text):
@@ -62,7 +80,7 @@ def make_enum(text):
 
     print("")
 
-if __name__ == "__main__":
+if __name__ == "__main1__":
     text = """ctBeamNone = 0
 ctBeamLength = 1
 ctBeamAxis1 = 2
@@ -274,3 +292,8 @@ rtPlateTotalCurvature = 23"""
     make_enum(text3)
 
     tally()
+
+
+
+if __name__ == "__main__":
+    extract_final_images()
