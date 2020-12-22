@@ -1002,6 +1002,18 @@ class St7Model:
         ct_doubles = self._make_table_data_and_validate(num_entries, doubles)
         chk(St7API.St7SetTableTypeData(self.uID, table_type.value, table_id, num_entries, ct_doubles))
 
+    def St7SetPlateXAngle1(self, plate_num: int, ang_deg: float):
+        ct_doubles = (ctypes.c_double * 10)()
+        ct_doubles[0] = ang_deg
+
+        chk(St7API.St7SetPlateXAngle1(self.uID, plate_num, ct_doubles))
+
+    def St7GetPlateXAngle1(self, plate_num: int) -> float:
+        ct_doubles = (ctypes.c_double * 10)()
+
+        chk(St7API.St7GetPlateXAngle1(self.uID, plate_num, ct_doubles))
+        return ct_doubles[0]
+
 
 
 class St7Results:

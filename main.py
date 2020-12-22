@@ -62,6 +62,7 @@ class RunParams(typing.NamedTuple):
     existing_prestrain_priority_factor: float
     parameter_trend: ParameterTrend
     source_file_name: pathlib.Path
+    randomise_orientation: bool
 
     def summary_strings(self) -> typing.Iterable[str]:
         yield "RunParams:\n"
@@ -427,7 +428,7 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
                     time.sleep(0.001 * num_tries**2)
 
                 num_tries += 1
-                print(f"Failed with {e}, try {num_tries}/{NUM_PLATE_RES_RETRIES}")
+                print(f"Failed with {e}, try {num_tries}/{NUM_PLATE_RES_RETRIES}. {plate_num=}, {case_num=}, {res_type=}, {res_sub_type=}")
 
                 if num_tries == NUM_PLATE_RES_RETRIES:
                     raise e
@@ -784,7 +785,12 @@ def set_max_iters(model: st7.St7Model, max_iters: typing.Optional[config.MaxIter
         model.St7SetSolverDefaultsInteger(st7.SolverDefaultInteger.spMaxIterationNonlin, iter_num)
 
 
-def initial_setup(model: st7.St7Model, initial_result_frame: ResultFrame) -> InitialSetupModelData:
+def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_frame: ResultFrame) -> InitialSetupModelData:
+
+    if run_params.randomise_orientation:
+        for elem_num in model.entity_numbers(st7.Entity.tyPLATE):
+            rand_ang = random.random() * 360
+            model.St7SetPlateXAngle1(elem_num, rand_ang)
 
     model.St7EnableSaveRestart()
     model.St7EnableSaveLastRestartStep()
@@ -952,7 +958,7 @@ def main(run_params: RunParams):
         model_window = exit_stack.enter_context(model.St7CreateModelWindow(DONT_MAKE_MODEL_WINDOW))
         db = exit_stack.enter_context(history.DB(fn_db))
 
-        init_data = initial_setup(model, current_result_frame)
+        init_data = initial_setup(run_params, model, current_result_frame)
         db.add_element_connections(init_data.elem_conns)
 
         run_params.scaling.assign_centroids(init_data)
@@ -1127,9 +1133,9 @@ if __name__ == "__main__":
     )
 
     pt = pt_baseline._replace(
-        throttler_relaxation=parameter_trend.Constant(0.1),
+        # throttler_relaxation=parameter_trend.Constant(0.1),
         dilation_ratio=parameter_trend.Constant(0.016),
-        scaling_ratio=one,
+        # scaling_ratio=one,
         )
 
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.1, amplitude=0.5, hole_width=0.02)
@@ -1145,11 +1151,12 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=5,
+        n_steps_major=2,
         n_steps_minor_max=1000,
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestE-Fine.st7"),
+        source_file_name=pathlib.Path("TestE-Med.st7"),
+        randomise_orientation=True,
     )
 
     main(run_params)

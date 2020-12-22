@@ -2,6 +2,7 @@ import os
 import glob
 import pathlib
 
+alpha_b36 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 def base36encode(number, min_len: int):
     """https://stackoverflow.com/a/1181924/11308690"""
@@ -11,7 +12,7 @@ def base36encode(number, min_len: int):
     if number < 0:
         raise ValueError('number must be positive')
 
-    alphabet, base36 = ['0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', '']
+    alphabet, base36 = [alpha_b36, '']
 
     while number:
         number, i = divmod(number, 36)
@@ -31,7 +32,8 @@ def get_unique_sub_dir(base_dir) -> pathlib.Path:
         num_tries += 1
 
         existing_subdirs = (one for one in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, one)))
-        existing_nums = (int(one, base=36) for one in existing_subdirs)
+        allowable_subdirs = (one for one in existing_subdirs if all(c in alpha_b36 for c in one))
+        existing_nums = (int(one, base=36) for one in allowable_subdirs)
         max_existing = max(existing_nums, default=0)
         new_dir_name = base36encode(max_existing+1, 2)
 
