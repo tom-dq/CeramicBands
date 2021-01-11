@@ -1123,17 +1123,18 @@ if __name__ == "__main__":
     remove_over_200 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(200, 0)])
 
     pt_baseline = ParameterTrend(
-        throttler_relaxation=0.33 * one,
-        stress_end=480 * one,
+        throttler_relaxation=0.001 * one,
+        stress_end=402 * one,
         dilation_ratio=const_dilation_ratio,
         adj_strain_ratio=0.1 * one,
-        scaling_ratio=remove_over_200,
+        scaling_ratio=one,
         overall_iterative_prestrain_delta_limit=one,
         current_inc=parameter_trend.CurrentInc(),
     )
 
     pt = pt_baseline._replace(
-        # throttler_relaxation=parameter_trend.Constant(0.1),
+        #throttler_relaxation=0.4 * gradual_relax_1_0,
+        throttler_relaxation=0.33 * one,
         dilation_ratio=parameter_trend.Constant(0.016),
         # scaling_ratio=one,
         )
@@ -1152,7 +1153,7 @@ if __name__ == "__main__":
         relaxation=relaxation,
         throttler=throttler,
         n_steps_major=2,
-        n_steps_minor_max=1000,
+        n_steps_minor_max=50000,
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
         source_file_name=pathlib.Path("TestE-Med.st7"),
