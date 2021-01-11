@@ -21,6 +21,7 @@ from averaging import Averaging, AveInRadius, NoAve
 from common_types import SingleValue, XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST, Actuator, SingleValueWithMissingDict
 from parameter_trend import ParameterTrend
 import parameter_trend
+from distribution import OrientationDistribution, random_angle_distribution_360deg
 from relaxation import Relaxation, NoRelax
 from scaling import Scaling, SingleHoleCentre, SpacedStepScaling, CosineScaling
 from tables import Table
@@ -51,6 +52,7 @@ NUM_PLATE_RES_RETRIES = 50
 
 
 
+
 class RunParams(typing.NamedTuple):
     actuator: Actuator
     scaling: Scaling
@@ -62,7 +64,7 @@ class RunParams(typing.NamedTuple):
     existing_prestrain_priority_factor: float
     parameter_trend: ParameterTrend
     source_file_name: pathlib.Path
-    randomise_orientation: bool
+    randomise_orientation: typing.Union[bool, OrientationDistribution]  # False for all the same, True for all random, or OrientationDistribution instance for a distribution so defined
 
     def summary_strings(self) -> typing.Iterable[str]:
         yield "RunParams:\n"
@@ -787,11 +789,6 @@ def set_max_iters(model: st7.St7Model, max_iters: typing.Optional[config.MaxIter
 
 def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_frame: ResultFrame) -> InitialSetupModelData:
 
-    if run_params.randomise_orientation:
-        for elem_num in model.entity_numbers(st7.Entity.tyPLATE):
-            rand_ang = random.random() * 360
-            model.St7SetPlateXAngle1(elem_num, rand_ang)
-
     model.St7EnableSaveRestart()
     model.St7EnableSaveLastRestartStep()
 
@@ -799,6 +796,27 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
         elem_num: model.St7GetElementCentroid(st7.Entity.tyPLATE, elem_num, 0)
         for elem_num in model.entity_numbers(st7.Entity.tyPLATE)
     }
+
+    # Element orientation, if needed.
+    if run_params.randomise_orientation == False:
+        pass
+
+    elif run_params.randomise_orientation == True:
+        for elem_num in model.entity_numbers(st7.Entity.tyPLATE):
+            rand_ang = random.random() * 360
+            model.St7SetPlateXAngle1(elem_num, rand_ang)
+
+    elif isinstance(run_params.randomise_orientation, OrientationDistribution):
+        t1 = time.time()
+        elem_angles = random_angle_distribution_360deg(run_params.randomise_orientation, elem_centroid)
+        t2 = time.time()
+        print(f"Took {t2-t1} secs to get orientation distribution")
+
+        for elem_num, elem_angle in elem_angles.items():
+            model.St7SetPlateXAngle1(elem_num, elem_angle)
+
+    else:
+        raise ValueError("Unhandled case")
 
     node_xyz = {node_num: model.St7GetNodeXYZ(node_num) for node_num in model.entity_numbers(st7.Entity.tyNODE)}
 
@@ -1145,6 +1163,11 @@ if __name__ == "__main__":
     scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
 
+    orient_dist = OrientationDistribution(
+        num_seeds=100,
+        n_exponent=2,
+    )
+
 
     run_params = RunParams(
         actuator=Actuator.e_local,
@@ -1156,8 +1179,8 @@ if __name__ == "__main__":
         n_steps_minor_max=50000,
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestE-Med.st7"),
-        randomise_orientation=True,
+        source_file_name=pathlib.Path("TestE-Fine.st7"),
+        randomise_orientation=orient_dist,
     )
 
     main(run_params)
