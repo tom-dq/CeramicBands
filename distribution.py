@@ -54,6 +54,8 @@ def distribute(
     # Get the distance matrix
     distances = distance_matrix(elem_cent_dense, seed_xyz_dense, p=2)
 
+    # TODO - make this more "in-place", or switch to knn style
+
     # Make the "seed value" matrix of the same shape
     seed_val_mat = numpy.ones_like(distances)
     for s_idx, (_, s_val) in seed_order.items():

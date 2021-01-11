@@ -1164,8 +1164,8 @@ if __name__ == "__main__":
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
 
     orient_dist = OrientationDistribution(
-        num_seeds=10_000,
-        n_exponent=32,
+        num_seeds=30_000,
+        n_exponent=4,
     )
 
 
@@ -1175,7 +1175,7 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=1,
+        n_steps_major=4,
         n_steps_minor_max=50000,
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
