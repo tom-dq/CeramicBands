@@ -1164,8 +1164,8 @@ if __name__ == "__main__":
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
 
     orient_dist = OrientationDistribution(
-        num_seeds=100,
-        n_exponent=2,
+        num_seeds=10_000,
+        n_exponent=32,
     )
 
 
