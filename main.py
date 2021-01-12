@@ -1151,8 +1151,8 @@ if __name__ == "__main__":
     )
 
     pt = pt_baseline._replace(
-        #throttler_relaxation=0.4 * gradual_relax_1_0,
-        throttler_relaxation=0.1 * one,
+        throttler_relaxation=0.4 * gradual_relax_1_0,
+        # throttler_relaxation=0.1 * one,
         dilation_ratio=parameter_trend.Constant(0.016),
         # scaling_ratio=one,
         )
@@ -1175,7 +1175,7 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=4,
+        n_steps_major=3,
         n_steps_minor_max=50000,
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
