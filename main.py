@@ -297,11 +297,11 @@ def write_out_screenshot(run_params: RunParams, model_window: st7.St7ModelWindow
 def write_out_to_db(
     db: history.DB, 
     init_data: InitialSetupModelData,
-     current_inc: parameter_trend.CurrentInc, 
-     results: st7.St7Results, 
-     current_result_frame: "ResultFrame", 
-     prestrain_update: PrestrainUpdate,
-     result_strain: typing.Iterable[SingleValue]):
+    current_inc: parameter_trend.CurrentInc, 
+    results: st7.St7Results, 
+    current_result_frame: "ResultFrame", 
+    prestrain_update: PrestrainUpdate,
+    result_strain: typing.Iterable[SingleValue]):
 
     if not config.active_config.record_result_history_in_db:
         return
@@ -1151,9 +1151,10 @@ if __name__ == "__main__":
     )
 
     pt = pt_baseline._replace(
-        throttler_relaxation=0.4 * gradual_relax_1_0,
+        # throttler_relaxation=0.4 * gradual_relax_1_0,
         # throttler_relaxation=0.1 * one,
         dilation_ratio=parameter_trend.Constant(0.016),
+        adj_strain_ratio=0.1 * one,
         # scaling_ratio=one,
         )
 
@@ -1164,8 +1165,8 @@ if __name__ == "__main__":
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
 
     orient_dist = OrientationDistribution(
-        num_seeds=30_000,
-        n_exponent=4,
+        num_seeds=4_000,
+        n_exponent=32,
     )
 
 
@@ -1175,8 +1176,8 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=3,
-        n_steps_minor_max=50000,
+        n_steps_major=2,
+        n_steps_minor_max=1000,
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
         source_file_name=pathlib.Path("TestE-Fine.st7"),

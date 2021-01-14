@@ -54,7 +54,7 @@ def _get_config():
             # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 12-SingleGrade.st7"),
             # fn_st7_base=pathlib.Path(r"E:\Simulations\CeramicBands\v5\Test 11.st7"),
             fn_st7_base=pathlib.Path(r"D:\Tom Wilson\Dropbox\Dropbox\PhD\Ceramic Bands Source Models\v7-Wedge"),
-            fn_working_image_base=pathlib.Path(r"D:\Simulations\CeramicBands\v7\pics"),
+            fn_working_image_base=pathlib.Path(r"E:\Simulations\CeramicBands\v7\pics"),
             # screenshot_res=st7.CanvasSize(1920, 1080),  # FHD
             screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
             # screenshot_res=st7.CanvasSize(3840, 2160), # 4K
@@ -66,7 +66,7 @@ def _get_config():
             delete_old_result_files=True,
             ratched_prestrains_during_iterations=False,
             case_for_every_increment=False,
-            record_result_history_in_db=True,
+            record_result_history_in_db=False,
             converged_delta_prestrain=1e-6,
         )
 
@@ -83,7 +83,7 @@ def _get_config():
             delete_old_result_files=True,
             ratched_prestrains_during_iterations=False,
             case_for_every_increment=False,
-            record_result_history_in_db=True,
+            record_result_history_in_db=False,
             converged_delta_prestrain=1e-6,
         )
 
