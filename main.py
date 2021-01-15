@@ -21,7 +21,7 @@ from averaging import Averaging, AveInRadius, NoAve
 from common_types import SingleValue, XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST, Actuator, SingleValueWithMissingDict
 from parameter_trend import ParameterTrend
 import parameter_trend
-from distribution import OrientationDistribution, random_angle_distribution_360deg
+from distribution import OrientationDistribution, distribute, random_angle_distribution_360deg, wraparound_from_zero
 from relaxation import Relaxation, NoRelax
 from scaling import Scaling, SingleHoleCentre, SpacedStepScaling, CosineScaling
 from tables import Table
@@ -799,20 +799,22 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
 
     # Element orientation, if needed.
     if run_params.randomise_orientation == False:
-        pass
+        elem_axis_angle_deg = {elem_num: 0.0 for elem_num in model.entity_numbers(st7.Entity.tyPLATE)}
 
     elif run_params.randomise_orientation == True:
+        elem_axis_angle_deg = dict()
         for elem_num in model.entity_numbers(st7.Entity.tyPLATE):
             rand_ang = random.random() * 360
+            elem_axis_angle_deg[elem_num] = rand_ang
             model.St7SetPlateXAngle1(elem_num, rand_ang)
 
     elif isinstance(run_params.randomise_orientation, OrientationDistribution):
         t1 = time.time()
-        elem_angles = random_angle_distribution_360deg(run_params.randomise_orientation, elem_centroid)
+        elem_axis_angle_deg = random_angle_distribution_360deg(run_params.randomise_orientation, elem_centroid)
         t2 = time.time()
         print(f"Took {t2-t1} secs to get orientation distribution")
 
-        for elem_num, elem_angle in elem_angles.items():
+        for elem_num, elem_angle in elem_axis_angle_deg.items():
             model.St7SetPlateXAngle1(elem_num, elem_angle)
 
     else:
@@ -881,6 +883,7 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
         elem_conns=elem_conns,
         elem_volume=elem_volume,
         elem_volume_ratio=elem_volume_ratio,
+        elem_axis_angle_deg=elem_axis_angle_deg,
     )
 
 
@@ -978,6 +981,13 @@ def main(run_params: RunParams):
 
         init_data = initial_setup(run_params, model, current_result_frame)
         db.add_element_connections(init_data.elem_conns)
+
+        # Write out the axis angles
+        with open(working_dir / "PlateAxisAngle.txt", "w") as f_orient:
+            for elem_num, angle_deg in init_data.elem_axis_angle_deg.items():
+                # Angles go between 0 and 90, then start going back towards the same thing. So 91 deg is also -89 deg.
+                angle_wrap = wraparound_from_zero(90, angle_deg)
+                f_orient.write(f"{elem_num}\t{angle_wrap}\n")
 
         run_params.scaling.assign_centroids(init_data)
         averaging.populate_radius(init_data.node_xyz, init_data.elem_conns)
@@ -1176,8 +1186,8 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=4,
-        n_steps_minor_max=250,
+        n_steps_major=2,
+        n_steps_minor_max=1000,
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
         source_file_name=pathlib.Path("TestE-VeryFine.st7"),

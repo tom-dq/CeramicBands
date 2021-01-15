@@ -243,6 +243,7 @@ class InitialSetupModelData(typing.NamedTuple):
     elem_conns: typing.Dict[int, typing.Tuple[int, ...]]
     elem_volume: typing.Dict[int, float]
     elem_volume_ratio: typing.Dict[int, float]
+    elem_axis_angle_deg: typing.Dict[int, float]
 
 
 def func_repr(f) -> str:

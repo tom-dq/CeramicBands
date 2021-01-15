@@ -177,6 +177,24 @@ def random_angle_distribution_360deg(
     return elem_to_angle
 
 
+def wraparound_from_zero(abs_from_zero: float, x):
+    """e.g, 
+    >>> wraparound_from_zero(90, -80) -> -80
+    >>> wraparound_from_zero(90, 91) -> -89
+    """
+
+    if abs_from_zero <= 0:
+        raise ValueError(abs_from_zero) 
+
+    wrap_amount = 2*abs_from_zero
+
+    while x > abs_from_zero:
+        x = x-wrap_amount
+
+    while x < (-1 * abs_from_zero):
+        x = x+wrap_amount
+
+    return x
 
 
 if __name__ == "__main__":
