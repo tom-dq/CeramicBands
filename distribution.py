@@ -1,7 +1,8 @@
 import numpy
-from scipy.spatial import distance_matrix
+from scipy.spatial import distance_matrix, cKDTree
 import typing
 import random
+
 import st7
 import math
 
@@ -37,8 +38,23 @@ def distribute_naive(
     return elem_values
 
 
-
 def distribute(
+    elem_centroid: typing.Dict[int, st7.Vector3],
+    seed_points: typing.Dict[st7.Vector3, float],
+    n: float,
+):
+
+    USE_KNN = True
+
+    if USE_KNN:
+        num_nearest_points = 8  # Should be enough!!!
+        return distribute_knn(elem_centroid, seed_points, n, num_nearest_points)
+
+    else:
+        return distribute_fully_populated(elem_centroid, seed_points, n)
+
+
+def distribute_fully_populated(
     elem_centroid: typing.Dict[int, st7.Vector3],
     seed_points: typing.Dict[st7.Vector3, float],
     n: float,
@@ -76,6 +92,50 @@ def distribute(
 
     return elem_values
     
+
+def distribute_knn(
+    elem_centroid: typing.Dict[int, st7.Vector3],
+    seed_points: typing.Dict[st7.Vector3, float],
+    n: float,   # Exponent to raise the distances to.
+    k: int,     # Number of neighbours to include
+):
+
+    if k > len(seed_points):
+        print(f"Requested {k} neighbours but only provided {len(seed_points)} points!")
+        k = len(seed_points)
+
+    # Build a query-able tree of the seed points
+    seed_order = {s_idx: (s_xyz, s_val) for s_idx, (s_xyz, s_val) in enumerate(seed_points.items()) }
+    seed_xyz_dense = [s_xyz for s_xyz, _ in seed_order.values()]
+    seed_val_dense = numpy.array([s_val for _, s_val in seed_order.values()])
+    seed_tree = cKDTree(seed_xyz_dense)
+
+    # Make the output matricies
+    elem_cent_order = {e_idx: (e_num, e_xyz) for e_idx, (e_num, e_xyz) in enumerate(elem_centroid.items()) }
+    elem_cent_dense = [e_xyz for _, e_xyz in elem_cent_order.values()]
+
+    distances, indices = seed_tree.query(elem_cent_dense, k=k)
+
+    # distances[i, :] is a row of distances between elem_centroid[i] and the closest k seed points, the indices of which are indices[0, :]
+    dist_weight_mat = 1 / distances ** n
+
+    seed_val_mat = seed_val_dense[indices]
+
+    # Weighted nearest neighbours
+    num = numpy.sum(seed_val_mat * dist_weight_mat, axis=1)
+    den = numpy.sum(dist_weight_mat, axis=1)
+
+    elem_val_dense = num / den
+
+    # Back to original format
+    elem_values = dict()
+    for e_idx, (e_num, _) in elem_cent_order.items():
+        elem_values[e_num] = float(elem_val_dense[e_idx])
+
+    return elem_values
+
+
+
 
 def random_angle_distribution_360deg(
     dist_params: OrientationDistribution,
@@ -138,10 +198,17 @@ if __name__ == "__main__":
 
 
     N = 1.0
+    k = 10
     elem_values_naive = distribute_naive(elem_centroids, seed_points, N)
     elem_values = distribute(elem_centroids, seed_points, N)
+    elem_values_knn = distribute_knn(elem_centroids, seed_points, N, k)
 
     if elem_values_naive != elem_values:
+        print(N)
+        print(elem_values_naive)
+        print(elem_values)
+
+    if elem_values_naive != elem_values_knn:
         print(N)
         print(elem_values_naive)
         print(elem_values)

@@ -13,7 +13,7 @@ class Codec(enum.Enum):
 codec = Codec.x264
 N_WORKERS = 4
 
-base_dir = r"D:\Simulations\CeramicBands\v7\pics"
+base_dir = r"E:\Simulations\CeramicBands\v7\pics"
 
 
 def do_one_dir(dir_fn: str):

@@ -1165,7 +1165,7 @@ if __name__ == "__main__":
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
 
     orient_dist = OrientationDistribution(
-        num_seeds=4_000,
+        num_seeds=40_000,
         n_exponent=32,
     )
 
@@ -1176,11 +1176,11 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=2,
-        n_steps_minor_max=1000,
+        n_steps_major=4,
+        n_steps_minor_max=250,
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestE-Fine.st7"),
+        source_file_name=pathlib.Path("TestE-VeryFine.st7"),
         randomise_orientation=orient_dist,
     )
 
