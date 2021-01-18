@@ -303,9 +303,6 @@ def write_out_to_db(
     prestrain_update: PrestrainUpdate,
     result_strain: typing.Iterable[SingleValue]):
 
-    if not config.active_config.record_result_history_in_db:
-        return
-
     # Main case data
     db_res_case = history.ResultCase(
         num=None,
@@ -315,6 +312,9 @@ def write_out_to_db(
     )
 
     db_case_num = db.add(db_res_case)
+
+    if not config.active_config.record_result_history_in_db:
+        return
 
     # Deformed positions
     deformed_pos = get_node_positions_deformed(init_data.node_xyz, results, current_result_frame.result_case_num)
@@ -1152,7 +1152,7 @@ if __name__ == "__main__":
 
     pt_baseline = ParameterTrend(
         throttler_relaxation=0.1 * one,
-        stress_end=402 * one,
+        stress_end=450 * one,
         dilation_ratio=const_dilation_ratio,
         adj_strain_ratio=0.1 * one,
         scaling_ratio=one,
@@ -1163,7 +1163,7 @@ if __name__ == "__main__":
     pt = pt_baseline._replace(
         # throttler_relaxation=0.4 * gradual_relax_1_0,
         # throttler_relaxation=0.1 * one,
-        dilation_ratio=parameter_trend.Constant(0.016),
+        dilation_ratio=parameter_trend.Constant(0.032),
         adj_strain_ratio=0.1 * one,
         # scaling_ratio=one,
         )
@@ -1172,10 +1172,11 @@ if __name__ == "__main__":
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
     # scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=0.02)
     scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
+    scaling_small_centre = SingleHoleCentre(pt=pt, y_depth=0.2, amplitude=0.5, hole_width=0.05)
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
 
     orient_dist = OrientationDistribution(
-        num_seeds=40_000,
+        num_seeds=4_000,
         n_exponent=32,
     )
 
@@ -1186,11 +1187,11 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=10,
-        n_steps_minor_max=60,
+        n_steps_major=100,
+        n_steps_minor_max=10,
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestE-VeryFine.st7"),
+        source_file_name=pathlib.Path("TestE-Fine.st7"),
         randomise_orientation=orient_dist,
     )
 
