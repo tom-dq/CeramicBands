@@ -61,6 +61,7 @@ class RunParams(typing.NamedTuple):
     throttler: BaseThrottler
     n_steps_major: int
     n_steps_minor_max: int
+    start_at_major_ratio: typing.Optional[float]
     existing_prestrain_priority_factor: float
     parameter_trend: ParameterTrend
     source_file_name: pathlib.Path
@@ -1003,95 +1004,102 @@ def main(run_params: RunParams):
         for _ in range(run_params.n_steps_major):
             run_params.parameter_trend.current_inc.inc_major()
 
-            
-            # Get the results from the last major step.
-            with model.open_results(current_result_frame.result_file) as results:
-                write_out_screenshot(run_params, model_window, current_result_frame)
-                write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, [])
-
-
             # Update the model with the new load
             this_load_factor = (run_params.parameter_trend.current_inc.major_inc + 1) / run_params.n_steps_major
 
-            prestrain_load_case_num = create_load_case(model, run_params.parameter_trend.current_inc.step_name())
-            apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_locked_in)
+            should_skip = False
+            if run_params.start_at_major_ratio is not None:
+                if this_load_factor < run_params.start_at_major_ratio:
+                    should_skip = True
 
-            # Add the increment, or overwrite it
-            current_result_frame = add_increment(
-                model,
-                current_result_frame,
-                this_load_factor,
-                run_params.parameter_trend.current_inc.step_name()
-            )
-            set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
-        
-            relaxation.set_current_relaxation(previous_load_factor, this_load_factor)
+            if should_skip:
+                print(f"Skipping major increment {run_params.parameter_trend.current_inc.major_inc} as load factor {this_load_factor} is below cutoff of {run_params.start_at_major_ratio}")
 
-            run_params.parameter_trend.current_inc.inc_minor()
-            new_count = math.inf
+            else:
+                # Get the results from the last major step.
+                with model.open_results(current_result_frame.result_file) as results:
+                    write_out_screenshot(run_params, model_window, current_result_frame)
+                    write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, [])
 
-            def should_do_another_minor_iteration(new_count, minor_inc: int) -> bool:
-                return (new_count > 0) and (minor_inc < run_params.n_steps_minor_max)
+                prestrain_load_case_num = create_load_case(model, run_params.parameter_trend.current_inc.step_name())
+                apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_locked_in)
 
-            while should_do_another_minor_iteration(new_count, run_params.parameter_trend.current_inc.minor_inc):
+                # Add the increment, or overwrite it
+                current_result_frame = add_increment(
+                    model,
+                    current_result_frame,
+                    this_load_factor,
+                    run_params.parameter_trend.current_inc.step_name()
+                )
+                set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
+            
+                relaxation.set_current_relaxation(previous_load_factor, this_load_factor)
+
+                run_params.parameter_trend.current_inc.inc_minor()
+                new_count = math.inf
+
+                def should_do_another_minor_iteration(new_count, minor_inc: int) -> bool:
+                    return (new_count > 0) and (minor_inc < run_params.n_steps_minor_max)
+
+                while should_do_another_minor_iteration(new_count, run_params.parameter_trend.current_inc.minor_inc):
+                    model.St7SaveFile()
+                    model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
+
+                    # For the next minor increment, unless overwritten.
+                    set_max_iters(model, config.active_config.max_iters, use_major=False)
+
+                    # Get the results from the last minor step.
+                    with model.open_results(current_result_frame.result_file) as results:
+                        result_strain_raw = get_results(run_params.actuator, results, current_result_frame.result_case_num)
+                        result_strain = result_strain_raw  # TEMP remove... update_to_include_prestrains(run_params.actuator, result_strain_raw, prestrain_update.elem_prestrains_iteration_set)
+                        write_out_screenshot(run_params, model_window, current_result_frame)
+                        write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, result_strain.as_single_values())
+
+                    _update_prestrain_table(run_params, ratchet.table, run_params.parameter_trend.current_inc)
+
+                    prestrain_update = incremental_element_update_list(
+                        init_data=init_data,
+                        run_params=run_params,
+                        ratchet=ratchet,
+                        previous_prestrain_update=prestrain_update,
+                        result_strain=result_strain,
+                    )
+
+                    new_count = prestrain_update.updated_this_round
+                    _print_update_line(run_params, prestrain_update)
+
+                    # Apply prestrains etc to the upcoming increment.
+                    if config.active_config.case_for_every_increment:
+                        prestrain_load_case_num = create_load_case(model, run_params.parameter_trend.current_inc.step_name())
+
+                    # Add the next step
+                    current_result_frame = add_increment(model, current_result_frame, this_load_factor, run_params.parameter_trend.current_inc.step_name())
+                    set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
+
+                    apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_iteration_set)
+
+                    if config.active_config.ratched_prestrains_during_iterations:
+                        # Update the ratchet settings for the one we did ramp up.
+                        for sv in prestrain_update.elem_prestrains_iteration_set:
+                            ratchet.update_minimum(True, sv.id_key, sv.value)
+
+                    # Keep track of the old results...
+                    run_params.parameter_trend.current_inc.inc_minor()
+
+                    set_max_iters(model, config.active_config.max_iters, use_major=True)
+
+                # Tack a final increment on the end so the result case is there as expected for the start of the following major increment.
                 model.St7SaveFile()
                 model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
 
-                # For the next minor increment, unless overwritten.
-                set_max_iters(model, config.active_config.max_iters, use_major=False)
+                prestrain_update = prestrain_update.locked_in_prestrains()
+                previous_load_factor = this_load_factor
 
-                # Get the results from the last minor step.
-                with model.open_results(current_result_frame.result_file) as results:
-                    result_strain_raw = get_results(run_params.actuator, results, current_result_frame.result_case_num)
-                    result_strain = result_strain_raw  # TEMP remove... update_to_include_prestrains(run_params.actuator, result_strain_raw, prestrain_update.elem_prestrains_iteration_set)
-                    write_out_screenshot(run_params, model_window, current_result_frame)
-                    write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, result_strain.as_single_values())
+                # Update the ratchet for what's been locked in.
+                for sv in prestrain_update.elem_prestrains_locked_in:
+                    ratchet.update_minimum(True, sv.id_key, sv.value)
 
-                _update_prestrain_table(run_params, ratchet.table, run_params.parameter_trend.current_inc)
-
-                prestrain_update = incremental_element_update_list(
-                    init_data=init_data,
-                    run_params=run_params,
-                    ratchet=ratchet,
-                    previous_prestrain_update=prestrain_update,
-                    result_strain=result_strain,
-                )
-
-                new_count = prestrain_update.updated_this_round
-                _print_update_line(run_params, prestrain_update)
-
-                # Apply prestrains etc to the upcoming increment.
-                if config.active_config.case_for_every_increment:
-                    prestrain_load_case_num = create_load_case(model, run_params.parameter_trend.current_inc.step_name())
-
-                # Add the next step
-                current_result_frame = add_increment(model, current_result_frame, this_load_factor, run_params.parameter_trend.current_inc.step_name())
-                set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
-
-                apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_iteration_set)
-
-                if config.active_config.ratched_prestrains_during_iterations:
-                    # Update the ratchet settings for the one we did ramp up.
-                    for sv in prestrain_update.elem_prestrains_iteration_set:
-                        ratchet.update_minimum(True, sv.id_key, sv.value)
-
-                # Keep track of the old results...
-                run_params.parameter_trend.current_inc.inc_minor()
-
-                set_max_iters(model, config.active_config.max_iters, use_major=True)
-
-            # Tack a final increment on the end so the result case is there as expected for the start of the following major increment.
-            model.St7SaveFile()
-            model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
-
-            prestrain_update = prestrain_update.locked_in_prestrains()
-            previous_load_factor = this_load_factor
-
-            # Update the ratchet for what's been locked in.
-            for sv in prestrain_update.elem_prestrains_locked_in:
-                ratchet.update_minimum(True, sv.id_key, sv.value)
-
-            relaxation.flush_previous_values()
+                relaxation.flush_previous_values()
 
         model.St7SaveFile()
 
@@ -1163,7 +1171,7 @@ if __name__ == "__main__":
     pt = pt_baseline._replace(
         # throttler_relaxation=0.4 * gradual_relax_1_0,
         # throttler_relaxation=0.1 * one,
-        dilation_ratio=parameter_trend.Constant(0.032),
+        dilation_ratio=parameter_trend.Constant(0.04),
         adj_strain_ratio=0.1 * one,
         # scaling_ratio=one,
         )
@@ -1176,7 +1184,7 @@ if __name__ == "__main__":
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
 
     orient_dist = OrientationDistribution(
-        num_seeds=4_000,
+        num_seeds=40_000,
         n_exponent=32,
     )
 
@@ -1189,6 +1197,7 @@ if __name__ == "__main__":
         throttler=throttler,
         n_steps_major=100,
         n_steps_minor_max=10,
+        start_at_major_ratio=0.3,
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
         source_file_name=pathlib.Path("TestE-Fine.st7"),
