@@ -45,12 +45,13 @@ STRESS_START = 400
 
 NUM_PLATE_RES_RETRIES = 50
 
+# Make deterministic
+random.seed(123456)
+
 #fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD2.st7")
 #fn_working_image_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3-pics")
 
 #screenshot_res = st7.CanvasSize(1920, 1200)
-
-
 
 
 class RunParams(typing.NamedTuple):
@@ -1159,8 +1160,8 @@ if __name__ == "__main__":
     remove_over_200 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(200, 0)])
 
     pt_baseline = ParameterTrend(
-        throttler_relaxation=0.1 * one,
-        stress_end=450 * one,
+        throttler_relaxation=0.05 * one,
+        stress_end=425 * one,
         dilation_ratio=const_dilation_ratio,
         adj_strain_ratio=0.1 * one,
         scaling_ratio=one,
@@ -1171,8 +1172,8 @@ if __name__ == "__main__":
     pt = pt_baseline._replace(
         # throttler_relaxation=0.4 * gradual_relax_1_0,
         # throttler_relaxation=0.1 * one,
-        dilation_ratio=parameter_trend.Constant(0.04),
-        adj_strain_ratio=0.1 * one,
+        dilation_ratio=parameter_trend.Constant(0.12),
+        adj_strain_ratio=zero,  #0.1 * one,
         # scaling_ratio=one,
         )
 
@@ -1184,7 +1185,7 @@ if __name__ == "__main__":
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
 
     orient_dist = OrientationDistribution(
-        num_seeds=40_000,
+        num_seeds=400_000,
         n_exponent=32,
     )
 
@@ -1196,11 +1197,11 @@ if __name__ == "__main__":
         relaxation=relaxation,
         throttler=throttler,
         n_steps_major=100,
-        n_steps_minor_max=10,
+        n_steps_minor_max=20,
         start_at_major_ratio=0.3,
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestE-Fine.st7"),
+        source_file_name=pathlib.Path("TestE-VeryFine.st7"),
         randomise_orientation=orient_dist,
     )
 
