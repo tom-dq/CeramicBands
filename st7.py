@@ -34,6 +34,13 @@ class Entity(enum.Enum):
     tyGEOMETRYLOOP = St7API.tyGEOMETRYLOOP
 
 
+class Property(enum.IntEnum):
+    ptBEAMPROP = St7API.ptBEAMPROP
+    ptPLATEPROP = St7API.ptPLATEPROP
+    ptBRICKPROP = St7API.ptBRICKPROP
+    ptPLYPROP = St7API.ptPLYPROP
+
+
 class SolverType(enum.Enum):
     stLinearStatic = St7API.stLinearStatic
     stLinearBuckling = St7API.stLinearBuckling
@@ -76,7 +83,7 @@ class NodeResultType(enum.Enum):
 class PlateResultType(enum.Enum):
     rtPlateStress = St7API.rtPlateStress
     rtPlateStrain = St7API.rtPlateStrain
-    rtPlateEnergy = St7API.rtPlateEnergy
+    rtPlateEnergyDensity = St7API.rtPlateEnergyDensity
     rtPlateForce = St7API.rtPlateForce
     rtPlateMoment = St7API.rtPlateMoment
     rtPlateCurvature = St7API.rtPlateCurvature
@@ -137,7 +144,7 @@ class SolverDefaultLogical(enum.Enum):
     spLumpedMassBeam = St7API.spLumpedMassBeam
     spLumpedMassPlate = St7API.spLumpedMassPlate
     spLumpedMassBrick = St7API.spLumpedMassBrick
-    spForceDrillCheck = St7API.spForceDrillCheck
+    spForceSingularityCheck = St7API.spForceSingularityCheck
     spSaveRestartFile = St7API.spSaveRestartFile
     spSaveIntermediate = St7API.spSaveIntermediate
     spExcludeMassX = St7API.spExcludeMassX
@@ -182,9 +189,9 @@ class SolverDefaultInteger(enum.Enum):
     spNumBucklingModes = St7API.spNumBucklingModes
     spMaxIterationEig = St7API.spMaxIterationEig
     spMaxIterationNonlin = St7API.spMaxIterationNonlin
-    spNumBeamSlicesSpectral = St7API.spNumBeamSlicesSpectral
+    spNumBeamSlicesModal = St7API.spNumBeamSlicesModal
     spMaxConjugateGradientIter = St7API.spMaxConjugateGradientIter
-    spMaxNumWarnings = St7API.spMaxNumWarnings
+    spMaxNumRepeatedMessages = St7API.spMaxNumRepeatedMessages
     spFiniteStrainDefinition = St7API.spFiniteStrainDefinition
     spBeamLength = St7API.spBeamLength
     spFormStiffMatrix = St7API.spFormStiffMatrix
@@ -426,6 +433,16 @@ class ContourSettingsLimit(_St7ArrayBase):
     ipMaxLimit: float
 
 
+@dataclasses.dataclass
+class PlateIsotropicMaterial(_St7ArrayBase):
+    ipPlateIsoModulus: float
+    ipPlateIsoPoisson: float
+    ipPlateIsoDensity: float
+    ipPlateIsoAlpha: float
+    ipPlateIsoViscosity: float
+    ipPlateIsoDampingRatio: float
+    ipPlateIsoConductivity: float
+    ipPlateIsoSpecificHeat: float
 
 
 class Vector3(typing.NamedTuple):
@@ -808,6 +825,31 @@ class St7Model:
         chk(St7API.St7GetTotal(self.uID, entity.value, ct_max_num))
         return range(1, ct_max_num.value+1)
 
+    def property_numbers(self, entity: typing.Union[Property, Entity]) -> typing.Iterable[int]:
+        ct_arr = ctypes.c_long * 10
+        num_props, last_prop = ct_arr(), ct_arr()
+        chk(St7API.St7GetTotalProperties(self.uID, num_props, last_prop))
+
+        if entity in (Entity.tyBEAM, Property.ptBEAMPROP):
+            final_prop = num_props[St7API.ipBeamPropTotal]
+
+        elif entity in (Entity.tyPLATE, Property.ptPLATEPROP):
+            final_prop = num_props[St7API.ipPlatePropTotal]
+
+        elif entity in (Entity.tyBRICK, Property.ptBRICKPROP):
+            final_prop = num_props[St7API.ipBrickPropTotal]
+
+        elif entity == Property.ptPLYPROP:
+            final_prop = num_props[St7API.ipPlyPropTotal]
+
+        else:
+            raise ValueError(entity)
+
+        for prop_idx in range(1, final_prop+1):
+            prop_num = ctypes.c_long()
+            chk(St7API.St7GetPropertyNumByIndex(self.uID, entity.value, prop_idx, prop_num))
+            yield prop_num.value
+
     def St7NewLoadCase(self, case_name: str):
         chk(St7API.St7NewLoadCase(self.uID, case_name.encode()))
 
@@ -1014,6 +1056,18 @@ class St7Model:
         chk(St7API.St7GetPlateXAngle1(self.uID, plate_num, ct_doubles))
         return ct_doubles[0]
 
+    def St7GetPlateIsotropicMaterial(self, prop_num: int) -> PlateIsotropicMaterial:
+        doubles = PlateIsotropicMaterial.get_single_sub_array_of_type(ctypes.c_double)
+        doubles_arr = doubles.make_empty_array()
+
+        chk(St7API.St7GetPlateIsotropicMaterial(self.uID, prop_num, doubles_arr))
+
+        doubles_instance = doubles.instance_from_st7_array(doubles_arr)
+        return PlateIsotropicMaterial.instance_from_sub_array_instances(doubles_instance)
+
+    def St7SetPlateIsotropicMaterial(self, prop_num: int, plate_isotropic_material: PlateIsotropicMaterial):
+        doubles_arr = plate_isotropic_material.get_single_sub_array_instance_of_type(ctypes.c_double).to_st7_array()
+        chk(St7API.St7SetPlateIsotropicMaterial(self.uID, prop_num, doubles_arr))
 
 
 class St7Results:

@@ -67,6 +67,7 @@ class RunParams(typing.NamedTuple):
     parameter_trend: ParameterTrend
     source_file_name: pathlib.Path
     randomise_orientation: typing.Union[bool, OrientationDistribution]  # False for all the same, True for all random, or OrientationDistribution instance for a distribution so defined
+    override_poisson: typing.Optional[float]
 
     def summary_strings(self) -> typing.Iterable[str]:
         yield "RunParams:\n"
@@ -466,23 +467,6 @@ def get_node_positions_deformed(orig_positions: T_ResultDict, results: st7.St7Re
     return {node_num: one_node_pos(node_num) for node_num in results.model.entity_numbers(st7.Entity.tyNODE)}
 
 
-def update_to_include_prestrains(
-        actuator: Actuator,
-        minor_acuator_input_current_raw: ElemVectorDict,
-        old_prestrain_values: ElemVectorDict
-) -> ElemVectorDict:
-    """Make sure we include the applied pre-strains..."""
-
-    if actuator in (Actuator.e_local, Actuator.e_xx_only, Actuator.e_11):
-        return ElemVectorDict({
-            plate_num: one_res + old_prestrain_values.get(plate_num, st7.StrainTensor(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)) for
-            plate_num, one_res in minor_acuator_input_current_raw.items()
-        })
-
-    else:
-        return minor_acuator_input_current_raw
-
-
 def incremental_element_update_list(
         init_data: InitialSetupModelData,
         run_params: RunParams,
@@ -789,6 +773,16 @@ def set_max_iters(model: st7.St7Model, max_iters: typing.Optional[config.MaxIter
         model.St7SetSolverDefaultsInteger(st7.SolverDefaultInteger.spMaxIterationNonlin, iter_num)
 
 
+def _override_poisson(model: st7.St7Model, target_rho: float):
+    for prop_num in model.property_numbers(st7.Property.ptPLATEPROP):
+        existing_prop = model.St7GetPlateIsotropicMaterial(prop_num)
+        new_prop = dataclasses.replace(existing_prop, ipPlateIsoPoisson=target_rho)
+        model.St7SetPlateIsotropicMaterial(prop_num, new_prop)
+
+    for prop_num in model.property_numbers(st7.Property.ptBRICKPROP):
+        raise ValueError("Time to do St7SetBrickIsotropicMaterial!")
+
+
 def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_frame: ResultFrame) -> InitialSetupModelData:
 
     model.St7EnableSaveRestart()
@@ -798,6 +792,9 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
         elem_num: model.St7GetElementCentroid(st7.Entity.tyPLATE, elem_num, 0)
         for elem_num in model.entity_numbers(st7.Entity.tyPLATE)
     }
+
+    if run_params.override_poisson is not None:
+        _override_poisson(model, run_params.override_poisson)
 
     # Element orientation, if needed.
     if run_params.randomise_orientation == False:
@@ -982,6 +979,7 @@ def main(run_params: RunParams):
         db = exit_stack.enter_context(history.DB(fn_db))
 
         init_data = initial_setup(run_params, model, current_result_frame)
+        model.St7SaveFile()
         db.add_element_connections(init_data.elem_conns)
 
         # Write out the axis angles
@@ -1052,7 +1050,7 @@ def main(run_params: RunParams):
                     # Get the results from the last minor step.
                     with model.open_results(current_result_frame.result_file) as results:
                         result_strain_raw = get_results(run_params.actuator, results, current_result_frame.result_case_num)
-                        result_strain = result_strain_raw  # TEMP remove... update_to_include_prestrains(run_params.actuator, result_strain_raw, prestrain_update.elem_prestrains_iteration_set)
+                        result_strain = result_strain_raw
                         write_out_screenshot(run_params, model_window, current_result_frame)
                         write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, result_strain.as_single_values())
 
@@ -1160,10 +1158,10 @@ if __name__ == "__main__":
     remove_over_200 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(200, 0)])
 
     pt_baseline = ParameterTrend(
-        throttler_relaxation=0.05 * one,
-        stress_end=425 * one,
+        throttler_relaxation=0.02 * one,
+        stress_end=402 * one,
         dilation_ratio=const_dilation_ratio,
-        adj_strain_ratio=0.1 * one,
+        adj_strain_ratio=0.0 * one,
         scaling_ratio=one,
         overall_iterative_prestrain_delta_limit=one,
         current_inc=parameter_trend.CurrentInc(),
@@ -1172,7 +1170,7 @@ if __name__ == "__main__":
     pt = pt_baseline._replace(
         # throttler_relaxation=0.4 * gradual_relax_1_0,
         # throttler_relaxation=0.1 * one,
-        dilation_ratio=parameter_trend.Constant(0.12),
+        dilation_ratio=parameter_trend.Constant(0.05),
         adj_strain_ratio=zero,  #0.1 * one,
         # scaling_ratio=one,
         )
@@ -1180,29 +1178,32 @@ if __name__ == "__main__":
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.1, amplitude=0.5, hole_width=0.02)
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
     # scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=0.02)
-    scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
-    scaling_small_centre = SingleHoleCentre(pt=pt, y_depth=0.2, amplitude=0.5, hole_width=0.05)
+    # scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
+    # scaling_small_centre = SingleHoleCentre(pt=pt, y_depth=0.2, amplitude=0.5, hole_width=0.05)
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
 
+    # scaling = SpacedStepScaling(pt=pt, y_depth=0.1, spacing=0.2, amplitude=0.5, hole_width=0.05)
+    scaling = SpacedStepScaling(pt=pt, y_depth=0.1, spacing=0.5, amplitude=0.5, hole_width=0.2)
+
     orient_dist = OrientationDistribution(
-        num_seeds=400_000,
+        num_seeds=480_000,
         n_exponent=32,
     )
 
-
     run_params = RunParams(
         actuator=Actuator.e_local,
-        scaling=scaling_big,
+        scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=100,
-        n_steps_minor_max=20,
-        start_at_major_ratio=0.3,
+        n_steps_major=2,
+        n_steps_minor_max=1000,
+        start_at_major_ratio=0.3,  # 0.42
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestE-VeryFine.st7"),
-        randomise_orientation=orient_dist,
+        source_file_name=pathlib.Path("TestE-Med.st7"),
+        randomise_orientation=False,
+        override_poisson=0.0,
     )
 
     main(run_params)
