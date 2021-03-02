@@ -1054,7 +1054,7 @@ def main(run_params: RunParams):
                 new_count = math.inf
 
                 def should_do_another_minor_iteration(new_count, minor_inc: int) -> bool:
-                    return (new_count > 0) and (minor_inc < run_params.n_steps_minor_max)
+                    return (new_count > 0) and (minor_inc <= run_params.n_steps_minor_max)
 
                 while should_do_another_minor_iteration(new_count, run_params.parameter_trend.current_inc.minor_inc):
                     model.St7SaveFile()
@@ -1179,7 +1179,7 @@ if __name__ == "__main__":
         dilation_ratio=const_dilation_ratio,
         adj_strain_ratio=0.0 * one,
         scaling_ratio=one,
-        overall_iterative_prestrain_delta_limit=one,
+        overall_iterative_prestrain_delta_limit=0.001 * one,
         current_inc=parameter_trend.CurrentInc(),
     )
 
@@ -1188,7 +1188,7 @@ if __name__ == "__main__":
         stress_end=linear_500_401,
         # throttler_relaxation=0.1 * one,
         dilation_ratio=parameter_trend.Constant(0.0016),
-        adj_strain_ratio=0.25 * one,
+        adj_strain_ratio=zero, #0.25 * one,
         # scaling_ratio=one,
         )
 
@@ -1213,9 +1213,9 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=4,
-        n_steps_minor_max=1000,
-        start_at_major_ratio=0.0,  # 0.42
+        n_steps_major=500,
+        n_steps_minor_max=1,
+        start_at_major_ratio=0.25,  # 0.42
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
         source_file_name=pathlib.Path("Test05-SD8.st7"),
