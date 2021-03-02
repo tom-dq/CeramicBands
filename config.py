@@ -56,8 +56,8 @@ def _get_config():
             fn_st7_base=pathlib.Path(r"D:\Tom Wilson\Dropbox\Dropbox\PhD\Ceramic Bands Source Models\v7-Wedge"),
             fn_working_image_base=pathlib.Path(r"E:\Simulations\CeramicBands\v7\pics"),
             # screenshot_res=st7.CanvasSize(1920, 1080),  # FHD
-            # screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
-            screenshot_res=st7.CanvasSize(3840, 2160), # 4K
+            screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
+            # screenshot_res=st7.CanvasSize(3840, 2160), # 4K
             scratch_dir=pathlib.Path(r"C:\Temp"),
             solver=st7.SolverType.stQuasiStatic,
             qsa_steps_per_file=10,

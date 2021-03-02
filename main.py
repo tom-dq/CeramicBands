@@ -293,7 +293,23 @@ def setup_model_window(run_params: RunParams, model_window: st7.St7ModelWindow, 
 
 def write_out_screenshot(run_params: RunParams, model_window: st7.St7ModelWindow, current_result_frame: "ResultFrame"):
     setup_model_window(run_params, model_window, current_result_frame.result_case_num)
-    model_window.St7ExportImage(current_result_frame.image_file, st7.ImageType.itPNG, config.active_config.screenshot_res.width, config.active_config.screenshot_res.height)
+
+    exported_image = False
+    next_wait = 0.001
+    e = Warning("Logical Error")
+    while not exported_image and (next_wait < 1.0):
+        try:
+            model_window.St7ExportImage(current_result_frame.image_file, st7.ImageType.itPNG, config.active_config.screenshot_res.width, config.active_config.screenshot_res.height)
+            exported_image = True
+
+        except OSError as e:
+            print(e)
+            time.sleep(next_wait)
+            next_wait = next_wait * 1.5
+
+    if not exported_image:
+        raise e
+
     compress_png(current_result_frame.image_file)
 
 
@@ -1159,7 +1175,7 @@ if __name__ == "__main__":
 
     pt_baseline = ParameterTrend(
         throttler_relaxation=0.02 * one,
-        stress_end=402 * one,
+        stress_end=405 * one,
         dilation_ratio=const_dilation_ratio,
         adj_strain_ratio=0.0 * one,
         scaling_ratio=one,
@@ -1168,22 +1184,23 @@ if __name__ == "__main__":
     )
 
     pt = pt_baseline._replace(
-        # throttler_relaxation=0.4 * gradual_relax_1_0,
+        throttler_relaxation=exp_0_7,
+        stress_end=linear_500_401,
         # throttler_relaxation=0.1 * one,
-        dilation_ratio=parameter_trend.Constant(0.05),
-        adj_strain_ratio=zero,  #0.1 * one,
+        dilation_ratio=parameter_trend.Constant(0.0016),
+        adj_strain_ratio=0.25 * one,
         # scaling_ratio=one,
         )
 
-    # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.1, amplitude=0.5, hole_width=0.02)
+    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.08, amplitude=0.5, hole_width=0.02)
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
-    # scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=0.02)
+    # scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=0.05)
     # scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
     # scaling_small_centre = SingleHoleCentre(pt=pt, y_depth=0.2, amplitude=0.5, hole_width=0.05)
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
 
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.1, spacing=0.2, amplitude=0.5, hole_width=0.05)
-    scaling = SpacedStepScaling(pt=pt, y_depth=0.1, spacing=0.5, amplitude=0.5, hole_width=0.2)
+    # scaling = SpacedStepScaling(pt=pt, y_depth=0.1, spacing=0.5, amplitude=0.5, hole_width=0.2)
 
     orient_dist = OrientationDistribution(
         num_seeds=480_000,
@@ -1196,12 +1213,12 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=2,
+        n_steps_major=4,
         n_steps_minor_max=1000,
-        start_at_major_ratio=0.3,  # 0.42
+        start_at_major_ratio=0.0,  # 0.42
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestE-Med.st7"),
+        source_file_name=pathlib.Path("Test05-SD8.st7"),
         randomise_orientation=False,
         override_poisson=0.0,
     )
