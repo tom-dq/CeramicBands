@@ -22,7 +22,7 @@ from common_types import SingleValue, XY, ElemVectorDict, T_ResultDict, InitialS
 from parameter_trend import ParameterTrend
 import parameter_trend
 from distribution import OrientationDistribution, distribute, random_angle_distribution_360deg, wraparound_from_zero
-from relaxation import Relaxation, NoRelax
+from relaxation import Relaxation, NoRelax, PropRelax, LimIncRelax
 from scaling import Scaling, SingleHoleCentre, SpacedStepScaling, CosineScaling
 from tables import Table
 from throttle import Throttler, StoppingCriterion, Shape, ElemPreStrainChangeData, BaseThrottler, RelaxedIncreaseDecrease
@@ -555,7 +555,6 @@ def incremental_element_update_list(
     # TODO - maybe add the principal stuff in here too?
     proposed_prestrains_subset = ratchet.throttler.throttle(
         init_data,
-        previous_prestrain_update,
         run_params,
         proposed_prestrains_changes,
     )
@@ -1135,16 +1134,17 @@ if __name__ == "__main__":
     dilation_ratio_ref = 0.008   # 0.8% expansion, according to Jerome
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
-    #relaxation = PropRelax(0.5)
-    relaxation = NoRelax()
+    relaxation = PropRelax(0.2)
+    # relaxation = NoRelax()
 
 
     # averaging = AveInRadius(0.02)
     averaging = NoAve()
 
-    # throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.step, cutoff_value=elem_ratio_per_iter)
+    elem_ratio_per_iter = 0.0001
+    throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.linear, cutoff_value=elem_ratio_per_iter)
     # throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
-    throttler = RelaxedIncreaseDecrease()
+    # throttler = RelaxedIncreaseDecrease()
 
     # Throttle relaxation
     exp_0_7 = parameter_trend.ExponetialDecayFunctionMinorInc(-0.7, init_val=0.5, start_at=60)
@@ -1152,6 +1152,7 @@ if __name__ == "__main__":
     gradual_relax_1_0 = parameter_trend.TableInterpolateMinor([XY(0, 1.0), XY(50, 1.0), XY(70, 0.65), XY(100, 0.5), XY(200, 0.3), XY(500, 0.1), XY(1500, 0.05), XY(5000, 0.02), XY(20000, 0.01), XY(50000, 0.002)])
 
     # Stress End
+    const_401 = parameter_trend.Constant(401)
     const_440 = parameter_trend.Constant(440)
     taper_down = parameter_trend.ExponetialDecayFunctionMinorInc(-0.8, 600, 405)
     linear_600_405 = parameter_trend.TableInterpolateMinor([XY(0, 600), XY(50, 405)])
@@ -1174,27 +1175,27 @@ if __name__ == "__main__":
     remove_over_200 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(200, 0)])
 
     pt_baseline = ParameterTrend(
-        throttler_relaxation=0.02 * one,
-        stress_end=405 * one,
+        throttler_relaxation=exp_0_7,
+        stress_end=const_401,
         dilation_ratio=const_dilation_ratio,
         adj_strain_ratio=0.0 * one,
         scaling_ratio=one,
-        overall_iterative_prestrain_delta_limit=0.001 * one,
+        overall_iterative_prestrain_delta_limit=one,
         current_inc=parameter_trend.CurrentInc(),
     )
 
     pt = pt_baseline._replace(
         throttler_relaxation=exp_0_7,
-        stress_end=linear_500_401,
+        # stress_end=linear_500_401,
         # throttler_relaxation=0.1 * one,
-        dilation_ratio=parameter_trend.Constant(0.0016),
-        adj_strain_ratio=zero, #0.25 * one,
+        dilation_ratio=parameter_trend.Constant(0.0008),
+        adj_strain_ratio=one,
         # scaling_ratio=one,
         )
 
-    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.08, amplitude=0.5, hole_width=0.02)
+    # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.08, amplitude=0.5, hole_width=0.02)
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
-    # scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=0.05)
+    scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=0.05)
     # scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
     # scaling_small_centre = SingleHoleCentre(pt=pt, y_depth=0.2, amplitude=0.5, hole_width=0.05)
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
@@ -1213,14 +1214,14 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=500,
-        n_steps_minor_max=1,
-        start_at_major_ratio=0.25,  # 0.42
-        existing_prestrain_priority_factor=None,
+        n_steps_major=3,
+        n_steps_minor_max=150,
+        start_at_major_ratio=0.26,  # 0.42
+        existing_prestrain_priority_factor=100.0,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("Test05-SD8.st7"),
+        source_file_name=pathlib.Path("TestE-Med.st7"),
         randomise_orientation=False,
-        override_poisson=0.0,
+        override_poisson=None,
     )
 
     main(run_params)
