@@ -31,7 +31,8 @@ class Scaling:
         self._working_prestrain_vals = { sv.id_key: sv.value for sv in previous_iteration_results }
 
     def determine_adjacency(self, init_data: InitialSetupModelData):
-        """Weighted element-to-neighbour. One shared node -> 1/12 contib. Two shared nodes -> 1/6 contrib."""
+        """Weighted element-to-neighbour. One shared node -> 1/16 contrib. Two shared nodes -> 1/8 contrib.
+        Include the element itself."""
 
         # TODO - add "phantom elements" which are reflected over free boundaries.
         node_to_elems = collections.defaultdict(set)
@@ -43,37 +44,54 @@ class Scaling:
         for elem, conn in init_data.elem_conns.items():
             this_elem_weighs = collections.Counter()
             for node in conn:
-                other_elems = node_to_elems[node].copy()
-                other_elems.remove(elem)
+                adj_elements = node_to_elems[node].copy()
 
-                for other_elem in other_elems:
-                    this_elem_weighs[other_elem] += 1
+                for adj_element in adj_elements:
+                    this_elem_weighs[adj_element] += 1
 
-            weighted_contribs = {other_elem: count / 12 for other_elem, count in this_elem_weighs.items()}
+            weighted_contribs = {other_elem: count / 16 for other_elem, count in this_elem_weighs.items()}
             adj_elems[elem] = weighted_contribs
 
         self._adjacent_elements = adj_elems
 
     def _get_adj_elem_scale_factor(self, scale_key: T_ScaleKey) -> float:
-        """Optionally give the input strains a boost if the neighbors have yielded."""
+        """Optionally give the input strains a boost if the neighbors have yielded.
+            If all adjacent elements are fully dialated but this element is not dialated, and adj_strain_ratio = 1.0,
+            has a "boost" factor of 0.75.
 
-        adj_strain_factor = (
-                self._parameter_trend.adj_strain_ratio(self._parameter_trend.current_inc) /
-                self._parameter_trend.dilation_ratio(self._parameter_trend.current_inc)
-        )
+
+            adj_strain_ratio    boost_factor    return
+            0                   0.75            1
+            0.2                 0.75            0.789473684
+            1                   0.75            0.428571429
+            5                   0.75            0.130434783
+            0                   0.2             1
+            0.2                 0.2             0.5
+            1                   0.2             0.166666667
+            5                   0.2             0.038461538
+            0                   0               1
+            0.2                 0               1
+            1                   0               1
+            5                   0               1
+            """
+
+        adj_strain_factor = self._parameter_trend.adj_strain_ratio(self._parameter_trend.current_inc)
 
         if not adj_strain_factor:
-            return 0.0
+            # Do not scale
+            return 1.0
+
+        full_dilation_ratio = self._parameter_trend.dilation_ratio(self._parameter_trend.current_inc)
 
         adj_elem_contribs = 0.0
         elem, direction = scale_key
-        for adj_elem, neightbor_factor in self._adjacent_elements[elem].items():
+        for adj_elem, neighbor_factor in self._adjacent_elements[elem].items():
             adj_scale_key = (adj_elem, direction)
-            adj_elem_contribs += neightbor_factor * self._working_prestrain_vals.get(adj_scale_key, 0.0)
+            adj_elem_contribs += neighbor_factor * self._working_prestrain_vals.get(adj_scale_key, 0.0)
 
-        boost_factor = abs(adj_elem_contribs) * adj_strain_factor
+        boost_factor = abs(adj_elem_contribs) * adj_strain_factor / full_dilation_ratio
 
-        return boost_factor
+        return 1.0 + adj_strain_factor*boost_factor
 
 
 class NoScaling(Scaling):
@@ -162,12 +180,13 @@ class CentroidAwareScaling(Scaling):
         self.determine_adjacency(init_data)
 
     def get_x_scale_factor(self, scale_key: T_ScaleKey) -> float:
+        """Higher number means EASIER for element to yield. For example, a return value of 2.0 means it takes half the load for this element to yield."""
         elem_num, _ = scale_key[:]
-        strained_neighbor_boost = self._get_adj_elem_scale_factor(scale_key)
+        dilated_neighbor_scale = self._get_adj_elem_scale_factor(scale_key)
 
         parameter_trend_ratio = self._parameter_trend.scaling_ratio(self._parameter_trend.current_inc)
 
-        return parameter_trend_ratio * self._elem_scale_fact[elem_num] + strained_neighbor_boost
+        return 0.5 * (parameter_trend_ratio * self._elem_scale_fact[elem_num] + dilated_neighbor_scale)
 
     def _no_base_yield_modifier(self, elem_cent) -> float:
         if elem_cent.y < self._y_no_yielding_below:

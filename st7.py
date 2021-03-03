@@ -224,7 +224,8 @@ class TableType(enum.Enum):
 _T_ctypes_type = typing.Union[typing.Type[ctypes.c_long], typing.Type[ctypes.c_double]]
 
 class _InternalSubArrayDefinition(typing.NamedTuple):
-    """Represents, for example, the "Integers" argument of St7SetEntityContourSettingsLimits - how many values there are in there, what type they are, etc. """
+    """Represents, for example, the "Integers" argument of St7SetEntityContourSettingsLimits -
+    how many values there are in there, what type they are, etc. """
     elem_type: _T_ctypes_type  # e.g., ctypes.c_long, ctypes.c_double  (not an instance like ctypes.c_long(34)... )
     fields: typing.List[dataclasses.Field]
     array_name_override: str
@@ -261,7 +262,9 @@ class _InternalSubArrayDefinition(typing.NamedTuple):
 
 
 class _InternalSubArrayInstance(typing.NamedTuple):
-    """Represents an instance of, say, the "Integers" argument of St7SetEntityContourSettingsLimits populated with values"""
+    """Represents an instance of, say, the "Integers" argument of St7SetEntityContourSettingsLimits
+    populated with values"""
+
     array_def: _InternalSubArrayDefinition
     values: typing.Dict[str, typing.Union[bool, int, float]]
 
@@ -277,7 +280,7 @@ class _InternalSubArrayInstance(typing.NamedTuple):
 
 @dataclasses.dataclass
 class _St7ArrayBase:
-    """All those arrays of integers can inherit from this to get convenience conversion functions."""
+    """All those arrays of integers, etc can inherit from this to get convenience conversion functions."""
 
     # TODO - future plan for functions in which there are multiple arrays of the same type,
     #   like "St7GetBeamPropertyData" with two Doubles arrays:

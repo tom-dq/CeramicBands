@@ -63,7 +63,7 @@ class RunParams(typing.NamedTuple):
     n_steps_major: int
     n_steps_minor_max: int
     start_at_major_ratio: typing.Optional[float]
-    existing_prestrain_priority_factor: float
+    existing_prestrain_priority_factor: typing.Optional[float]
     parameter_trend: ParameterTrend
     source_file_name: pathlib.Path
     randomise_orientation: typing.Union[bool, OrientationDistribution]  # False for all the same, True for all random, or OrientationDistribution instance for a distribution so defined
@@ -1186,16 +1186,17 @@ if __name__ == "__main__":
     )
 
     pt = pt_baseline._replace(
+        dilation_ratio=0.008 * one,
         )
 
-    # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.08, amplitude=0.5, hole_width=0.02)
+    # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.15, amplitude=0.5, hole_width=0.01)
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
-    scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=0.05)
+    scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=0.01)
     # scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
     # scaling_small_centre = SingleHoleCentre(pt=pt, y_depth=0.2, amplitude=0.5, hole_width=0.05)
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
 
-    # scaling = SpacedStepScaling(pt=pt, y_depth=0.1, spacing=0.2, amplitude=0.5, hole_width=0.05)
+    # scaling = SpacedStepScaling(pt=pt, y_depth=0.1, spacing=0.2, amplitude=0.5, hole_width=0.02)
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.1, spacing=0.5, amplitude=0.5, hole_width=0.2)
 
     orient_dist = OrientationDistribution(
@@ -1209,12 +1210,12 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=25,
-        n_steps_minor_max=5,
-        start_at_major_ratio=0.26,  # 0.42
-        existing_prestrain_priority_factor=100.0,
+        n_steps_major=100,
+        n_steps_minor_max=50,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
+        start_at_major_ratio=0.35,  # 0.42
+        existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestE-Coarse.st7"),
+        source_file_name=pathlib.Path("TestE-VeryFine.st7"),
         randomise_orientation=False,
         override_poisson=None,
     )
