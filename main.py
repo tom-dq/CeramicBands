@@ -1134,17 +1134,17 @@ if __name__ == "__main__":
     dilation_ratio_ref = 0.008   # 0.8% expansion, according to Jerome
 
     #relaxation = LimitedIncreaseRelaxation(0.01)
-    relaxation = PropRelax(0.2)
-    # relaxation = NoRelax()
+    # relaxation = PropRelax(0.2)
+    relaxation = NoRelax()
 
 
     # averaging = AveInRadius(0.02)
     averaging = NoAve()
 
-    elem_ratio_per_iter = 0.0001
-    throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.linear, cutoff_value=elem_ratio_per_iter)
+    # elem_ratio_per_iter = 0.0001
+    # throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.linear, cutoff_value=elem_ratio_per_iter)
     # throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
-    # throttler = RelaxedIncreaseDecrease()
+    throttler = RelaxedIncreaseDecrease()
 
     # Throttle relaxation
     exp_0_7 = parameter_trend.ExponetialDecayFunctionMinorInc(-0.7, init_val=0.5, start_at=60)
