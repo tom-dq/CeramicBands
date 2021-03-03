@@ -555,6 +555,7 @@ def incremental_element_update_list(
     # TODO - maybe add the principal stuff in here too?
     proposed_prestrains_subset = ratchet.throttler.throttle(
         init_data,
+        previous_prestrain_update,
         run_params,
         proposed_prestrains_changes,
     )
@@ -1175,22 +1176,16 @@ if __name__ == "__main__":
     remove_over_200 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(200, 0)])
 
     pt_baseline = ParameterTrend(
-        throttler_relaxation=exp_0_7,
+        throttler_relaxation=0.25 * one,
         stress_end=const_401,
         dilation_ratio=const_dilation_ratio,
-        adj_strain_ratio=0.0 * one,
+        adj_strain_ratio=one,
         scaling_ratio=one,
         overall_iterative_prestrain_delta_limit=one,
         current_inc=parameter_trend.CurrentInc(),
     )
 
     pt = pt_baseline._replace(
-        throttler_relaxation=exp_0_7,
-        # stress_end=linear_500_401,
-        # throttler_relaxation=0.1 * one,
-        dilation_ratio=parameter_trend.Constant(0.0008),
-        adj_strain_ratio=one,
-        # scaling_ratio=one,
         )
 
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.08, amplitude=0.5, hole_width=0.02)
@@ -1214,12 +1209,12 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        n_steps_major=3,
-        n_steps_minor_max=150,
+        n_steps_major=25,
+        n_steps_minor_max=5,
         start_at_major_ratio=0.26,  # 0.42
         existing_prestrain_priority_factor=100.0,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestE-Med.st7"),
+        source_file_name=pathlib.Path("TestE-Coarse.st7"),
         randomise_orientation=False,
         override_poisson=None,
     )

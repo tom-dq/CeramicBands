@@ -165,6 +165,7 @@ class BaseThrottler:
     def throttle(
             self,
             init_data: InitialSetupModelData,
+            previous_prestrain_update,
             run_params,  # This is main.RunParams
             proposed_prestrains: typing.List[ElemPreStrainChangeData],
     ) -> typing.List[ElemPreStrainChangeData]:
@@ -215,6 +216,7 @@ class Throttler(BaseThrottler):
     def throttle(
             self,
             init_data: InitialSetupModelData,
+            previous_prestrain_update,
             run_params,  # This is main.RunParams
             proposed_prestrains: typing.List[ElemPreStrainChangeData],
     ) -> typing.List[ElemPreStrainChangeData]:
