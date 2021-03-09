@@ -11,7 +11,7 @@ class Codec(enum.Enum):
     x265 = enum.auto()
 
 codec = Codec.x264
-N_WORKERS = 6
+N_WORKERS = 3
 
 base_dir = r"E:\Simulations\CeramicBands\v7\pics"
 

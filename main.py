@@ -1154,7 +1154,7 @@ if __name__ == "__main__":
 
     # Stress End
     const_401 = parameter_trend.Constant(401)
-    const_440 = parameter_trend.Constant(440)
+    const_440 = parameter_trend.Constant(440)  # This seems bad - leads to angled evolution
     taper_down = parameter_trend.ExponetialDecayFunctionMinorInc(-0.8, 600, 405)
     linear_600_405 = parameter_trend.TableInterpolateMinor([XY(0, 600), XY(50, 405)])
     linear_500_401 = parameter_trend.TableInterpolateMinor([XY(0, 500), XY(10, 500), XY(25, 401)])
@@ -1176,10 +1176,10 @@ if __name__ == "__main__":
     remove_over_200 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(200, 0)])
 
     pt_baseline = ParameterTrend(
-        throttler_relaxation=0.25 * one,
+        throttler_relaxation=0.05 * one,
         stress_end=const_401,
         dilation_ratio=const_dilation_ratio,
-        adj_strain_ratio=one,
+        adj_strain_ratio=1.0 * one,
         scaling_ratio=one,
         overall_iterative_prestrain_delta_limit=one,
         current_inc=parameter_trend.CurrentInc(),
@@ -1189,9 +1189,19 @@ if __name__ == "__main__":
         dilation_ratio=0.008 * one,
         )
 
-    # scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=0.15, amplitude=0.5, hole_width=0.01)
+    FINE_ELEM_LEN = 0.003703703703704
+    def elem_len_mod(x: float) -> float:
+        """elem_len_mod(0.52) -> 0.5 with FINE_ELEM_LEN=0.25"""
+        num_elems = round(x/FINE_ELEM_LEN)
+        if num_elems == 0:
+            num_elems = 1
+
+        return num_elems * FINE_ELEM_LEN
+
+
+    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(0.075), amplitude=0.5, hole_width=elem_len_mod(0.01)) # 0.011112 is three elements on Fine.
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
-    scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=0.01)
+    # scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=elem_len_mod(0.01))
     # scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
     # scaling_small_centre = SingleHoleCentre(pt=pt, y_depth=0.2, amplitude=0.5, hole_width=0.05)
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
@@ -1211,11 +1221,11 @@ if __name__ == "__main__":
         relaxation=relaxation,
         throttler=throttler,
         n_steps_major=100,
-        n_steps_minor_max=50,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
-        start_at_major_ratio=0.35,  # 0.42
+        n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
+        start_at_major_ratio=0.53,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestE-VeryFine.st7"),
+        source_file_name=pathlib.Path("TestF-Fine.st7"),
         randomise_orientation=False,
         override_poisson=None,
     )

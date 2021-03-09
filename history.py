@@ -85,6 +85,13 @@ class ElementNodeConnection(typing.NamedTuple):
     node_num: int
 
 
+class ElementPrestrain(typing.NamedTuple):
+    result_case_num: int
+    elem_num: int
+    axis: int
+    pre_strain: float
+
+
 def _make_table_statement(nt_class) -> str:
     type_lookup = {
         int: "INTEGER",
@@ -120,6 +127,7 @@ _T_any_db_able = typing.Union[
     ContourValue,
     NodePosition,
     ElementNodeConnection,
+    ElementPrestrain,
 ]
 
 _all_contour_keys_ = [
