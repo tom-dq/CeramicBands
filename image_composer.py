@@ -238,13 +238,14 @@ def make_images():
 
 
 def do_all_multi_process():
-    N_WORKERS=12
+    N_WORKERS=8
     with multiprocessing.Pool(N_WORKERS) as pool:
         end_dirs_round1 = ['70', '71', '72', '73', '74', '75', '76', '77', '78']
         end_dirs_round2 = ['6R', '6S', '6T', '6U']
-        dirs = [os.path.join(r"E:\Simulations\CeramicBands\v7\pics", ed) for ed in end_dirs_round1]
+        end_dirs_round3 = ['6Y', '79', '7A', '7B']
+        dirs = [os.path.join(r"E:\Simulations\CeramicBands\v7\pics", ed) for ed in end_dirs_round3]
 
-        for x in pool.imap_unordered(compose_images, interleave_directories(dirs, r"c:\temp\img\round1")):
+        for x in pool.imap_unordered(compose_images, interleave_directories(dirs, r"c:\temp\img\round3")):
             print(x)
 
 

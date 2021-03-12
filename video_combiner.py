@@ -88,4 +88,4 @@ def do_all_multi_process():
 
 if __name__ == '__main__':
     # do_all_multi_process()
-    do_one_dir(r"C:\Temp\img\round2")
+    do_one_dir(r"E:\Simulations\CeramicBands\composed\adj_strain_ratio=0.6")
