@@ -12,6 +12,9 @@ import multiprocessing
 import pathlib
 
 size_4k = (3840, 2160)
+size_8k = (7680, 4320)
+
+thumb_size = size_4k  # Either, say, size_4k or None
 
 class SimulationInfo(typing.NamedTuple):
     throttler_relaxation: float
@@ -150,7 +153,12 @@ def compose_images(job: Job):
 
 
         # Don't need it that big
-        big_image.thumbnail(size_4k, Image.ANTIALIAS)
+        if thumb_size:
+            big_image.thumbnail(thumb_size, Image.ANTIALIAS)
+
+        # Make directory if needed.
+        out_dir = os.path.split(job.fn_out)[0]
+        os.makedirs(out_dir, exist_ok=True)
 
         big_image.save(job.fn_out)
 
@@ -238,15 +246,25 @@ def make_images():
 
 
 def do_all_multi_process():
-    N_WORKERS=8
+    N_WORKERS=12
     with multiprocessing.Pool(N_WORKERS) as pool:
         end_dirs_round1 = ['70', '71', '72', '73', '74', '75', '76', '77', '78']
         end_dirs_round2 = ['6R', '6S', '6T', '6U']
         end_dirs_round3 = ['6Y', '79', '7A', '7B']
-        dirs = [os.path.join(r"E:\Simulations\CeramicBands\v7\pics", ed) for ed in end_dirs_round3]
+        end_dirs_round4 = ['6Y', '79', '7A', '7B', '7C', '7D', '7E', '7F',]
+        end_dirs_adj_low = ['7C', '79', '7D', '7A']
+        end_dirs_adj_high = ['7E', '7B', '7F', '6Y']
+        
 
-        for x in pool.imap_unordered(compose_images, interleave_directories(dirs, r"c:\temp\img\round3")):
-            print(x)
+        def do_one(out_dir, end_dirs):
+            dirs = [os.path.join(r"E:\Simulations\CeramicBands\v7\pics", ed) for ed in end_dirs]
+            for x in pool.imap_unordered(compose_images, interleave_directories(dirs, out_dir)):
+                print(x)
+
+        do_one(r"E:\Simulations\CeramicBands\composed\adj_all_4k", end_dirs_round4)
+        do_one(r"E:\Simulations\CeramicBands\composed\adj_low_4k", end_dirs_adj_low)
+        do_one(r"E:\Simulations\CeramicBands\composed\adj_high_4k", end_dirs_adj_high)
+
 
 
 def print_sim_infos():

@@ -12,6 +12,7 @@ class Codec(enum.Enum):
 
 codec = Codec.x264
 N_WORKERS = 1
+MAX_THREADS = 6
 
 base_dir = r"E:\Simulations\CeramicBands\v7\pics"
 
@@ -55,10 +56,14 @@ def do_one_dir(dir_fn: str):
         else:
             raise ValueError(codec)
 
+        if MAX_THREADS:
+            codec_args = f"{codec_args} -threads {MAX_THREADS}"
+
         if not frame_template:
             raise ValueError("Could not get frame template.")
 
         command = fr"C:\Utilities\ffmpeg-20181212-32601fb-win64-static\bin\ffmpeg.exe -f image2 -r 30 -i {frame_template} {codec_args} {out_movie}"
+        print(command)
         x = subprocess.run(command, capture_output=True)
         
         return str(x)
@@ -88,4 +93,6 @@ def do_all_multi_process():
 
 if __name__ == '__main__':
     # do_all_multi_process()
-    do_one_dir(r"E:\Simulations\CeramicBands\composed\adj_strain_ratio=0.6")
+    do_one_dir(r"E:\Simulations\CeramicBands\composed\adj_low")
+    do_one_dir(r"E:\Simulations\CeramicBands\composed\adj_high")
+    do_one_dir(r"E:\Simulations\CeramicBands\composed\round4")
