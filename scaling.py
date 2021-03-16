@@ -75,9 +75,9 @@ class Scaling:
             5                   0               1
             """
 
-        adj_strain_factor = self._parameter_trend.adj_strain_ratio(self._parameter_trend.current_inc)
+        adj_strain_ratio_true = self._parameter_trend.adj_strain_ratio_true(self._parameter_trend.current_inc)
 
-        if not adj_strain_factor:
+        if not adj_strain_ratio_true:
             # Do not scale
             return 1.0
 
@@ -89,9 +89,9 @@ class Scaling:
             adj_scale_key = (adj_elem, direction)
             adj_elem_contribs += neighbor_factor * self._working_prestrain_vals.get(adj_scale_key, 0.0)
 
-        boost_factor = abs(adj_elem_contribs) * adj_strain_factor / full_dilation_ratio
+        boost_factor = adj_strain_ratio_true * abs(adj_elem_contribs) / full_dilation_ratio
 
-        return 1.0 + adj_strain_factor*boost_factor
+        return 1.0 + boost_factor
 
 
 class NoScaling(Scaling):

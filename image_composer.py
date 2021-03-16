@@ -19,6 +19,7 @@ thumb_size = size_4k  # Either, say, size_4k or None
 class SimulationInfo(typing.NamedTuple):
     throttler_relaxation: float
     adj_strain_ratio: float
+    adj_strain_ratio_true: float
     n_steps_minor_max: int
     source_file_name: str
     # scaling: str

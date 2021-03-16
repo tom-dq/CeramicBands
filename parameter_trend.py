@@ -151,7 +151,7 @@ class ParameterTrend(typing.NamedTuple):
     throttler_relaxation: ParameterGetter
     stress_end: ParameterGetter
     dilation_ratio: ParameterGetter
-    adj_strain_ratio: ParameterGetter
+    adj_strain_ratio_true: ParameterGetter
     scaling_ratio: ParameterGetter  # Lets you remove the scaling over time. Does not remove the strained neighbor adjustment, which is controlled by adj_strain_ratio
     overall_iterative_prestrain_delta_limit: ParameterGetter
     current_inc: CurrentInc

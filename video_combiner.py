@@ -11,7 +11,7 @@ class Codec(enum.Enum):
     x265 = enum.auto()
 
 codec = Codec.x264
-N_WORKERS = 1
+N_WORKERS = 4
 MAX_THREADS = 6
 
 base_dir = r"E:\Simulations\CeramicBands\v7\pics"
@@ -92,7 +92,7 @@ def do_all_multi_process():
 
 
 if __name__ == '__main__':
-    # do_all_multi_process()
-    do_one_dir(r"E:\Simulations\CeramicBands\composed\adj_low")
-    do_one_dir(r"E:\Simulations\CeramicBands\composed\adj_high")
-    do_one_dir(r"E:\Simulations\CeramicBands\composed\round4")
+    do_all_multi_process()
+    # do_one_dir(r"E:\Simulations\CeramicBands\composed\adj_low")
+    # do_one_dir(r"E:\Simulations\CeramicBands\composed\adj_high")
+    # do_one_dir(r"E:\Simulations\CeramicBands\composed\round4")

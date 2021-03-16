@@ -1179,7 +1179,7 @@ if __name__ == "__main__":
         throttler_relaxation=0.05 * one,
         stress_end=const_401,
         dilation_ratio=const_dilation_ratio,
-        adj_strain_ratio=1.1 * one,
+        adj_strain_ratio_true=1.1 * one,
         scaling_ratio=one,
         overall_iterative_prestrain_delta_limit=one,
         current_inc=parameter_trend.CurrentInc(),
