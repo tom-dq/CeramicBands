@@ -1,7 +1,9 @@
 # from __future__ import annotations
 
+
 from PIL import Image, ImageDraw, ImageFont
 
+import functools
 import glob
 import itertools
 import typing
@@ -14,7 +16,17 @@ import pathlib
 size_4k = (3840, 2160)
 size_8k = (7680, 4320)
 
-thumb_size = size_4k  # Either, say, size_4k or None
+thumb_size = None  # Either, say, size_4k or None
+
+class CropDims(typing.NamedTuple):
+    left: int
+    upper: int
+    right: int
+    lower: int
+
+crop_top_f_fine = CropDims(872, 178, 872+2094, 178+561)
+crop_dims: typing.Optional[CropDims] = crop_top_f_fine
+
 
 class SimulationInfo(typing.NamedTuple):
     throttler_relaxation: float
@@ -73,7 +85,13 @@ def make_distinctive_string(this_sim_info: SimulationInfo, all_sim_infos: typing
 
     not_all_same = {key for key, val_set in all_vals.items() if len(val_set) > 1}
 
-    bits = [f"{key}={val}" for key, val in this_sim_info._asdict().items() if key in not_all_same]
+    def nice_val(val) -> str:
+        if isinstance(val, float):
+            return f'{val:.5g}'
+
+        return str(val)
+
+    bits = [f"{key}={nice_val(val)}" for key, val in this_sim_info._asdict().items() if key in not_all_same]
     return "\n".join(bits)
 
 
@@ -85,24 +103,48 @@ def test_distinctive_strings():
     assert distinctive_string == "adj_strain_ratio=0.2"
 
 
-def _tile_dimensions(n: int) -> int:
-    """See how many tiled images we need. For example, 4 images fit in 2x2. Seven images need 3x3."""
+@functools.lru_cache()
+def _tile_dimensions(dim_single: typing.Tuple[int, int], n: int) -> int:
+    """See how many tiled images we need. For example, 4 images fit in 2x2. Seven images need 3x3. 
+    If thumbnails have a different aspect ratio to the output it might not be square (e.g., 2x3)"""
 
-    current_guess = 1
-    while True:
-        num_would_fit = current_guess ** 2
-        if n <= num_would_fit:
-            return current_guess
+    def would_fit(nxy):
+        return nxy[0] * nxy[1] >= n
 
-        current_guess += 1
+    def wasted_space(nxy):
+        nx, ny = nxy
+        proposed_canvas_used = (dim_single[0] * nx, dim_single[1] * ny)
+        aspect_4k = size_4k[0] / size_4k[1]
+        aspect_proposal = proposed_canvas_used[0] / proposed_canvas_used[1]
 
-        if current_guess > 10:
-            raise ValueError("What are you crazy???")
+        ratio_of_ratios = aspect_proposal / aspect_4k
+
+        if ratio_of_ratios > 1:
+            # Too wide - will need to pad vertical
+            proposed_canvas_padded = (proposed_canvas_used[0], proposed_canvas_used[1] * ratio_of_ratios)
+
+        elif ratio_of_ratios < 1:
+            # Too tall - will need to pad horizontally.
+            proposed_canvas_padded = (proposed_canvas_used[0] / ratio_of_ratios, proposed_canvas_used[1])
+
+        else:
+            # Bingo!
+            proposed_canvas_padded = proposed_canvas_used
+
+        used_space_ratio = (dim_single[0] * dim_single[1] * n) / (proposed_canvas_padded[0] * proposed_canvas_padded[1])
+        return 1.0 - used_space_ratio
+
+    max_considered_tiles = n
+    nxy_all = itertools.product(range(1, max_considered_tiles+1), range(1, max_considered_tiles+1))
+    nxy_fit = ((wasted_space(nxy), nxy) for nxy in nxy_all if would_fit(nxy))
+    least_wasted_space = sorted(nxy_fit)
+    return least_wasted_space[0][1]
+
 
 
 T_Num = typing.Union[int, float]
 def _add_text_centred_at(image: Image, xy_pos: typing.Tuple[T_Num, T_Num], text: str):
-    font = ImageFont.truetype("pala.ttf", 144)
+    font = ImageFont.truetype("pala.ttf", 48)
 
     # Position the text
     text_size = font.getsize(text)
@@ -137,22 +179,38 @@ def compose_images(job: Job):
             raise ValueError(f"Expecting a single mode - got {modes}")
 
         # Compose the images
-        dim_single = dims.pop()
+        dim_single_full = dims.pop()
+
+        if crop_dims:
+            dim_single_x = crop_dims.right - crop_dims.left
+            dim_single_y = crop_dims.lower - crop_dims.upper
+            assert dim_single_x <= dim_single_full[0]
+            assert dim_single_y <= dim_single_full[1]
+            dim_single = (dim_single_x, dim_single_y)
+
+        else:
+            dim_single = dim_single_full 
+        
         mode = modes.pop()
-        n_tiles = _tile_dimensions(len(job.sub_frames))
-        dim = tuple(p*n_tiles for p in dim_single)
+        n_tiles_x, n_tiles_y = _tile_dimensions(dim_single, len(job.sub_frames))
+        dim = (dim_single[0]*n_tiles_x, dim_single[1]*n_tiles_y)
         big_image = exit_stack.enter_context(Image.new(mode, dim))
 
         for idx, sub_frame in enumerate(job.sub_frames):
-            tile_top, tile_left = divmod(idx, n_tiles)
-            tile_bottom = n_tiles - tile_top - 1
+            tile_top, tile_left = divmod(idx, n_tiles_x)
+            tile_bottom = n_tiles_y - tile_top - 1
 
             x_offset = tile_left * dim_single[0]
             y_offset = tile_bottom * dim_single[1]
 
             if sub_frame.fn:
                 image = images[sub_frame]
-                big_image.paste(image, (x_offset,y_offset))
+                if crop_dims:
+                    image_cropped = image.crop(crop_dims)
+
+                else:
+                    image_cropped = image
+                big_image.paste(image_cropped, (x_offset,y_offset))
 
             # Pop in a caption
             caption = make_distinctive_string(sub_frame.sim_info, all_sim_infos)
@@ -254,7 +312,7 @@ def make_images():
 
 
 def do_all_multi_process():
-    N_WORKERS=12
+    N_WORKERS=14
     with multiprocessing.Pool(N_WORKERS) as pool:
         end_dirs_round1 = ['70', '71', '72', '73', '74', '75', '76', '77', '78']
         end_dirs_round2 = ['6R', '6S', '6T', '6U']
@@ -263,15 +321,16 @@ def do_all_multi_process():
         end_dirs_adj_low = ['7C', '79', '7D', '7A']
         end_dirs_adj_high = ['7E', '7B', '7F', '6Y']
         
+        end_dirs_low2 = [ '79', '7D', '7A']
 
         def do_one(out_dir, end_dirs):
             dirs = [os.path.join(r"E:\Simulations\CeramicBands\v7\pics", ed) for ed in end_dirs]
             for x in pool.imap_unordered(compose_images, interleave_directories(dirs, out_dir)):
                 print(x)
 
-        do_one(r"E:\Simulations\CeramicBands\composed\adj_all_4k", end_dirs_round4)
-        do_one(r"E:\Simulations\CeramicBands\composed\adj_low_4k", end_dirs_adj_low)
-        do_one(r"E:\Simulations\CeramicBands\composed\adj_high_4k", end_dirs_adj_high)
+        #do_one(r"E:\Simulations\CeramicBands\composed\adj_all_4k", end_dirs_round4)
+        #do_one(r"E:\Simulations\CeramicBands\composed\adj_low_4k", end_dirs_adj_low)
+        do_one(r"E:\Simulations\CeramicBands\composed\crop_test_2", end_dirs_low2)
 
 
 
@@ -289,8 +348,8 @@ def print_sim_infos():
         print(str(dir_end.parents[0]), sim_info)
 
 if __name__ == "__main__":
-    print_sim_infos()
-    # do_all_multi_process()
+    # print_sim_infos()
+    do_all_multi_process()
 
 if __name__ == "__ASDASDASD__":
     test_distinctive_strings()
