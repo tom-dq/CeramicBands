@@ -18,7 +18,7 @@ thumb_size = size_4k  # Either, say, size_4k or None
 
 class SimulationInfo(typing.NamedTuple):
     throttler_relaxation: float
-    adj_strain_ratio: float
+    # adj_strain_ratio: float
     adj_strain_ratio_true: float
     n_steps_minor_max: int
     source_file_name: str
@@ -34,14 +34,21 @@ class SimulationInfo(typing.NamedTuple):
 
         working_dict = {}
 
+        # Backwards compatible with the old adj_strain_ratio bug...
+        full_annotations = cls.__annotations__.copy()
+        full_annotations["adj_strain_ratio"] = full_annotations["adj_strain_ratio_true"]
         with open(fn) as f_in:
             lines_stripped = (l.strip() for l in f_in)
-            lines_to_consider = list(l for l in lines_stripped if line_start(l) in cls.__annotations__)
+            lines_to_consider = list(l for l in lines_stripped if line_start(l) in full_annotations)
             for l in lines_to_consider:
                 key, val = l.split(maxsplit=1)
-                val_as_native_type = (cls.__annotations__[key])(val) 
+                val_as_native_type = (full_annotations[key])(val) 
                 working_dict[key] = val_as_native_type
 
+        if "adj_strain_ratio" in working_dict and not "adj_strain_ratio_true" in working_dict:
+            working_dict["adj_strain_ratio_true"] = working_dict["adj_strain_ratio"] ** 2
+
+        _ = working_dict.pop("adj_strain_ratio", None)
         return cls(**working_dict)
 
 
@@ -282,8 +289,8 @@ def print_sim_infos():
         print(str(dir_end.parents[0]), sim_info)
 
 if __name__ == "__main__":
-    # print_sim_infos()
-    do_all_multi_process()
+    print_sim_infos()
+    # do_all_multi_process()
 
 if __name__ == "__ASDASDASD__":
     test_distinctive_strings()
