@@ -4,7 +4,7 @@ An investigation into a distinctive plasticity phenomenon known as *transformati
 bands*. 
 
 
-![adj_strain_true 0.09](images/adj_strain_true=0.09.png)
+[adj_strain_true 0.09](images/adj_strain_true=0.09.png)
 `adj_strain_true = 0.09`
 
 
