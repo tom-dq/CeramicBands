@@ -1,6 +1,8 @@
 """Keeps track of all the results in a database for quicker """
+
 import hashlib
 import itertools
+import math
 import pathlib
 import sqlite3
 import typing
@@ -15,27 +17,6 @@ class SqliteEnum(enum.Enum):
     def __conform__(self, protocol):
         if protocol is sqlite3.PrepareProtocol:
             return self.name
-
-
-class StatData(SqliteEnum):
-    minimum = enum.auto()
-    mean = enum.auto()
-    maximum = enum.auto()
-
-    @property
-    def reduce_func(self) -> typing.Callable[[typing.List[float]], float]:
-        if self == StatData.minimum:
-            return min
-
-        elif self == StatData.maximum:
-            return max
-
-        elif self == StatData.mean:
-            return statistics.fmean
-
-        else:
-            raise ValueError(self)
-
 
 
 class ContourKey(SqliteEnum):
@@ -68,10 +49,15 @@ class ContourKey(SqliteEnum):
         return d[idx]
 
 
+def convert_contour_key(b):
+    s = b.decode()
+    return ContourKey[s]
 
 
 sqlite3.register_adapter(bool, int)
 sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
+sqlite3.register_converter("ContourKey", convert_contour_key)
+
 
 
 class ResultCase(typing.NamedTuple):
@@ -108,7 +94,7 @@ class NodePosition(typing.NamedTuple):
     @classmethod
     def _all_nones(cls) -> "NodePosition":
         nones = [None for _ in cls._fields]
-        return NodePosition(*nones)
+        return cls(*nones)
 
 
 class ElementNodeConnection(typing.NamedTuple):
@@ -130,9 +116,26 @@ class ColumnResult(typing.NamedTuple):
     x: float
     yielded: bool
     contour_key: ContourKey
-    stat_data: StatData
-    value: float
+    minimum: float
+    mean: float
+    maximum: float
 
+    @classmethod
+    def _all_nones(cls) -> "ColumnResult":
+        nones = [None for _ in cls._fields]
+        return cls(*nones)
+
+    @staticmethod
+    def _nans_at(x: float) -> "ColumnResult":
+        return ColumnResult(
+            result_case_num=None,
+            x=x,
+            yielded=None,
+            contour_key=None,
+            minimum=math.nan,
+            mean=math.nan,
+            maximum=math.nan,
+        )
 
 def _make_table_statement(nt_class) -> str:
     type_lookup = {
@@ -141,8 +144,7 @@ def _make_table_statement(nt_class) -> str:
         str: "TEXT",
         bool: "BOOLEAN",
         typing.Optional[int]: "INTEGER PRIMARY KEY",
-        ContourKey: "TEXT",
-        StatData: "TEXT",
+        ContourKey: "ContourKey",
     }
 
     def make_one_line(field_type_item):
@@ -183,7 +185,7 @@ _all_contour_keys_ = [
 
 class DB:
     def __init__(self, db_fn: typing.Union[str, pathlib.Path]):
-        self.connection = sqlite3.connect(str(db_fn))
+        self.connection = sqlite3.connect(str(db_fn), detect_types=sqlite3.PARSE_DECLTYPES)
         self.cur = self.connection.cursor()
         self._make_tables()
         self._add_contour_key_lookups_if_needed()

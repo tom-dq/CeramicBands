@@ -133,6 +133,7 @@ class CentroidAwareScaling(Scaling):
     _amplitude: float
     _y_min: float
     _y_max: float
+    _y_bottom: float
     _y_depth: float
     _y_no_yielding_below: float
     _x_cent: float
@@ -156,17 +157,12 @@ class CentroidAwareScaling(Scaling):
 
         return {elem_num: scale_fact(vol) for elem_num, vol in init_data.elem_volume.items()}
 
-
     def assign_centroids(self, init_data: InitialSetupModelData):
         elem_centroid = init_data.elem_centroid
 
         # Find out how deep the elements go.
         self._y_max = max(xyz.y for xyz in elem_centroid.values())
-
-        # Stop the bottom, say, 5% of elements from ever going, so we don't have to deal with contact pressure stuff, etc.
-        y_base = min(xyz.y for xyz in elem_centroid.values())
-        y_range = (self._y_max - y_base)
-        self._y_no_yielding_below = y_base + 0.05 * y_range
+        self._y_bottom = min(xyz.y for xyz in elem_centroid.values())
 
         self._y_min = self._y_max - self._y_depth
         self._x_cent = 0.5 * (min(xyz.x for xyz in elem_centroid.values()) + max(xyz.x for xyz in elem_centroid.values()))
@@ -179,6 +175,19 @@ class CentroidAwareScaling(Scaling):
 
         self.determine_adjacency(init_data)
 
+    def get_element_surface_depth_ratio(self, cent: st7.Vector3):
+        """1.0 right on the top or bottom surface, scaled down to 0.0 at _y_depth"""
+        surface_depth = min(
+            self._y_max - cent.y,
+            cent.y - self._y_bottom,
+        )
+
+        if surface_depth > self._y_depth:
+            return 0.0
+
+        return (self._y_depth - surface_depth) / self._y_depth
+
+
     def get_x_scale_factor(self, scale_key: T_ScaleKey) -> float:
         """Higher number means EASIER for element to yield. For example, a return value of 2.0 means it takes half the load for this element to yield."""
         elem_num, _ = scale_key[:]
@@ -189,6 +198,9 @@ class CentroidAwareScaling(Scaling):
         return 0.5 * (parameter_trend_ratio * self._elem_scale_fact[elem_num] + dilated_neighbor_scale)
 
     def _no_base_yield_modifier(self, elem_cent) -> float:
+        # Deactive.
+        return 1.0
+
         if elem_cent.y < self._y_no_yielding_below:
             return 0.0
 
@@ -207,16 +219,9 @@ class CosineScaling(CentroidAwareScaling):
         self._amplitude = amplitude
 
     def _scale_factor_one_elem(self, cent: st7.Vector3):
-        x, y, _ = cent[:]
-        if y < self._y_min:
-            real_amplitude = 0.0
+        x, _, _ = cent[:]
 
-        elif y < self._y_max:
-            real_amplitude = self._amplitude * (y-self._y_min) / (self._y_max - self._y_min)
-
-        else:
-            real_amplitude = self._amplitude
-
+        real_amplitude = self.get_element_surface_depth_ratio(cent) * self._amplitude
         a = self._spacing / (math.pi * 2)
         raw_cosine = math.cos(a * x)
 
@@ -240,16 +245,9 @@ class SpacedStepScaling(CentroidAwareScaling):
         self._parameter_trend = pt
 
     def _scale_factor_one_elem(self, cent: st7.Vector3):
-        x, y, _ = cent[:]
+        x, _, _ = cent[:]
 
-        if y < self._y_min:
-            real_amplitude = 0.0
-
-        elif y < self._y_max:
-            real_amplitude = self._amplitude * (y-self._y_min) / (self._y_max - self._y_min)
-
-        else:
-            real_amplitude = self._amplitude
+        real_amplitude = self.get_element_surface_depth_ratio(cent) * self._amplitude
 
         # See how close we are to a "hole"
         closest_hole = 0.0
@@ -289,16 +287,9 @@ class SingleHoleCentre(CentroidAwareScaling):
         self._parameter_trend = pt
 
     def _scale_factor_one_elem(self, cent: st7.Vector3):
-        x, y, _ = cent[:]
-        if y < self._y_min:
-            real_amplitude = 0.0
+        x, _, _ = cent[:]
 
-        elif y < self._y_max:
-            real_amplitude = self._amplitude * (y-self._y_min) / (self._y_max - self._y_min)
-
-        else:
-            real_amplitude = self._amplitude
-
+        real_amplitude = self.get_element_surface_depth_ratio(cent) * self._amplitude
 
         in_hole = 2 * abs(x - self._x_cent) < self._hole_width
 

@@ -861,6 +861,19 @@ class St7Model:
         chk(St7API.St7GetNumLoadCase(self.uID, ct_num_cases))
         return ct_num_cases.value
 
+    def load_case_numbers(self) -> range:
+        return range(1, self.St7GetNumLoadCase() + 1)
+
+    def St7GetNumFreedomCase(self) -> int:
+        ct_num_cases = ctypes.c_long()
+        chk(St7API.St7GetNumFreedomCase(self.uID, ct_num_cases))
+        return ct_num_cases.value
+
+    def freedom_case_numbers(self) -> range:
+        return range(1, self.St7GetNumFreedomCase() + 1)
+
+
+
     def St7SetPlatePreLoad3(self, iPlate: int, iLoadCase: int, load_type: PreLoadType, load: Vector3):
         doubles = (ctypes.c_double * 3)(*load)
         chk(St7API.St7SetPlatePreLoad3(
@@ -900,6 +913,12 @@ class St7Model:
             freedom_case_num,
         ))
 
+    def St7DisableNLAFreedomCase(self, stage: int, freedom_case_num: int):
+        chk(St7API.St7DisableNLAFreedomCase(
+            self.uID,
+            stage,
+            freedom_case_num,
+        ))
 
     def St7AddNLAIncrement(self, stage: int, inc_name: str):
         chk(St7API.St7AddNLAIncrement(
@@ -971,6 +990,9 @@ class St7Model:
 
     def St7EnableTransientFreedomCase(self, case_num: int):
         chk(St7API.St7EnableTransientFreedomCase(self.uID, case_num))
+
+    def St7DisableTransientFreedomCase(self, case_num: int):
+        chk(St7API.St7DisableTransientFreedomCase(self.uID, case_num))
 
     def St7SetTransientLoadTimeTable(self, case_num: int, table_num: int, add_time_steps: bool):
         chk(St7API.St7SetTransientLoadTimeTable(self.uID, case_num, table_num, add_time_steps))

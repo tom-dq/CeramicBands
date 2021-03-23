@@ -2,6 +2,7 @@ import dataclasses
 import itertools
 import os
 import random
+import statistics
 import time
 import typing
 import enum
@@ -55,6 +56,13 @@ random.seed(123456)
 #screenshot_res = st7.CanvasSize(1920, 1200)
 
 
+class ModelFreedomCase(enum.Enum):
+    """Values are the freedom case numbers in Strand7"""
+    restraint = 1
+    bending = 2
+    tension = 3
+
+
 class RunParams(typing.NamedTuple):
     actuator: Actuator
     scaling: Scaling
@@ -69,6 +77,7 @@ class RunParams(typing.NamedTuple):
     source_file_name: pathlib.Path
     randomise_orientation: typing.Union[bool, OrientationDistribution]  # False for all the same, True for all random, or OrientationDistribution instance for a distribution so defined
     override_poisson: typing.Optional[float]
+    freedom_cases: typing.List[ModelFreedomCase]
 
     def summary_strings(self) -> typing.Iterable[str]:
         yield "RunParams:\n"
@@ -80,6 +89,9 @@ class RunParams(typing.NamedTuple):
             elif field_type in (ParameterTrend,):
                 yield from field_val.summary_strings()
 
+            elif field_type == typing.List[ModelFreedomCase]:
+                output_str = "+".join(mfc.name for mfc in field_val)
+
             else:
                 output_str = str(field_val)
 
@@ -87,6 +99,9 @@ class RunParams(typing.NamedTuple):
 
         yield "\n"
 
+    @property
+    def active_freedom_case_numbers(self) -> typing.FrozenSet[int]:
+        return frozenset(mfc.value for mfc in self.freedom_cases)
 
 class Ratchet:
     """Ratchets up a table, keeping track of which element is up to where."""
@@ -335,15 +350,15 @@ def _make_column_stats(db_case_num: int, col_x: float, elem_nums: typing.FrozenS
                 segments[key].append(sv.value)
 
     for (yielded, contour_key), res_list in segments.items():
-        for stat_data in history.StatData:
-            yield history.ColumnResult(
-                result_case_num=db_case_num,
-                x=col_x,
-                yielded=yielded,
-                contour_key=contour_key,
-                stat_data=stat_data,
-                value=stat_data.reduce_func(res_list)
-            )
+        yield history.ColumnResult(
+            result_case_num=db_case_num,
+            x=col_x,
+            yielded=yielded,
+            contour_key=contour_key,
+            minimum=min(res_list),
+            mean=statistics.fmean(res_list),
+            maximum=max(res_list),
+        )
 
 
 def write_out_to_db(
@@ -788,12 +803,15 @@ def set_restart_for(model: st7.St7Model, result_frame: ResultFrame):
         raise ValueError(result_frame.configuration.solver)
 
 
-def set_load_increment_table(model: st7.St7Model, result_frame: ResultFrame, this_bending_load_factor, prestrain_load_case_num):
+def set_load_increment_table(run_params: RunParams, model: st7.St7Model, result_frame: ResultFrame, this_bending_load_factor, prestrain_load_case_num):
     # Set the load and freedom case - can use either method. Don't use both though!
 
     if result_frame.configuration.solver == st7.SolverType.stNonlinearStatic:
-        model.St7SetNLAFreedomIncrementFactor(STAGE, result_frame.result_case_num, FREEDOM_CASE, this_bending_load_factor)
-        for iLoadCase in range(1, model.St7GetNumLoadCase() + 1):
+        for iFreedomCase in model.freedom_case_numbers():
+            fc_factor = this_bending_load_factor if iFreedomCase in run_params.active_freedom_case_numbers else 0.0
+            model.St7SetNLAFreedomIncrementFactor(STAGE, result_frame.result_case_num, iFreedomCase, fc_factor)
+
+        for iLoadCase in model.load_case_numbers():
             if iLoadCase == LOAD_CASE_BENDING:
                 factor = this_bending_load_factor
 
@@ -807,8 +825,14 @@ def set_load_increment_table(model: st7.St7Model, result_frame: ResultFrame, thi
 
     elif result_frame.configuration.solver == st7.SolverType.stQuasiStatic:
         # Enable / disable the load and freedom cases.
-        model.St7EnableTransientFreedomCase(FREEDOM_CASE)
-        for iLoadCase in range(1, model.St7GetNumLoadCase() + 1):
+        for iFreedomCase in model.freedom_case_numbers():
+            if iFreedomCase in run_params.active_freedom_case_numbers:
+                model.St7EnableTransientFreedomCase(iFreedomCase)
+
+            else:
+                model.St7DisableTransientFreedomCase(iFreedomCase)
+
+        for iLoadCase in model.load_case_numbers():
             should_be_enabled = iLoadCase in (LOAD_CASE_BENDING, prestrain_load_case_num)
             if should_be_enabled:
                 model.St7EnableTransientLoadCase(iLoadCase)
@@ -912,7 +936,12 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
             raise Exception("Already had increments?")
 
         model.St7EnableNLALoadCase(STAGE, LOAD_CASE_BENDING)
-        model.St7EnableNLAFreedomCase(STAGE, FREEDOM_CASE)
+        for iFC in model.freedom_case_numbers():
+            if iFC in run_params.active_freedom_case_numbers:
+                model.St7EnableNLAFreedomCase(STAGE, iFC)
+
+            else:
+                model.St7DisableNLAFreedomCase(STAGE, iFC)
 
     else:
         # Make the time table a single row.
@@ -921,7 +950,12 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
         model.St7SetSolverDefaultsLogical(st7.SolverDefaultLogical.spAppendRemainingTime, False)  # Whole table is always just one step.
 
         model.St7EnableTransientLoadCase(LOAD_CASE_BENDING)
-        model.St7EnableTransientFreedomCase(FREEDOM_CASE)
+        for iFC in model.freedom_case_numbers():
+            if iFC in run_params.active_freedom_case_numbers:
+                model.St7EnableTransientFreedomCase(iFC)
+
+            else:
+                model.St7DisableTransientFreedomCase(iFC)
 
         # Set up the tables which will drive the bending load.
         model.St7NewTableType(
@@ -933,8 +967,9 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
         )
 
         model.St7SetTransientLoadTimeTable(LOAD_CASE_BENDING, TABLE_BENDING_ID, False)
-        model.St7SetTransientFreedomTimeTable(FREEDOM_CASE, TABLE_BENDING_ID, False)
-
+        for iFC in model.freedom_case_numbers():
+            fc_table_id = TABLE_BENDING_ID if iFC in run_params.active_freedom_case_numbers else 0
+            model.St7SetTransientFreedomTimeTable(iFC, fc_table_id, False)
 
     # For all solvers.
     model.St7SetResultFileName(initial_result_frame.result_file)
@@ -1097,7 +1132,7 @@ def main(run_params: RunParams):
                     this_load_factor,
                     run_params.parameter_trend.current_inc.step_name()
                 )
-                set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
+                set_load_increment_table(run_params, model, current_result_frame, this_load_factor, prestrain_load_case_num)
             
                 relaxation.set_current_relaxation(previous_load_factor, this_load_factor)
 
@@ -1140,7 +1175,7 @@ def main(run_params: RunParams):
 
                     # Add the next step
                     current_result_frame = add_increment(model, current_result_frame, this_load_factor, run_params.parameter_trend.current_inc.step_name())
-                    set_load_increment_table(model, current_result_frame, this_load_factor, prestrain_load_case_num)
+                    set_load_increment_table(run_params, model, current_result_frame, this_load_factor, prestrain_load_case_num)
 
                     apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_iteration_set)
 
@@ -1276,9 +1311,10 @@ if __name__ == "__main__":
         start_at_major_ratio=0.53,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestF-Fine.st7"),
+        source_file_name=pathlib.Path("TestG-Fine.st7"),
         randomise_orientation=False,
         override_poisson=None,
+        freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.tension],
     )
 
     main(run_params)
