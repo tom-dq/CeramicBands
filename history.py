@@ -5,10 +5,40 @@ import pathlib
 import sqlite3
 import typing
 import enum
+import statistics
+
 import common_types
 
 
-class ContourKey(enum.Enum):
+
+class SqliteEnum(enum.Enum):
+    def __conform__(self, protocol):
+        if protocol is sqlite3.PrepareProtocol:
+            return self.name
+
+
+class StatData(SqliteEnum):
+    minimum = enum.auto()
+    mean = enum.auto()
+    maximum = enum.auto()
+
+    @property
+    def reduce_func(self) -> typing.Callable[[typing.List[float]], float]:
+        if self == StatData.minimum:
+            return min
+
+        elif self == StatData.maximum:
+            return max
+
+        elif self == StatData.mean:
+            return statistics.fmean
+
+        else:
+            raise ValueError(self)
+
+
+
+class ContourKey(SqliteEnum):
     prestrain_x = enum.auto()
     prestrain_y = enum.auto()
     prestrain_z = enum.auto()  # This comes up in the iteration bit
@@ -18,27 +48,30 @@ class ContourKey(enum.Enum):
     total_strain_z = enum.auto()
 
     @staticmethod
-    def from_single_value(sv: common_types.SingleValue, is_result_strain: bool):
+    def from_idx_total_strain(idx: int):
+        d = {
+            0: ContourKey.total_strain_x,
+            1: ContourKey.total_strain_y,
+            2: ContourKey.total_strain_z,
+        }
 
-        if sv.eigen_vector:
-            raise ValueError(sv)
+        return d[idx]
 
-        if is_result_strain:
-            d = {
-                0: ContourKey.total_strain_x,
-                1: ContourKey.total_strain_y,
-                2: ContourKey.total_strain_z,
-            }
+    @staticmethod
+    def from_idx_pre_strain(idx: int):
+        d = {
+            0: ContourKey.prestrain_x,
+            1: ContourKey.prestrain_y,
+            2: ContourKey.prestrain_z,
+        }
 
-        else:
-            d = {
-                0: ContourKey.prestrain_x,
-                1: ContourKey.prestrain_y,
-                2: ContourKey.prestrain_z,
+        return d[idx]
 
-            }
 
-        return d[sv.axis]
+
+
+sqlite3.register_adapter(bool, int)
+sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
 
 
 class ResultCase(typing.NamedTuple):
@@ -92,12 +125,24 @@ class ElementPrestrain(typing.NamedTuple):
     pre_strain: float
 
 
+class ColumnResult(typing.NamedTuple):
+    result_case_num: int
+    x: float
+    yielded: bool
+    contour_key: ContourKey
+    stat_data: StatData
+    value: float
+
+
 def _make_table_statement(nt_class) -> str:
     type_lookup = {
         int: "INTEGER",
         float: "REAL",
         str: "TEXT",
-        typing.Optional[int]: "INTEGER PRIMARY KEY"
+        bool: "BOOLEAN",
+        typing.Optional[int]: "INTEGER PRIMARY KEY",
+        ContourKey: "TEXT",
+        StatData: "TEXT",
     }
 
     def make_one_line(field_type_item):
@@ -128,6 +173,7 @@ _T_any_db_able = typing.Union[
     NodePosition,
     ElementNodeConnection,
     ElementPrestrain,
+    ColumnResult,
 ]
 
 _all_contour_keys_ = [

@@ -121,6 +121,13 @@ class ElemVectorDict(dict):
             to_return = [tensor.xx, tensor.yy, tensor.zz]
             yield from ( SingleValue(elem, idx, val) for idx, val in enumerate(to_return))
 
+    def get_one_elem_single_values(self, elem) -> typing.Iterable[SingleValue]:
+        """If elem isn't in here, effectively an empty iterator rather than KeyError."""
+        tensor = self.get(elem, None)
+        if tensor:
+            to_return = [tensor.xx, tensor.yy, tensor.zz]
+            yield from (SingleValue(elem, idx, val) for idx, val in enumerate(to_return))
+
     def _as_principal_values(self) -> typing.Iterable[ SingleValue ]:
         for elem, tensor in self.items():
             ONLY_RETURN_MAX_EIGENVALUE = True
@@ -244,6 +251,8 @@ class InitialSetupModelData(typing.NamedTuple):
     elem_volume: typing.Dict[int, float]
     elem_volume_ratio: typing.Dict[int, float]
     elem_axis_angle_deg: typing.Dict[int, float]
+    boundary_nodes: typing.FrozenSet[int]
+    element_columns: typing.Dict[float, typing.FrozenSet]
 
 
 def func_repr(f) -> str:

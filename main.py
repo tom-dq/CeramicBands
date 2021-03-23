@@ -27,6 +27,7 @@ from scaling import Scaling, SingleHoleCentre, SpacedStepScaling, CosineScaling
 from tables import Table
 from throttle import Throttler, StoppingCriterion, Shape, ElemPreStrainChangeData, BaseThrottler, RelaxedIncreaseDecrease
 import history
+import model_inspect
 
 import directories
 import state_tracker
@@ -313,6 +314,38 @@ def write_out_screenshot(run_params: RunParams, model_window: st7.St7ModelWindow
     compress_png(current_result_frame.image_file)
 
 
+def _make_column_stats(db_case_num: int, col_x: float, elem_nums: typing.FrozenSet[int], yielded_elems: typing.Set[int], result_strain: ElemVectorDict) -> typing.Iterable[history.ColumnResult]:
+
+    # Bin the result in an elemnt column by axis and yieled/not-yielded
+    def make_key(elem_num, idx):
+        return (elem_num in yielded_elems, history.ContourKey.from_idx_total_strain(idx))
+
+    segments = collections.defaultdict(list)
+
+    SKIP_ZZ_STRAIN = True
+    if SKIP_ZZ_STRAIN:
+        allowable_idx = {0, 1}
+    else:
+        allowable_idx = {0, 1, 2}
+
+    for elem_num in elem_nums:
+        for sv in result_strain.get_one_elem_single_values(elem_num):
+            if sv.axis in allowable_idx:
+                key = make_key(elem_num, sv.axis)
+                segments[key].append(sv.value)
+
+    for (yielded, contour_key), res_list in segments.items():
+        for stat_data in history.StatData:
+            yield history.ColumnResult(
+                result_case_num=db_case_num,
+                x=col_x,
+                yielded=yielded,
+                contour_key=contour_key,
+                stat_data=stat_data,
+                value=stat_data.reduce_func(res_list)
+            )
+
+
 def write_out_to_db(
     db: history.DB, 
     init_data: InitialSetupModelData,
@@ -320,7 +353,7 @@ def write_out_to_db(
     results: st7.St7Results, 
     current_result_frame: "ResultFrame", 
     prestrain_update: PrestrainUpdate,
-    result_strain: typing.Iterable[SingleValue]):
+    result_strain: ElemVectorDict):
 
     # Main case data
     db_res_case = history.ResultCase(
@@ -332,11 +365,17 @@ def write_out_to_db(
 
     db_case_num = db.add(db_res_case)
 
-    if not config.active_config.record_result_history_in_db:
+    if config.active_config.record_result_history_in_db == config.HistoryToRecord.none:
         return
 
     # Deformed positions
-    deformed_pos = get_node_positions_deformed(init_data.node_xyz, results, current_result_frame.result_case_num)
+    if config.active_config.record_result_history_in_db.only_deformed_node_pos:
+        undef_node_xyz = {node: xyz for node, xyz in init_data.node_xyz.items() if node in init_data.boundary_nodes}
+
+    else:
+        undef_node_xyz = init_data
+
+    deformed_pos = get_node_positions_deformed(undef_node_xyz, results, current_result_frame.result_case_num)
     db_node_xyz = (history.NodePosition(
         result_case_num=db_case_num,
         node_num=node_num,
@@ -347,28 +386,37 @@ def write_out_to_db(
     db.add_many(db_node_xyz)
 
     # Prestrains
-    def make_prestrain_rows():
-        for sv in prestrain_update.elem_prestrains_iteration_set:
-            yield history.ContourValue(
-                result_case_num=db_case_num,
-                contour_key_num=history.ContourKey.from_single_value(sv, False).value,
-                elem_num=sv.elem,
-                value=sv.value,
-            )
+    if config.active_config.record_result_history_in_db == config.HistoryToRecord.full:
+        def make_prestrain_rows():
+            for sv in prestrain_update.elem_prestrains_iteration_set:
+                yield history.ContourValue(
+                    result_case_num=db_case_num,
+                    contour_key_num=history.ContourKey.from_idx_pre_strain(sv.axis).value,
+                    elem_num=sv.elem,
+                    value=sv.value,
+                )
 
-    db.add_many(make_prestrain_rows())
+        db.add_many(make_prestrain_rows())
 
-    # Result Strains
-    def make_result_strains():
-        for sv in result_strain:
-            yield history.ContourValue(
-                result_case_num=db_case_num,
-                contour_key_num=history.ContourKey.from_single_value(sv, True).value,
-                elem_num=sv.elem,
-                value=sv.value,
-            )
+        # Result Strains
+        def make_result_strains():
+            for sv in result_strain.as_single_values():
+                yield history.ContourValue(
+                    result_case_num=db_case_num,
+                    contour_key_num=history.ContourKey.from_idx_total_strain(sv.axis).value,
+                    elem_num=sv.elem,
+                    value=sv.value,
+                )
 
-    db.add_many(make_result_strains())
+        db.add_many(make_result_strains())
+
+    # Column-wise statistics
+    def make_column_results():
+        yielded_elems = {sv.elem for sv in prestrain_update.elem_prestrains_iteration_set}
+        for col_x, elem_nums in init_data.element_columns.items():
+            yield from _make_column_stats(db_case_num, col_x, elem_nums, yielded_elems, result_strain)
+
+    db.add_many(make_column_results())
 
 
 def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_num: int) -> ElemVectorDict:
@@ -473,14 +521,14 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
 
 
 def get_node_positions_deformed(orig_positions: T_ResultDict, results: st7.St7Results, case_num: int) -> T_ResultDict:
-    """Deformed node positions"""
+    """Deformed node positions - only consider those in orig_positions"""
 
-    def one_node_pos(node_num: int):
+    def one_node_pos(node_num: int, orig_pos: st7.Vector3):
         node_res = results.St7GetNodeResult(st7.NodeResultType.rtNodeDisp, node_num, case_num).results
         deformation = st7.Vector3(x=node_res[0], y=node_res[1], z=node_res[2])
-        return orig_positions[node_num] + deformation
+        return orig_pos + deformation
 
-    return {node_num: one_node_pos(node_num) for node_num in results.model.entity_numbers(st7.Entity.tyNODE)}
+    return {node_num: one_node_pos(node_num, orig_pos) for node_num, orig_pos in orig_positions.items()}
 
 
 def incremental_element_update_list(
@@ -799,6 +847,7 @@ def _override_poisson(model: st7.St7Model, target_rho: float):
         raise ValueError("Time to do St7SetBrickIsotropicMaterial!")
 
 
+
 def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_frame: ResultFrame) -> InitialSetupModelData:
 
     model.St7EnableSaveRestart()
@@ -899,6 +948,8 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
         elem_volume=elem_volume,
         elem_volume_ratio=elem_volume_ratio,
         elem_axis_angle_deg=elem_axis_angle_deg,
+        boundary_nodes=model_inspect.get_boundary_nodes(model),
+        element_columns=model_inspect.get_element_columns(elem_centroid, elem_volume),
     )
 
 
@@ -1034,7 +1085,7 @@ def main(run_params: RunParams):
                 # Get the results from the last major step.
                 with model.open_results(current_result_frame.result_file) as results:
                     write_out_screenshot(run_params, model_window, current_result_frame)
-                    write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, [])
+                    write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, ElemVectorDict())
 
                 prestrain_load_case_num = create_load_case(model, run_params.parameter_trend.current_inc.step_name())
                 apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_locked_in)
@@ -1068,7 +1119,7 @@ def main(run_params: RunParams):
                         result_strain_raw = get_results(run_params.actuator, results, current_result_frame.result_case_num)
                         result_strain = result_strain_raw
                         write_out_screenshot(run_params, model_window, current_result_frame)
-                        write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, result_strain.as_single_values())
+                        write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, result_strain)
 
                     _update_prestrain_table(run_params, ratchet.table, run_params.parameter_trend.current_inc)
 
@@ -1121,7 +1172,7 @@ def main(run_params: RunParams):
         # Save the image of pre-strain results from the maximum load step.
         with model.open_results(current_result_frame.result_file) as results, model.St7CreateModelWindow(dont_really_make=False) as model_window:
             write_out_screenshot(run_params, model_window, current_result_frame)
-            write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, [])
+            write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, ElemVectorDict())
 
 
 def create_load_case(model, case_name):
@@ -1179,7 +1230,7 @@ if __name__ == "__main__":
         throttler_relaxation=0.05 * one,
         stress_end=const_401,
         dilation_ratio=const_dilation_ratio,
-        adj_strain_ratio_true=1.1 * one,
+        adj_strain_ratio_true=0.25 * one,
         scaling_ratio=one,
         overall_iterative_prestrain_delta_limit=one,
         current_inc=parameter_trend.CurrentInc(),

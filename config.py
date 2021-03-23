@@ -16,6 +16,24 @@ class MaxIters(typing.NamedTuple):
     minor_step: int
 
 
+class HistoryToRecord(enum.Enum):
+    none = enum.auto()
+    limited = enum.auto()
+    full = enum.auto()
+
+    @property
+    def only_deformed_node_pos(self) -> bool:
+        if self == HistoryToRecord.limited:
+            return True
+
+        elif self == HistoryToRecord.full:
+            return False
+
+        else:
+            raise ValueError(self)
+
+
+
 class Config(typing.NamedTuple):
     fn_st7_base: pathlib.Path
     fn_working_image_base: pathlib.Path
@@ -28,7 +46,7 @@ class Config(typing.NamedTuple):
     delete_old_result_files: bool
     ratched_prestrains_during_iterations: bool
     case_for_every_increment: bool
-    record_result_history_in_db: bool
+    record_result_history_in_db: HistoryToRecord
     converged_delta_prestrain: float
 
 
@@ -66,7 +84,7 @@ def _get_config():
             delete_old_result_files=True,
             ratched_prestrains_during_iterations=False,
             case_for_every_increment=False,
-            record_result_history_in_db=False,
+            record_result_history_in_db=HistoryToRecord.limited,
             converged_delta_prestrain=1e-6,
         )
 
@@ -83,7 +101,7 @@ def _get_config():
             delete_old_result_files=True,
             ratched_prestrains_during_iterations=False,
             case_for_every_increment=False,
-            record_result_history_in_db=False,
+            record_result_history_in_db=HistoryToRecord.limited,
             converged_delta_prestrain=1e-6,
         )
 
