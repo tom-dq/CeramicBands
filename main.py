@@ -1311,7 +1311,7 @@ if __name__ == "__main__":
         start_at_major_ratio=0.53,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestG-Fine.st7"),
+        source_file_name=pathlib.Path("TestG-Med.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.tension],
