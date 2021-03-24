@@ -137,6 +137,16 @@ class ColumnResult(typing.NamedTuple):
             maximum=math.nan,
         )
 
+
+class LoadDisplacementPoint(typing.NamedTuple):
+    result_case_num: int
+    node_num: int
+    load_text: str
+    disp_text: str
+    load_val: float
+    disp_val: float
+
+
 def _make_table_statement(nt_class) -> str:
     type_lookup = {
         int: "INTEGER",
@@ -176,6 +186,7 @@ _T_any_db_able = typing.Union[
     ElementNodeConnection,
     ElementPrestrain,
     ColumnResult,
+    LoadDisplacementPoint,
 ]
 
 _all_contour_keys_ = [

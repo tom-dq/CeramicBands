@@ -20,6 +20,20 @@ def chk(iErr):
         raise Exception(iErr)
 
 
+class DoF(enum.Enum):
+    DX = 0
+    DY = 1
+    DZ = 2
+    RX = 3
+    RY = 4
+    RZ = 5
+
+    @property
+    def force_moment_text(self) -> str:
+        "Return FX, FY, FZ, MX, MY or MZ"
+        return self.name.replace("D", "F").replace("R", "M")
+
+
 class Entity(enum.Enum):
     tyNODE = St7API.tyNODE
     tyBEAM = St7API.tyBEAM
@@ -221,7 +235,20 @@ class TableType(enum.Enum):
     ttStrainTime = St7API.ttStrainTime
 
 
+@dataclasses.dataclass
+class NodeRestraint:
+    node_num: int
+    fc_num: int
+    ucs_id: int
+    restraints: typing.Dict[DoF, float]
+
+    @property
+    def global_xyz(self) -> bool:
+        return self.ucs_id in {0, 1}
+
 _T_ctypes_type = typing.Union[typing.Type[ctypes.c_long], typing.Type[ctypes.c_double]]
+
+
 
 class _InternalSubArrayDefinition(typing.NamedTuple):
     """Represents, for example, the "Integers" argument of St7SetEntityContourSettingsLimits -
@@ -781,6 +808,114 @@ class BrickContour(enum.Enum):
     ctBrickAgeAtFirstLoading = St7API.ctBrickAgeAtFirstLoading
 
 
+class AttributeType(enum.Enum):
+    aoRestraint = St7API.aoRestraint
+    aoForce = St7API.aoForce
+    aoMoment = St7API.aoMoment
+    aoTemperature = St7API.aoTemperature
+    aoMTranslation = St7API.aoMTranslation
+    aoMRotation = St7API.aoMRotation
+    aoKTranslation = St7API.aoKTranslation
+    aoKRotation = St7API.aoKRotation
+    aoDamping = St7API.aoDamping
+    aoNSMass = St7API.aoNSMass
+    aoNodeInfluence = St7API.aoNodeInfluence
+    aoNodeHeatSource = St7API.aoNodeHeatSource
+    aoNodeVelocity = St7API.aoNodeVelocity
+    aoNodeAcceleration = St7API.aoNodeAcceleration
+    aoVertexMeshSize = St7API.aoVertexMeshSize
+    aoBeamAngle = St7API.aoBeamAngle
+    aoBeamOffset = St7API.aoBeamOffset
+    aoBeamTEndRelease = St7API.aoBeamTEndRelease
+    aoBeamREndRelease = St7API.aoBeamREndRelease
+    aoBeamSupport = St7API.aoBeamSupport
+    aoBeamPreTension = St7API.aoBeamPreTension
+    aoCableFreeLength = St7API.aoCableFreeLength
+    aoBeamDLL = St7API.aoBeamDLL
+    aoBeamDLG = St7API.aoBeamDLG
+    aoBeamCFL = St7API.aoBeamCFL
+    aoBeamCFG = St7API.aoBeamCFG
+    aoBeamCML = St7API.aoBeamCML
+    aoBeamCMG = St7API.aoBeamCMG
+    aoBeamTempGradient = St7API.aoBeamTempGradient
+    aoBeamConvection = St7API.aoBeamConvection
+    aoBeamRadiation = St7API.aoBeamRadiation
+    aoBeamFlux = St7API.aoBeamFlux
+    aoBeamHeatSource = St7API.aoBeamHeatSource
+    aoBeamRadius = St7API.aoBeamRadius
+    aoPipePressure = St7API.aoPipePressure
+    aoBeamNSMass = St7API.aoBeamNSMass
+    aoPipeTemperature = St7API.aoPipeTemperature
+    aoBeamDML = St7API.aoBeamDML
+    aoBeamStringGroup = St7API.aoBeamStringGroup
+    aoBeamPreCurvature = St7API.aoBeamPreCurvature
+    aoBeamTaper = St7API.aoBeamTaper
+    aoBeamInfluence = St7API.aoBeamInfluence
+    aoBeamSectionFactor = St7API.aoBeamSectionFactor
+    aoBeamCreepLoadingAge = St7API.aoBeamCreepLoadingAge
+    aoBeamEndAttachment = St7API.aoBeamEndAttachment
+    aoBeamConnectionUCS = St7API.aoBeamConnectionUCS
+    aoBeamStageProperty = St7API.aoBeamStageProperty
+    aoBeamSideAttachment = St7API.aoBeamSideAttachment
+    aoPlateAngle = St7API.aoPlateAngle
+    aoPlateOffset = St7API.aoPlateOffset
+    aoPlatePreLoad = St7API.aoPlatePreLoad
+    aoPlateFacePressure = St7API.aoPlateFacePressure
+    aoPlateFaceShear = St7API.aoPlateFaceShear
+    aoPlateEdgeNormalPressure = St7API.aoPlateEdgeNormalPressure
+    aoPlateEdgeShear = St7API.aoPlateEdgeShear
+    aoPlateEdgeTransverseShear = St7API.aoPlateEdgeTransverseShear
+    aoPlateTempGradient = St7API.aoPlateTempGradient
+    aoPlateEdgeSupport = St7API.aoPlateEdgeSupport
+    aoPlateFaceSupport = St7API.aoPlateFaceSupport
+    aoPlateEdgeConvection = St7API.aoPlateEdgeConvection
+    aoPlateEdgeRadiation = St7API.aoPlateEdgeRadiation
+    aoPlateFlux = St7API.aoPlateFlux
+    aoPlateHeatSource = St7API.aoPlateHeatSource
+    aoPlateGlobalPressure = St7API.aoPlateGlobalPressure
+    aoPlateEdgeRelease = St7API.aoPlateEdgeRelease
+    aoPlateReinforcement = St7API.aoPlateReinforcement
+    aoPlateThickness = St7API.aoPlateThickness
+    aoPlateNSMass = St7API.aoPlateNSMass
+    aoLoadPatch = St7API.aoLoadPatch
+    aoPlateEdgeGlobalPressure = St7API.aoPlateEdgeGlobalPressure
+    aoPlatePreCurvature = St7API.aoPlatePreCurvature
+    aoPlatePointForce = St7API.aoPlatePointForce
+    aoPlatePointMoment = St7API.aoPlatePointMoment
+    aoPlateFaceConvection = St7API.aoPlateFaceConvection
+    aoPlateFaceRadiation = St7API.aoPlateFaceRadiation
+    aoPlateInfluence = St7API.aoPlateInfluence
+    aoPlateSoilStress = St7API.aoPlateSoilStress
+    aoPlateSoilRatio = St7API.aoPlateSoilRatio
+    aoPlateCreepLoadingAge = St7API.aoPlateCreepLoadingAge
+    aoPlateEdgeAttachment = St7API.aoPlateEdgeAttachment
+    aoPlateFaceAttachment = St7API.aoPlateFaceAttachment
+    aoPlateStageProperty = St7API.aoPlateStageProperty
+    aoPlateSectionFactor = St7API.aoPlateSectionFactor
+    aoPlateCavity = St7API.aoPlateCavity
+    aoBrickPressure = St7API.aoBrickPressure
+    aoBrickShear = St7API.aoBrickShear
+    aoBrickFaceFoundation = St7API.aoBrickFaceFoundation
+    aoBrickConvection = St7API.aoBrickConvection
+    aoBrickRadiation = St7API.aoBrickRadiation
+    aoBrickFlux = St7API.aoBrickFlux
+    aoBrickHeatSource = St7API.aoBrickHeatSource
+    aoBrickGlobalPressure = St7API.aoBrickGlobalPressure
+    aoBrickNSMass = St7API.aoBrickNSMass
+    aoBrickLocalAxes = St7API.aoBrickLocalAxes
+    aoBrickPreLoad = St7API.aoBrickPreLoad
+    aoBrickPointForce = St7API.aoBrickPointForce
+    aoBrickInfluence = St7API.aoBrickInfluence
+    aoBrickSoilStress = St7API.aoBrickSoilStress
+    aoBrickSoilRatio = St7API.aoBrickSoilRatio
+    aoBrickCreepLoadingAge = St7API.aoBrickCreepLoadingAge
+    aoBrickFaceAttachment = St7API.aoBrickFaceAttachment
+    aoBrickStageProperty = St7API.aoBrickStageProperty
+    aoBrickCavity = St7API.aoBrickCavity
+    aoPathPointForce = St7API.aoPathPointForce
+    aoPathDistributedForce = St7API.aoPathDistributedForce
+    aoPathHeatSource = St7API.aoPathHeatSource
+
 class ImageType(enum.Enum):
     itBitmap8Bit = St7API.itBitmap8Bit
     itBitmap16Bit = St7API.itBitmap16Bit
@@ -792,6 +927,13 @@ class ImageType(enum.Enum):
 class ScaleType(enum.Enum):
     dsPercent = St7API.dsPercent
     dsAbsolute = St7API.dsAbsolute
+
+
+class AttributeSequenceEntry(typing.NamedTuple):
+    ipAttrLocal: int
+    ipAttrAxis: int
+    ipAttrCase: int
+    ipAttrID: int
 
 
 class St7Model:
@@ -1093,6 +1235,47 @@ class St7Model:
     def St7SetPlateIsotropicMaterial(self, prop_num: int, plate_isotropic_material: PlateIsotropicMaterial):
         doubles_arr = plate_isotropic_material.get_single_sub_array_instance_of_type(ctypes.c_double).to_st7_array()
         chk(St7API.St7SetPlateIsotropicMaterial(self.uID, prop_num, doubles_arr))
+
+    def St7GetEntityAttributeSequence(self, entity: Entity, entity_num: int, attribute_type: AttributeType) -> typing.Iterable[AttributeSequenceEntry]:
+
+        num_sets = ctypes.c_long()
+        chk(St7API.St7GetEntityAttributeSequenceCount(self.uID, entity.value, entity_num, attribute_type.value, num_sets))
+
+        arr_size = 4 * (num_sets.value + 10)
+        ct_arr = (ctypes.c_long * arr_size)()
+
+        chk(St7API.St7GetEntityAttributeSequence(self.uID, entity.value, entity_num, attribute_type.value, num_sets, ct_arr))
+
+        for i in range(num_sets.value):
+            yield AttributeSequenceEntry(
+                ipAttrLocal=ct_arr[4*i + St7API.ipAttrLocal],
+                ipAttrAxis=ct_arr[4*i + St7API.ipAttrAxis],
+                ipAttrCase=ct_arr[4*i + St7API.ipAttrCase],
+                ipAttrID=ct_arr[4*i + St7API.ipAttrID],
+            )
+
+    def St7GetNodeRestraint6(self, node_num: int, fc_num: int) -> NodeRestraint:
+        ucs_id = ctypes.c_long()
+        ct_status = (ctypes.c_long * 6)()
+        ct_doubles = (ctypes.c_double * 6)()
+
+        chk(St7API.St7GetNodeRestraint6(self.uID, node_num, fc_num, ucs_id, ct_status, ct_doubles))
+
+        restraint_dict = {
+            DoF(idx): ct_doubles[idx] for idx in range(6) if ct_status[idx]
+        }
+
+        return NodeRestraint(
+            node_num=node_num,
+            fc_num=fc_num,
+            ucs_id=ucs_id.value,
+            restraints=restraint_dict,
+        )
+
+    def all_node_restraints(self) -> typing.Iterable[NodeRestraint]:
+        for node_num in self.entity_numbers(Entity.tyNODE):
+            for attr_seq_entry in self.St7GetEntityAttributeSequence(Entity.tyNODE, node_num, AttributeType.aoRestraint):
+                yield self.St7GetNodeRestraint6(node_num, attr_seq_entry.ipAttrCase)
 
 
 class St7Results:

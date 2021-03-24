@@ -103,6 +103,7 @@ class RunParams(typing.NamedTuple):
     def active_freedom_case_numbers(self) -> typing.FrozenSet[int]:
         return frozenset(mfc.value for mfc in self.freedom_cases)
 
+
 class Ratchet:
     """Ratchets up a table, keeping track of which element is up to where."""
     table: Table = None
@@ -380,6 +381,22 @@ def write_out_to_db(
 
     db_case_num = db.add(db_res_case)
 
+    # Enforced displacements for F-D curves - always extract this
+    def make_fd_results(node_num: int, dof: st7.DoF):
+        disp = results.St7GetNodeResult(st7.NodeResultType.rtNodeDisp, node_num, current_result_frame.result_case_num)
+        react = results.St7GetNodeResult(st7.NodeResultType.rtNodeReact, node_num, current_result_frame.result_case_num)
+        return history.LoadDisplacementPoint(
+            result_case_num=db_case_num,
+            node_num=node_num,
+            load_text=dof.force_moment_text,
+            disp_text=dof.name,
+            load_val=react.results[dof.value],
+            disp_val=disp.results[dof.value],
+        )
+
+    fd_curve_res = ( make_fd_results(node_num, dof) for node_num, dof in init_data.enforced_dofs)
+    db.add_many(fd_curve_res)
+
     if config.active_config.record_result_history_in_db == config.HistoryToRecord.none:
         return
 
@@ -432,6 +449,7 @@ def write_out_to_db(
             yield from _make_column_stats(db_case_num, col_x, elem_nums, yielded_elems, result_strain)
 
     db.add_many(make_column_results())
+
 
 
 def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_num: int) -> ElemVectorDict:
@@ -985,6 +1003,7 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
         elem_axis_angle_deg=elem_axis_angle_deg,
         boundary_nodes=model_inspect.get_boundary_nodes(model),
         element_columns=model_inspect.get_element_columns(elem_centroid, elem_volume),
+        enforced_dofs=model_inspect.get_enforced_displacements(run_params, model),
     )
 
 
@@ -1314,7 +1333,7 @@ if __name__ == "__main__":
         source_file_name=pathlib.Path("TestG-Med.st7"),
         randomise_orientation=False,
         override_poisson=None,
-        freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.tension],
+        freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending],
     )
 
     main(run_params)

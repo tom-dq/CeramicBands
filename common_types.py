@@ -253,6 +253,7 @@ class InitialSetupModelData(typing.NamedTuple):
     elem_axis_angle_deg: typing.Dict[int, float]
     boundary_nodes: typing.FrozenSet[int]
     element_columns: typing.Dict[float, typing.FrozenSet]
+    enforced_dofs: typing.FrozenSet[typing.Tuple[ int, st7.DoF] ] # node_num, dof
 
 
 def func_repr(f) -> str:

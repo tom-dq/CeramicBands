@@ -80,7 +80,7 @@ def make_enum(text):
 
     print("")
 
-if __name__ == "__main1__":
+if __name__ == "__main__":
     text = """ctBeamNone = 0
 ctBeamLength = 1
 ctBeamAxis1 = 2
@@ -289,7 +289,114 @@ rtPlateTotalStrain = 22
 rtPlateTotalCurvature = 23"""
 
 
-    make_enum(text3)
+    text4 = """aoRestraint = 1
+aoForce = 2
+aoMoment = 3
+aoTemperature = 4
+aoMTranslation = 5
+aoMRotation = 6
+aoKTranslation = 7
+aoKRotation = 8
+aoDamping = 9
+aoNSMass = 10
+aoNodeInfluence = 11
+aoNodeHeatSource = 12
+aoNodeVelocity = 13
+aoNodeAcceleration = 14
+aoVertexMeshSize = 20
+aoBeamAngle = 21
+aoBeamOffset = 22
+aoBeamTEndRelease = 23
+aoBeamREndRelease = 24
+aoBeamSupport = 25
+aoBeamPreTension = 26
+aoCableFreeLength = 27
+aoBeamDLL = 28
+aoBeamDLG = 29
+aoBeamCFL = 30
+aoBeamCFG = 31
+aoBeamCML = 32
+aoBeamCMG = 33
+aoBeamTempGradient = 34
+aoBeamConvection = 35
+aoBeamRadiation = 36
+aoBeamFlux = 37
+aoBeamHeatSource = 38
+aoBeamRadius = 39
+aoPipePressure = 40
+aoBeamNSMass = 41
+aoPipeTemperature = 42
+aoBeamDML = 44
+aoBeamStringGroup = 45
+aoBeamPreCurvature = 46
+aoBeamTaper = 92
+aoBeamInfluence = 93
+aoBeamSectionFactor = 94
+aoBeamCreepLoadingAge = 95
+aoBeamEndAttachment = 96
+aoBeamConnectionUCS = 97
+aoBeamStageProperty = 98
+aoBeamSideAttachment = 120
+aoPlateAngle = 51
+aoPlateOffset = 52
+aoPlatePreLoad = 53
+aoPlateFacePressure = 54
+aoPlateFaceShear = 55
+aoPlateEdgeNormalPressure = 56
+aoPlateEdgeShear = 57
+aoPlateEdgeTransverseShear = 58
+aoPlateTempGradient = 59
+aoPlateEdgeSupport = 60
+aoPlateFaceSupport = 61
+aoPlateEdgeConvection = 62
+aoPlateEdgeRadiation = 63
+aoPlateFlux = 64
+aoPlateHeatSource = 65
+aoPlateGlobalPressure = 66
+aoPlateEdgeRelease = 67
+aoPlateReinforcement = 68
+aoPlateThickness = 69
+aoPlateNSMass = 70
+aoLoadPatch = 71
+aoPlateEdgeGlobalPressure = 72
+aoPlatePreCurvature = 73
+aoPlatePointForce = 99
+aoPlatePointMoment = 100
+aoPlateFaceConvection = 101
+aoPlateFaceRadiation = 102
+aoPlateInfluence = 103
+aoPlateSoilStress = 104
+aoPlateSoilRatio = 105
+aoPlateCreepLoadingAge = 106
+aoPlateEdgeAttachment = 107
+aoPlateFaceAttachment = 108
+aoPlateStageProperty = 109
+aoPlateSectionFactor = 121
+aoPlateCavity = 122
+aoBrickPressure = 81
+aoBrickShear = 82
+aoBrickFaceFoundation = 83
+aoBrickConvection = 84
+aoBrickRadiation = 85
+aoBrickFlux = 86
+aoBrickHeatSource = 87
+aoBrickGlobalPressure = 88
+aoBrickNSMass = 89
+aoBrickLocalAxes = 90
+aoBrickPreLoad = 91
+aoBrickPointForce = 110
+aoBrickInfluence = 111
+aoBrickSoilStress = 112
+aoBrickSoilRatio = 113
+aoBrickCreepLoadingAge = 114
+aoBrickFaceAttachment = 115
+aoBrickStageProperty = 116
+aoBrickCavity = 123
+aoPathPointForce = 117
+aoPathDistributedForce = 118
+aoPathHeatSource = 119"""
+
+    make_enum(text4)
 
     tally()
 
