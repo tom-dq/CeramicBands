@@ -29,9 +29,21 @@ class DoF(enum.Enum):
     RZ = 5
 
     @property
-    def force_moment_text(self) -> str:
+    def rx_mz_text(self) -> str:
         "Return FX, FY, FZ, MX, MY or MZ"
         return self.name.replace("D", "F").replace("R", "M")
+
+    @property
+    def is_displacement(self) -> bool:
+        return self.value in (0, 1, 2)
+
+    @property
+    def disp_or_rotation_text(self) -> str:
+        return "Displacement" if self.is_displacement else "Rotation"
+
+    @property
+    def force_or_moment_text(self) -> str:
+        return "Force" if self.is_displacement else "Moment"
 
 
 class Entity(enum.Enum):
@@ -1162,6 +1174,10 @@ class St7Model:
         ct_xyz = (ctypes.c_double * 3)()
         chk(St7API.St7GetNodeXYZ(self.uID, node_num, ct_xyz))
         return Vector3(*ct_xyz)
+
+    def St7SetNodeXYZ(self, node_num: int, xyz: Vector3):
+        ct_xyz = (ctypes.c_double * 3)(*xyz)
+        chk(St7API.St7SetNodeXYZ(self.uID, node_num, ct_xyz))
 
     def St7GetElementConnection(self, entity: Entity, elem_num: int) -> typing.Tuple[int, ...]:
         ct_conn = (ctypes.c_long * 30)()

@@ -41,7 +41,6 @@ DONT_MAKE_MODEL_WINDOW = False
 LOAD_CASE_BENDING = 1
 FREEDOM_CASE = 1
 STAGE = 0
-TABLE_BENDING_ID = 5
 
 STRESS_START = 400
 
@@ -59,9 +58,28 @@ random.seed(123456)
 class ModelFreedomCase(enum.Enum):
     """Values are the freedom case numbers in Strand7"""
     restraint = 1
-    bending = 2
+    bending_pure = 2
     tension = 3
+    bending_three_point = 4
 
+    def load_scale_factor_for_constant_tension(self, scale_model_x: float, scale_model_y: float):
+        if self == ModelFreedomCase.restraint:
+            return 1.0
+
+        elif self in (ModelFreedomCase.bending_pure, ModelFreedomCase.bending_three_point):
+            # Both x and y change the tension on the surface, so have to compensate
+            return 1.0 * scale_model_x / scale_model_y
+
+        elif self == ModelFreedomCase.tension:
+            # Changing y doesn't matter.
+            return 1.0 * scale_model_x
+
+        else:
+            raise ValueError(self)
+
+    @property
+    def table_id(self) -> int:
+        return 10 + self.value
 
 class RunParams(typing.NamedTuple):
     actuator: Actuator
@@ -78,6 +96,8 @@ class RunParams(typing.NamedTuple):
     randomise_orientation: typing.Union[bool, OrientationDistribution]  # False for all the same, True for all random, or OrientationDistribution instance for a distribution so defined
     override_poisson: typing.Optional[float]
     freedom_cases: typing.List[ModelFreedomCase]
+    scale_model_x: float
+    scale_model_y: float
 
     def summary_strings(self) -> typing.Iterable[str]:
         yield "RunParams:\n"
@@ -388,7 +408,7 @@ def write_out_to_db(
         return history.LoadDisplacementPoint(
             result_case_num=db_case_num,
             node_num=node_num,
-            load_text=dof.force_moment_text,
+            load_text=dof.rx_mz_text,
             disp_text=dof.name,
             load_val=react.results[dof.value],
             disp_val=disp.results[dof.value],
@@ -825,8 +845,17 @@ def set_load_increment_table(run_params: RunParams, model: st7.St7Model, result_
     # Set the load and freedom case - can use either method. Don't use both though!
 
     if result_frame.configuration.solver == st7.SolverType.stNonlinearStatic:
+
         for iFreedomCase in model.freedom_case_numbers():
-            fc_factor = this_bending_load_factor if iFreedomCase in run_params.active_freedom_case_numbers else 0.0
+            model_freedom_case = ModelFreedomCase(iFreedomCase)
+            load_scale_factor = model_freedom_case.load_scale_factor_for_constant_tension(run_params.scale_model_x, run_params.scale_model_y)
+
+            if model_freedom_case in run_params.freedom_cases:
+                fc_factor = this_bending_load_factor * load_scale_factor
+
+            else:
+                fc_factor = 0.0
+
             model.St7SetNLAFreedomIncrementFactor(STAGE, result_frame.result_case_num, iFreedomCase, fc_factor)
 
         for iLoadCase in model.load_case_numbers():
@@ -858,13 +887,17 @@ def set_load_increment_table(run_params: RunParams, model: st7.St7Model, result_
             else:
                 model.St7DisableTransientLoadCase(iLoadCase)
 
-        # Update the tables so we get the right bending factor.
-        model.St7SetTableTypeData(
-            st7.TableType.ttVsTime,
-            TABLE_BENDING_ID,
-            len(result_frame.load_time_table.data),
-            result_frame.load_time_table.as_flat_doubles(),
-        )
+        # Update the tables so we get the right bending_pure factor.
+        for model_freedom_case in run_params.freedom_cases:
+            load_scale_factor = model_freedom_case.load_scale_factor_for_constant_tension(run_params.scale_model_x, run_params.scale_model_y)
+            scaled_table = result_frame.load_time_table.copy_scaled(1.0, load_scale_factor)
+
+            model.St7SetTableTypeData(
+                st7.TableType.ttVsTime,
+                model_freedom_case.table_id,
+                len(scaled_table.data),
+                scaled_table.as_flat_doubles(),
+            )
 
     else:
         raise ValueError(result_frame.configuration.solver)
@@ -889,8 +922,17 @@ def _override_poisson(model: st7.St7Model, target_rho: float):
         raise ValueError("Time to do St7SetBrickIsotropicMaterial!")
 
 
+def _initial_scale_node_coords(run_params: RunParams, model: st7.St7Model):
+    # Run this before anything else!
+    for node_num in model.entity_numbers(st7.Entity.tyNODE):
+        node_xyz = model.St7GetNodeXYZ(node_num)
+        new_xyz = node_xyz._replace(x=node_xyz.x * run_params.scale_model_x, y=node_xyz.y * run_params.scale_model_y)
+        model.St7SetNodeXYZ(node_num, new_xyz)
+
 
 def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_frame: ResultFrame) -> InitialSetupModelData:
+
+    _initial_scale_node_coords(run_params, model)
 
     model.St7EnableSaveRestart()
     model.St7EnableSaveLastRestartStep()
@@ -975,19 +1017,23 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
             else:
                 model.St7DisableTransientFreedomCase(iFC)
 
-        # Set up the tables which will drive the bending load.
-        model.St7NewTableType(
-            st7.TableType.ttVsTime,
-            TABLE_BENDING_ID,
-            len(initial_result_frame.load_time_table.data),
-            "Bending Load Factor",
-            initial_result_frame.load_time_table.as_flat_doubles(),
-        )
+        # Set up the tables which will drive the bending_pure load.
+        for model_freedom_case in run_params.freedom_cases:
+            load_scale_factor = model_freedom_case.load_scale_factor_for_constant_tension(run_params.scale_model_x, run_params.scale_model_y)
+            scaled_table = initial_result_frame.load_time_table.copy_scaled(1.0, load_scale_factor)
+            model.St7NewTableType(
+                st7.TableType.ttVsTime,
+                model_freedom_case.table_id,
+                len(scaled_table.data),
+                f"Load Factor ({model_freedom_case.name})",
+                scaled_table.as_flat_doubles(),
+            )
 
-        model.St7SetTransientLoadTimeTable(LOAD_CASE_BENDING, TABLE_BENDING_ID, False)
-        for iFC in model.freedom_case_numbers():
-            fc_table_id = TABLE_BENDING_ID if iFC in run_params.active_freedom_case_numbers else 0
-            model.St7SetTransientFreedomTimeTable(iFC, fc_table_id, False)
+            model.St7SetTransientLoadTimeTable(LOAD_CASE_BENDING, model_freedom_case.table_id, False)
+
+            for iFC in model.freedom_case_numbers():
+                fc_table_id = model_freedom_case.table_id if iFC in run_params.active_freedom_case_numbers else 0
+                model.St7SetTransientFreedomTimeTable(iFC, fc_table_id, False)
 
     # For all solvers.
     model.St7SetResultFileName(initial_result_frame.result_file)
@@ -1330,10 +1376,12 @@ if __name__ == "__main__":
         start_at_major_ratio=0.53,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestG-Med.st7"),
+        source_file_name=pathlib.Path("TestH-Med.st7"),
         randomise_orientation=False,
         override_poisson=None,
-        freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending],
+        freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
+        scale_model_x=1.5,  # Changing the model dimentions also scales the load.
+        scale_model_y=0.8,
     )
 
     main(run_params)

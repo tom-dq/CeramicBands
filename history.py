@@ -146,6 +146,11 @@ class LoadDisplacementPoint(typing.NamedTuple):
     load_val: float
     disp_val: float
 
+    @classmethod
+    def _all_nones(cls) -> "LoadDisplacementPoint":
+        nones = [None for _ in cls._fields]
+        return cls(*nones)
+
 
 def _make_table_statement(nt_class) -> str:
     type_lookup = {
@@ -247,7 +252,7 @@ class DB:
             with self.connection:
                 self.cur.executemany(ins_str, same_type_rows)
 
-    def get_all(self, row_type: _T_any_db_able) -> typing.Iterable[ResultCase]:
+    def get_all(self, row_type: _T_any_db_able) -> typing.Iterable[_T_any_db_able]:
         get_all_str = _make_select_all(row_type)
         with self.connection:
             rows = self.cur.execute(get_all_str)
@@ -259,6 +264,10 @@ class DB:
         not_none_bits = {key: val for key, val in row_skeleton._asdict().items() if val is not None}
 
         keys = tuple([key for key in not_none_bits.keys()])
+
+        if not keys:
+            return
+
         keys_bytes = b'_'.join(key.encode() for key in keys)
         checksum_head = hashlib.md5(keys_bytes).hexdigest()[0:8]
 
