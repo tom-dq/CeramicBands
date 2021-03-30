@@ -1,6 +1,7 @@
 import itertools
 
 import matplotlib.pyplot as plt
+from matplotlib.animation import FFMpegWriter as ThisWriter
 
 import typing
 
@@ -14,6 +15,9 @@ def graph_frame(hist: history.DB, db_res_case: int, ax: plt.Axes):
 
     col_data_graph = [cd for cd in column_data if cd.contour_key == history.ContourKey.total_strain_x]
 
+    ax.clear()
+    graphed_something = False
+
     for yielded, base_col in (
             (False, 'tab:blue'),
             (True, 'tab:orange'),
@@ -25,6 +29,7 @@ def graph_frame(hist: history.DB, db_res_case: int, ax: plt.Axes):
         for cd in col_data_graph:
             if cd.yielded == yielded:
                 x_to_cd[cd.x] = cd
+                graphed_something = True
 
         res_to_plot = [cd for x, cd in sorted(x_to_cd.items())]
         x = [cd.x for cd in res_to_plot]
@@ -35,6 +40,7 @@ def graph_frame(hist: history.DB, db_res_case: int, ax: plt.Axes):
         ax.fill_between(x, y_min, y_max, color=base_col, alpha=0.2)
         ax.plot(x, y_mean, color=base_col)
 
+    return graphed_something
 
 def graph_surface_profile(hist: history.DB, db_res_case: int, ax: plt.Axes):
     pass
@@ -78,13 +84,44 @@ def graph_force_disp(hist: history.DB, ax: plt.Axes):
 
     ax.legend()
 
+def _add_margin(one_range):
+    diff = one_range[1] - one_range[0]
+    margin = 0.05 * diff
 
+    return one_range[0] - margin, one_range[1] + margin
+
+
+def animate_test():
+    db_fn = r"E:\Simulations\CeramicBands\v7\pics\8T\history.db"
+    movie_writer = ThisWriter(fps=30)
+    fig, ax = plt.subplots(1, 1, figsize=(20, 10), constrained_layout=True)
+    # fig.tight_layout()
+    with movie_writer.saving(fig, r'E:\TEMP\8T.mp4', dpi=300):
+        with history.DB(db_fn) as hist:
+            y_range = hist.get_column_result_range()
+            y_range_padded = _add_margin(y_range)
+
+            for db_res_case in sorted(hist.get_all(history.ResultCase)):
+                print(db_res_case)
+
+                graphed_something = graph_frame(hist, db_res_case.num, ax)
+
+                ax.set_ylim(y_range_padded)
+                fig.canvas.draw()
+                fig.canvas.flush_events()
+                if graphed_something:
+                    movie_writer.grab_frame()
 
 if __name__ == "__main__":
-    db_fn = r"E:\Simulations\CeramicBands\v7\pics\8L\history - Copy.db"
+    animate_test()
+
+if False:
+    db_fn = r"E:\Simulations\CeramicBands\v7\pics\8T\history.db"
     with history.DB(db_fn) as hist:
-        fig, (ax_fd, ax_strain,) = plt.subplots(2, 1)
-        graph_frame(hist, 650, ax_strain)
+        fig, (ax_fd, ax_s1, ax_s2, ax_s3) = plt.subplots(4, 1)
+        graph_frame(hist, 100, ax_s1)
+        graph_frame(hist, 700, ax_s2)
+        graph_frame(hist, 1200, ax_s3)
         graph_force_disp(hist, ax_fd)
 
     fig.show()

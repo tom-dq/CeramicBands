@@ -16,7 +16,7 @@ import pathlib
 size_4k = (3840, 2160)
 size_8k = (7680, 4320)
 
-thumb_size = None  # Either, say, size_4k or None
+thumb_size = size_4k  # Either, say, size_4k or None
 
 class CropDims(typing.NamedTuple):
     left: int
@@ -25,7 +25,8 @@ class CropDims(typing.NamedTuple):
     lower: int
 
 crop_top_f_fine = CropDims(872, 178, 872+2094, 178+561)
-crop_dims: typing.Optional[CropDims] = crop_top_f_fine
+crop_top_bit = CropDims(0, 100, 3840, 100 + 2160//2)
+crop_dims: typing.Optional[CropDims] = crop_top_bit
 
 
 class SimulationInfo(typing.NamedTuple):
@@ -35,6 +36,9 @@ class SimulationInfo(typing.NamedTuple):
     n_steps_minor_max: int
     source_file_name: str
     # scaling: str
+    freedom_cases: str
+    scale_model_x: float
+    scale_model_y: float
 
 
     @classmethod
@@ -45,6 +49,14 @@ class SimulationInfo(typing.NamedTuple):
                 return working[0]
 
         working_dict = {}
+
+        _NEW_VARIABLES = {
+            "freedom_cases": "bending_pure",
+            "scale_model_x": 1.0,
+            "scale_model_y": 1.0,
+        }
+
+        working_dict.update(_NEW_VARIABLES)
 
         # Backwards compatible with the old adj_strain_ratio bug...
         full_annotations = cls.__annotations__.copy()
@@ -323,6 +335,14 @@ def do_all_multi_process():
         
         end_dirs_low2 = [ '79', '7D', '7A']
 
+        pure_med = ['8S', '8W', '90', '94']
+        threep_med = ['8U', '8Y', '92', '96']
+
+        pure_fine = ['8T', '8X', '91', '95']
+        threep_fine = ['8V', '8Z', '93', '97']
+
+        pure_fine_narrow = ['8T', '8X']
+
         def do_one(out_dir, end_dirs):
             dirs = [os.path.join(r"E:\Simulations\CeramicBands\v7\pics", ed) for ed in end_dirs]
             for x in pool.imap_unordered(compose_images, interleave_directories(dirs, out_dir)):
@@ -330,12 +350,17 @@ def do_all_multi_process():
 
         #do_one(r"E:\Simulations\CeramicBands\composed\adj_all_4k", end_dirs_round4)
         #do_one(r"E:\Simulations\CeramicBands\composed\adj_low_4k", end_dirs_adj_low)
-        do_one(r"E:\Simulations\CeramicBands\composed\crop_test_2", end_dirs_low2)
+        # do_one(r"E:\Simulations\CeramicBands\composed\crop_test_2", end_dirs_low2)
+        # do_one(r"E:\Simulations\CeramicBands\composed\pure_med", pure_med)
+        # do_one(r"E:\Simulations\CeramicBands\composed\threep_med", threep_med)
+        # do_one(r"E:\Simulations\CeramicBands\composed\pure_fine", pure_fine)
+        # do_one(r"E:\Simulations\CeramicBands\composed\threep_fine", threep_fine)
+        do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_narrow", pure_fine_narrow)
 
 
 
-def print_sim_infos():
-    metas = glob.glob(r"E:\Simulations\CeramicBands\v7\pics\*\Meta.txt")
+def _get_sim_infos():
+    metas = glob.glob(r"E:\Simulations\CeramicBands\v7\pics\[8-9]*\Meta.txt")
     for fn in sorted(metas):
         dir_end = pathlib.Path(fn)
 
@@ -345,7 +370,18 @@ def print_sim_infos():
         except ValueError as e:
             sim_info = None
 
+        yield sim_info, dir_end
+        
+
+def print_sim_infos():
+    def sort_key(sim_info_dir_end):
+        sim_info = sim_info_dir_end[0]
+        return sim_info.source_file_name, sim_info.freedom_cases
+
+    for sim_info, dir_end in sorted(_get_sim_infos(), key=sort_key):
         print(str(dir_end.parents[0]), sim_info)
+
+
 
 if __name__ == "__main__":
     # print_sim_infos()

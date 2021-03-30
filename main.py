@@ -110,7 +110,8 @@ class RunParams(typing.NamedTuple):
                 yield from field_val.summary_strings()
 
             elif field_type == typing.List[ModelFreedomCase]:
-                output_str = "+".join(mfc.name for mfc in field_val)
+                names_of_loads = [mfc.name for mfc in field_val if mfc != ModelFreedomCase.restraint]
+                output_str = "+".join(names_of_loads)
 
             else:
                 output_str = str(field_val)
@@ -1376,12 +1377,12 @@ if __name__ == "__main__":
         start_at_major_ratio=0.53,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestH-Med.st7"),
+        source_file_name=pathlib.Path("TestH-Fine.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
-        scale_model_x=1.5,  # Changing the model dimentions also scales the load.
-        scale_model_y=0.8,
+        scale_model_x=1.0,  # Changing the model dimentions also scales the load.
+        scale_model_y=1.0,
     )
 
     main(run_params)

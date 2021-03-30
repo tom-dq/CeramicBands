@@ -259,6 +259,13 @@ class DB:
             for r in rows:
                 yield row_type(*r)
 
+    def get_column_result_range(self) -> typing.Tuple[float, float]:
+        with self.connection:
+            res = self.cur.execute("SELECT MIN( minimum), Max(maximum) FROM  ColumnResult")
+            for one_res in res:
+                return one_res
+
+
     def _create_index(self, row_skeleton: _T_any_db_able):
 
         not_none_bits = {key: val for key, val in row_skeleton._asdict().items() if val is not None}
