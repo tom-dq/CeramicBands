@@ -358,6 +358,6 @@ if __name__ == "__main__":
     with history.DB(db_fn) as hist:
         top_nodes = _node_of_top_line(hist)
 
-        compose_graphs(hist, top_nodes, 50, sub_graphs)
+        compose_graphs(hist, top_nodes, 1000, sub_graphs)
 
     fig.show()
