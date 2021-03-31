@@ -259,9 +259,9 @@ class DB:
             for r in rows:
                 yield row_type(*r)
 
-    def get_column_result_range(self) -> typing.Tuple[float, float]:
+    def get_column_result_range(self, contour_key: ContourKey) -> typing.Tuple[float, float]:
         with self.connection:
-            res = self.cur.execute("SELECT MIN( minimum), Max(maximum) FROM  ColumnResult")
+            res = self.cur.execute("SELECT MIN( minimum), Max(maximum) FROM ColumnResult WHERE contour_key = ?", (contour_key.name,))
             for one_res in res:
                 return one_res
 
