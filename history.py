@@ -167,7 +167,7 @@ def _make_table_statement(nt_class) -> str:
         sql_type = type_lookup[this_type]
         return f"{key} {sql_type}"
 
-    table_data = ',\n'.join(make_one_line(item) for item in nt_class._field_types.items())
+    table_data = ',\n'.join(make_one_line(item) for item in nt_class.__annotations__.items())
 
     return f"CREATE TABLE IF NOT EXISTS {nt_class.__name__}(\n {table_data} )"
 

@@ -165,7 +165,7 @@ class ParameterTrend(typing.NamedTuple):
 
         out_d = {}
         for name, sub_param in self._asdict().items():
-            field_type = self._field_types[name]
+            field_type = self.__annotations__[name]
 
             is_good = isinstance(sub_param, GOOD)
             is_bad = isinstance(sub_param, BAD)

@@ -79,7 +79,7 @@ class State(typing.NamedTuple):
         return working_state
 
     def print_signal_file_names(self, look_dir: str):
-        for field_name, field_type in self._field_types.items():
+        for field_name, field_type in self.__annotations__.items():
             for one_val in field_type:
                 signal_file = os.path.join(look_dir, one_val.name)
                 print(signal_file, one_val.nice_text(), sep='\t')

@@ -101,7 +101,7 @@ class RunParams(typing.NamedTuple):
 
     def summary_strings(self) -> typing.Iterable[str]:
         yield "RunParams:\n"
-        for field_name, field_type in self._field_types.items():
+        for field_name, field_type in self.__annotations__.items():
             field_val = getattr(self, field_name)
             if field_type in (Actuator,):
                 output_str = field_val.nice_name()

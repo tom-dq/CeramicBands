@@ -53,7 +53,7 @@ class Config(typing.NamedTuple):
 
     def summary_strings(self) -> typing.Iterable[str]:
         yield "Config:\n"
-        for field_name, field_type in self._field_types.items():
+        for field_name, field_type in self.__annotations__.items():
             field_val = getattr(self, field_name)
             output_str = str(field_val)
             yield f"{field_name}\t{output_str}\n"
