@@ -1,6 +1,7 @@
 import enum
 import typing
 import pathlib
+import platform
 
 import st7
 
@@ -61,7 +62,14 @@ class Config(typing.NamedTuple):
 
 
 def _get_env() -> Environment:
-    return Environment.uni_desktop
+    if platform.node() == "DESKTOP-EFCE6TR":
+        return Environment.macbook_bootcamp
+
+    elif platform.node() == "DESKTOP-5D1C7NO":
+        return Environment.uni_desktop
+
+    else:
+        raise ValueError(f"Unknown host: {platform.node()}")
 
 
 def _get_config():
@@ -90,8 +98,8 @@ def _get_config():
 
     elif this_env == Environment.macbook_bootcamp:
         return Config(
-            fn_st7_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v7-Wedge"),
-            fn_working_image_base=pathlib.Path(r"C:\Simulations\CeramicBandsData\LocalTest\v7-Wedge\pics"),
+            fn_st7_base=pathlib.Path(r"C:\Users\Tom Wilson\Dropbox\PhD\Ceramic Bands Source Models\v7-Wedge"),
+            fn_working_image_base=pathlib.Path(r"C:\Users\Tom Wilson\Documents\CeramicBandData\pics"),
             screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
             scratch_dir=pathlib.Path(r"C:\Temp"),
             solver=st7.SolverType.stQuasiStatic,
