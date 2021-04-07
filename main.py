@@ -1380,9 +1380,9 @@ if __name__ == "__main__":
         source_file_name=pathlib.Path("TestH-Fine.st7"),
         randomise_orientation=False,
         override_poisson=None,
-        freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
+        freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_three_point],
         scale_model_x=1.0,  # Changing the model dimentions also scales the load.
-        scale_model_y=1.0,
+        scale_model_y=0.3,
     )
 
     main(run_params)

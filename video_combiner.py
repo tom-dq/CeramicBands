@@ -100,3 +100,5 @@ if __name__ == '__main__':
     do_one_dir(r"E:\Simulations\CeramicBands\composed\pure_fine")
     do_one_dir(r"E:\Simulations\CeramicBands\composed\threep_fine")
     do_one_dir(r"E:\Simulations\CeramicBands\composed\pure_fine_narrow")
+    do_one_dir(r"E:\Simulations\CeramicBands\composed\pure_fine_low")
+    do_one_dir(r"E:\Simulations\CeramicBands\composed\pure_fine_med")

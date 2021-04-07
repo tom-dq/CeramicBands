@@ -26,7 +26,8 @@ class CropDims(typing.NamedTuple):
 
 crop_top_f_fine = CropDims(872, 178, 872+2094, 178+561)
 crop_top_bit = CropDims(0, 100, 3840, 100 + 2160//2)
-crop_dims: typing.Optional[CropDims] = crop_top_bit
+crop_top_mid = CropDims(872, 100, 872+2094, 100 + 2160//2)
+crop_dims: typing.Optional[CropDims] = crop_top_mid
 
 
 class SimulationInfo(typing.NamedTuple):
@@ -343,6 +344,9 @@ def do_all_multi_process():
 
         pure_fine_narrow = ['8T', '8X']
 
+        pure_fine_low = ['98', '99', '9A', '9B']
+        pure_fine_med = ['9C', '9D', '9E', '9F']
+
         def do_one(out_dir, end_dirs):
             dirs = [os.path.join(r"E:\Simulations\CeramicBands\v7\pics", ed) for ed in end_dirs]
             for x in pool.imap_unordered(compose_images, interleave_directories(dirs, out_dir)):
@@ -355,12 +359,14 @@ def do_all_multi_process():
         # do_one(r"E:\Simulations\CeramicBands\composed\threep_med", threep_med)
         # do_one(r"E:\Simulations\CeramicBands\composed\pure_fine", pure_fine)
         # do_one(r"E:\Simulations\CeramicBands\composed\threep_fine", threep_fine)
-        do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_narrow", pure_fine_narrow)
+        # do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_narrow", pure_fine_narrow)
+        do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_low", pure_fine_low)
+        do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_med", pure_fine_med)
 
 
 
 def _get_sim_infos():
-    metas = glob.glob(r"E:\Simulations\CeramicBands\v7\pics\[8-9]*\Meta.txt")
+    metas = glob.glob(r"E:\Simulations\CeramicBands\v7\pics\[9]*\Meta.txt")
     for fn in sorted(metas):
         dir_end = pathlib.Path(fn)
 
