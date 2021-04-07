@@ -29,6 +29,7 @@ from tables import Table
 from throttle import Throttler, StoppingCriterion, Shape, ElemPreStrainChangeData, BaseThrottler, RelaxedIncreaseDecrease
 import history
 import model_inspect
+import perturb
 
 import directories
 import state_tracker
@@ -87,6 +88,7 @@ class RunParams(typing.NamedTuple):
     averaging: Averaging
     relaxation: Relaxation
     throttler: BaseThrottler
+    perturbator: perturb.BasePerturbation
     n_steps_major: int
     n_steps_minor_max: int
     start_at_major_ratio: typing.Optional[float]
@@ -971,6 +973,11 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
 
     node_xyz = {node_num: model.St7GetNodeXYZ(node_num) for node_num in model.entity_numbers(st7.Entity.tyNODE)}
 
+    # Perturb the nodes (but leave the node_xyz as unperturbed)
+    node_xyz_perturbed = run_params.perturbator.update_node_locations(node_xyz)
+    for iNode, xyz in node_xyz_perturbed.items():
+        model.St7SetNodeXYZ(iNode, xyz)
+
     elem_conns = {
         plate_num: model.St7GetElementConnection(st7.Entity.tyPLATE, plate_num) for
         plate_num in model.entity_numbers(st7.Entity.tyPLATE)
@@ -1372,12 +1379,13 @@ if __name__ == "__main__":
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
+        perturbator=perturb.IndentCentre(15, 0.2),
         n_steps_major=100,
         n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
         start_at_major_ratio=0.53,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestH-Fine.st7"),
+        source_file_name=pathlib.Path("TestH-Med.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_three_point],
