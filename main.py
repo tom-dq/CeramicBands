@@ -1395,12 +1395,12 @@ if __name__ == "__main__":
         start_at_major_ratio=0.0,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestH-Med.st7"),
+        source_file_name=pathlib.Path("TestH-Fine.st7"),
         randomise_orientation=False,
         override_poisson=None,
-        freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_three_point],
+        freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
         scale_model_x=1.0,  # Changing the model dimentions also scales the load.
-        scale_model_y=0.6,
+        scale_model_y=0.4,
     )
 
     main(run_params)

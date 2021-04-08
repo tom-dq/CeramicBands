@@ -2,6 +2,8 @@
 St7API*.py
 Strand7 R3 API Manual*.pdf
 /venv/*
+/venv-py38/*
+/venv-py39/*
 *.pyc
 /.vscode/settings.json
 *.pstat
