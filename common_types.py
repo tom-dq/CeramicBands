@@ -243,9 +243,14 @@ class ElemVectorDict(dict):
         return ElemVectorDict( (elem, st7.Vector3(x=0.0, y=0.0, z=0.0) ) for elem in elems)
 
 
+class NodeMoveStep(enum.Enum):
+    original = enum.auto()
+    scaled = enum.auto()
+    perturbed = enum.auto()
+
 
 class InitialSetupModelData(typing.NamedTuple):
-    node_xyz: typing.Dict[int, st7.Vector3]
+    node_step_xyz: typing.Dict[NodeMoveStep, typing.Dict[int, st7.Vector3]]
     elem_centroid: typing.Dict[int, st7.Vector3]
     elem_conns: typing.Dict[int, typing.Tuple[int, ...]]
     elem_volume: typing.Dict[int, float]

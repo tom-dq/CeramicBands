@@ -150,7 +150,10 @@ class CentroidAwareScaling(Scaling):
 
         def scale_fact(vol):
             if self.INHIBIT_LARGE_ELEMENTS_YIELDING:
-                return min_elem_size / vol
+                cutoff_vol = 1.5 * min_elem_size
+                clamped_vol = max(vol, cutoff_vol)
+
+                return cutoff_vol / clamped_vol
 
             else:
                 return 1.0

@@ -19,12 +19,12 @@ import shutil
 import config
 
 from averaging import Averaging, AveInRadius, NoAve
-from common_types import SingleValue, XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST, Actuator, SingleValueWithMissingDict
+from common_types import SingleValue, XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST, Actuator, SingleValueWithMissingDict, NodeMoveStep
 from parameter_trend import ParameterTrend
 import parameter_trend
 from distribution import OrientationDistribution, distribute, random_angle_distribution_360deg, wraparound_from_zero
 from relaxation import Relaxation, NoRelax, PropRelax, LimIncRelax
-from scaling import Scaling, SingleHoleCentre, SpacedStepScaling, CosineScaling
+from scaling import Scaling, SingleHoleCentre, SpacedStepScaling, CosineScaling, NoScaling
 from tables import Table
 from throttle import Throttler, StoppingCriterion, Shape, ElemPreStrainChangeData, BaseThrottler, RelaxedIncreaseDecrease
 import history
@@ -425,7 +425,7 @@ def write_out_to_db(
 
     # Deformed positions
     if config.active_config.record_result_history_in_db.only_deformed_node_pos:
-        undef_node_xyz = {node: xyz for node, xyz in init_data.node_xyz.items() if node in init_data.boundary_nodes}
+        undef_node_xyz = {node: xyz for node, xyz in init_data.node_step_xyz.items() if node in init_data.boundary_nodes}
 
     else:
         undef_node_xyz = init_data
@@ -935,7 +935,12 @@ def _initial_scale_node_coords(run_params: RunParams, model: st7.St7Model):
 
 def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_frame: ResultFrame) -> InitialSetupModelData:
 
+    node_step_xyz = dict()
+    node_step_xyz[NodeMoveStep.original] = {node_num: model.St7GetNodeXYZ(node_num) for node_num in model.entity_numbers(st7.Entity.tyNODE)}
+
     _initial_scale_node_coords(run_params, model)
+
+    node_step_xyz[NodeMoveStep.scaled] = {node_num: model.St7GetNodeXYZ(node_num) for node_num in model.entity_numbers(st7.Entity.tyNODE)}
 
     model.St7EnableSaveRestart()
     model.St7EnableSaveLastRestartStep()
@@ -971,12 +976,12 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
     else:
         raise ValueError("Unhandled case")
 
-    node_xyz = {node_num: model.St7GetNodeXYZ(node_num) for node_num in model.entity_numbers(st7.Entity.tyNODE)}
-
-    # Perturb the nodes (but leave the node_xyz as unperturbed)
-    node_xyz_perturbed = run_params.perturbator.update_node_locations(node_xyz)
+    # Perturb the nodes (for wedge inset, etc)
+    node_xyz_perturbed = run_params.perturbator.update_node_locations(node_step_xyz[NodeMoveStep.scaled])
     for iNode, xyz in node_xyz_perturbed.items():
         model.St7SetNodeXYZ(iNode, xyz)
+
+    node_step_xyz[NodeMoveStep.perturbed] = node_xyz_perturbed
 
     elem_conns = {
         plate_num: model.St7GetElementConnection(st7.Entity.tyPLATE, plate_num) for
@@ -1049,7 +1054,7 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
 
 
     return InitialSetupModelData(
-        node_xyz=node_xyz,
+        node_step_xyz=node_step_xyz,
         elem_centroid=elem_centroid,
         elem_conns=elem_conns,
         elem_volume=elem_volume,
@@ -1165,7 +1170,7 @@ def main(run_params: RunParams):
                 f_orient.write(f"{elem_num}\t{angle_wrap}\n")
 
         run_params.scaling.assign_centroids(init_data)
-        averaging.populate_radius(init_data.node_xyz, init_data.elem_conns)
+        averaging.populate_radius(init_data.node_step_xyz[NodeMoveStep.perturbed], init_data.elem_conns)
 
         # Dummy init values
         prestrain_update = PrestrainUpdate.zero()
@@ -1358,6 +1363,7 @@ if __name__ == "__main__":
         return num_elems * FINE_ELEM_LEN
 
 
+    no_scaling = NoScaling()
     scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(0.075), amplitude=0.5, hole_width=elem_len_mod(0.01)) # 0.011112 is three elements on Fine.
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
     # scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=elem_len_mod(0.01))
@@ -1373,16 +1379,20 @@ if __name__ == "__main__":
         n_exponent=32,
     )
 
+    perturbator_wedge_wide = perturb.IndentCentre(10, 0.05)
+    perturbator_wedge_sharp = perturb.IndentCentre(50, 0.05)
+    perturbator_sphere = perturb.SphericalIndentCenter(0.2, 0.05)
+
     run_params = RunParams(
         actuator=Actuator.e_local,
-        scaling=scaling,
+        scaling=no_scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        perturbator=perturb.IndentCentre(15, 0.2),
+        perturbator=perturbator_wedge_sharp,
         n_steps_major=100,
         n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
-        start_at_major_ratio=0.53,  # 0.42  # 0.38 for TestE, 0.53 for TestF
+        start_at_major_ratio=0.0,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
         source_file_name=pathlib.Path("TestH-Med.st7"),
@@ -1390,7 +1400,7 @@ if __name__ == "__main__":
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_three_point],
         scale_model_x=1.0,  # Changing the model dimentions also scales the load.
-        scale_model_y=0.3,
+        scale_model_y=0.6,
     )
 
     main(run_params)
