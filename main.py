@@ -1379,18 +1379,19 @@ if __name__ == "__main__":
         n_exponent=32,
     )
 
+    perturbator_none = perturb.NoPerturb()
     perturbator_wedge_wide = perturb.IndentCentre(10, 0.05)
     perturbator_wedge_sharp = perturb.IndentCentre(50, 0.05)
     perturbator_sphere = perturb.SphericalIndentCenter(0.2, 0.05)
 
     run_params = RunParams(
         actuator=Actuator.e_local,
-        scaling=no_scaling,
+        scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
-        perturbator=perturbator_wedge_sharp,
-        n_steps_major=100,
+        perturbator=perturbator_none,
+        n_steps_major=500,
         n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
         start_at_major_ratio=0.0,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
@@ -1398,7 +1399,7 @@ if __name__ == "__main__":
         source_file_name=pathlib.Path("TestH-Fine.st7"),
         randomise_orientation=False,
         override_poisson=None,
-        freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
+        freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_three_point],
         scale_model_x=1.0,  # Changing the model dimentions also scales the load.
         scale_model_y=0.4,
     )
