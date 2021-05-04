@@ -1,4 +1,7 @@
 import itertools
+import pathlib
+import glob
+import multiprocessing
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -79,6 +82,8 @@ def _node_of_top_line(hist: history.DB) -> typing.FrozenSet[int]:
 
     row_skeleton = history.NodePosition._all_nones()._replace(result_case_num=1)
     node_first_increment = list(hist.get_all_matching(row_skeleton))
+    if not node_first_increment:
+        return frozenset()
 
     top_y = max(n.y for n in node_first_increment)
 
@@ -265,17 +270,21 @@ def create_subplots(sub_graph_flags: SubGraphs) -> typing.Tuple[matplotlib.pyplo
 
 
 
-def animate_test():
-    db_fn = r"E:\Simulations\CeramicBands\v7\pics\8X\history.db"
+def animate_movie(db_fn: str, graph_movie_fn: str):
+    # db_fn = r"E:\Simulations\CeramicBands\v7\pics\8X\history.db"
     movie_writer = ThisWriter(fps=30)
 
-    sub_graph_flags = SubGraphs(force_disp=False, surface_absolute=False, surface_deviation=True, columns_strain_x=True)
+    sub_graph_flags = SubGraphs(force_disp=True, surface_absolute=False, surface_deviation=True, columns_strain_x=True)
     fig, sub_graphs = create_subplots(sub_graph_flags)
 
     # fig.tight_layout()
-    with movie_writer.saving(fig, r'E:\TEMP\8X-D.mp4', dpi=DPI_FIG):
+    with movie_writer.saving(fig, graph_movie_fn, dpi=DPI_FIG):
         with history.DB(db_fn) as hist:
             top_nodes = _node_of_top_line(hist)
+
+            if not top_nodes:
+                # Empty DB - get out of here.
+                return
 
             lims = get_limits_graphs(hist, top_nodes, sub_graphs)
 
@@ -346,10 +355,42 @@ def compose_graphs(hist: history.DB, top_nodes, db_res_case, sub_graphs: SubGrap
     return graphed_something_x
 
 
+def make_graph_in_working_dir(working_dir: str):
+    working_dir = pathlib.Path(working_dir)
+
+    db_fn = working_dir / "history.db"
+    graph_movie_file = f"graphs-{working_dir.parts[-1]}-with-fd.mp4"
+    graph_movie_fn = working_dir / graph_movie_file
+
+    if not graph_movie_fn.is_file():
+        animate_movie(str(db_fn), str(graph_movie_fn))
+        return f"Finished {graph_movie_fn}"
+
+    else:
+        return f"Skipped  {graph_movie_fn}"
+
+
+def make_all_graph_movies_mp():
+    N_WORKERS=14
+
+    dirs_to_do = glob.glob(r"E:\Simulations\CeramicBands\v7\pics\[9-A]*")
+
+    with multiprocessing.Pool(N_WORKERS) as pool:
+        for x in pool.imap_unordered(make_graph_in_working_dir, dirs_to_do):
+            print(x)
+
+
+def make_all_graph_movies():
+    db_fn = r"E:\Simulations\CeramicBands\v7\pics\98\history.db"
+    graph_movie_fn = r"E:\Simulations\CeramicBands\v7\pics\98\graphs-98.mp4"
+
+    animate_movie(db_fn, graph_movie_fn)
+
 
 if __name__ == "__main__":
-    # animate_test()
+    make_all_graph_movies_mp()
 
+if 2==3:
     db_fn = r"E:\Simulations\CeramicBands\v7\pics\8X\history - Copy.db"
 
     sub_graph_flags = SubGraphs(force_disp=False, surface_absolute=True, surface_deviation=False, columns_strain_x=False)

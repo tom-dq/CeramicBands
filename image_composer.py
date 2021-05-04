@@ -27,7 +27,7 @@ class CropDims(typing.NamedTuple):
 crop_top_f_fine = CropDims(872, 178, 872+2094, 178+561)
 crop_top_bit = CropDims(0, 100, 3840, 100 + 2160//2)
 crop_top_mid = CropDims(872, 100, 872+2094, 100 + 2160//2)
-crop_dims: typing.Optional[CropDims] = crop_top_mid
+crop_dims: typing.Optional[CropDims] = None
 
 
 class SimulationInfo(typing.NamedTuple):
@@ -40,6 +40,7 @@ class SimulationInfo(typing.NamedTuple):
     freedom_cases: str
     scale_model_x: float
     scale_model_y: float
+    perturbator: str
 
 
     @classmethod
@@ -55,6 +56,7 @@ class SimulationInfo(typing.NamedTuple):
             "freedom_cases": "bending_pure",
             "scale_model_x": 1.0,
             "scale_model_y": 1.0,
+            "perturbator": "None",
         }
 
         working_dict.update(_NEW_VARIABLES)
@@ -347,6 +349,8 @@ def do_all_multi_process():
         pure_fine_low = ['98', '99', '9A', '9B']
         pure_fine_med = ['9C', '9D', '9E', '9F']
 
+        pure_fine_all = ['98', '99', '9A', '9B', '9C', '9D', '9E', '9F']
+
         def do_one(out_dir, end_dirs):
             dirs = [os.path.join(r"E:\Simulations\CeramicBands\v7\pics", ed) for ed in end_dirs]
             for x in pool.imap_unordered(compose_images, interleave_directories(dirs, out_dir)):
@@ -360,13 +364,14 @@ def do_all_multi_process():
         # do_one(r"E:\Simulations\CeramicBands\composed\pure_fine", pure_fine)
         # do_one(r"E:\Simulations\CeramicBands\composed\threep_fine", threep_fine)
         # do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_narrow", pure_fine_narrow)
-        do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_low", pure_fine_low)
-        do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_med", pure_fine_med)
+        # do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_low", pure_fine_low)
+        # do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_med", pure_fine_med)
+        do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_all_uncropped", pure_fine_all)
 
 
 
 def _get_sim_infos():
-    metas = glob.glob(r"E:\Simulations\CeramicBands\v7\pics\[9]*\Meta.txt")
+    metas = glob.glob(r"E:\Simulations\CeramicBands\v7\pics\[9-A]*\Meta.txt")
     for fn in sorted(metas):
         dir_end = pathlib.Path(fn)
 
@@ -390,7 +395,7 @@ def print_sim_infos():
 
 
 if __name__ == "__main__":
-    # print_sim_infos()
+    print_sim_infos()
     do_all_multi_process()
 
 if __name__ == "__ASDASDASD__":
