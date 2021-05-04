@@ -381,19 +381,20 @@ def make_all_graph_movies_mp():
 
 
 def make_all_graph_movies():
-    db_fn = r"E:\Simulations\CeramicBands\v7\pics\98\history.db"
-    graph_movie_fn = r"E:\Simulations\CeramicBands\v7\pics\98\graphs-98.mp4"
+    db_fn = r"E:\Simulations\CeramicBands\v7\pics\9K\history.db"
+    graph_movie_fn = r"E:\Simulations\CeramicBands\v7\pics\9K\graphs-9K-bbb.mp4"
 
     animate_movie(db_fn, graph_movie_fn)
 
 
 if __name__ == "__main__":
-    make_all_graph_movies_mp()
+    # make_all_graph_movies()
+    pass
 
-if 2==3:
-    db_fn = r"E:\Simulations\CeramicBands\v7\pics\8X\history - Copy.db"
+if __name__ == "__main__":
+    db_fn = r"E:\Simulations\CeramicBands\v7\pics\98\history.db"
 
-    sub_graph_flags = SubGraphs(force_disp=False, surface_absolute=True, surface_deviation=False, columns_strain_x=False)
+    sub_graph_flags = SubGraphs(force_disp=True, surface_absolute=False, surface_deviation=False, columns_strain_x=False)
     fig, sub_graphs = create_subplots(sub_graph_flags)
 
     with history.DB(db_fn) as hist:
@@ -402,3 +403,4 @@ if 2==3:
         compose_graphs(hist, top_nodes, 1000, sub_graphs)
 
     fig.show()
+    input()

@@ -27,7 +27,7 @@ class CropDims(typing.NamedTuple):
 crop_top_f_fine = CropDims(872, 178, 872+2094, 178+561)
 crop_top_bit = CropDims(0, 100, 3840, 100 + 2160//2)
 crop_top_mid = CropDims(872, 100, 872+2094, 100 + 2160//2)
-crop_dims: typing.Optional[CropDims] = None
+crop_dims: typing.Optional[CropDims] = crop_top_bit
 
 
 class SimulationInfo(typing.NamedTuple):
@@ -76,6 +76,9 @@ class SimulationInfo(typing.NamedTuple):
             working_dict["adj_strain_ratio_true"] = working_dict["adj_strain_ratio"] ** 2
 
         _ = working_dict.pop("adj_strain_ratio", None)
+
+        unquoted = working_dict["perturbator"]
+        working_dict["perturbator"] = f'"{unquoted}"'
         return cls(**working_dict)
 
 
@@ -351,6 +354,8 @@ def do_all_multi_process():
 
         pure_fine_all = ['98', '99', '9A', '9B', '9C', '9D', '9E', '9F']
 
+        load_method = ['99', 'A5']
+
         def do_one(out_dir, end_dirs):
             dirs = [os.path.join(r"E:\Simulations\CeramicBands\v7\pics", ed) for ed in end_dirs]
             for x in pool.imap_unordered(compose_images, interleave_directories(dirs, out_dir)):
@@ -366,7 +371,7 @@ def do_all_multi_process():
         # do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_narrow", pure_fine_narrow)
         # do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_low", pure_fine_low)
         # do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_med", pure_fine_med)
-        do_one(r"E:\Simulations\CeramicBands\composed\pure_fine_all_uncropped", pure_fine_all)
+        do_one(r"E:\Simulations\CeramicBands\composed\load_method", load_method)
 
 
 
@@ -389,8 +394,9 @@ def print_sim_infos():
         sim_info = sim_info_dir_end[0]
         return sim_info.source_file_name, sim_info.freedom_cases
 
+    print("dir", *SimulationInfo._fields, sep='\t')
     for sim_info, dir_end in sorted(_get_sim_infos(), key=sort_key):
-        print(str(dir_end.parents[0]), sim_info)
+        print(str(dir_end.parents[0]), *sim_info, sep='\t')
 
 
 
