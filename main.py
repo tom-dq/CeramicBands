@@ -989,7 +989,7 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
     }
 
     elem_volume = {
-        plate_num: model.St7GetElementData(st7.Entity.tyPLATE, plate_num) for
+        plate_num: model.St7GetElementData(st7.Entity.tyPLATE, plate_num, res_case_num=0) for
         plate_num in model.entity_numbers(st7.Entity.tyPLATE)
     }
 
@@ -1364,7 +1364,7 @@ if __name__ == "__main__":
 
 
     no_scaling = NoScaling()
-    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(0.075), amplitude=0.5, hole_width=elem_len_mod(0.01)) # 0.011112 is three elements on Fine.
+    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(0.075), amplitude=0.2, hole_width=elem_len_mod(0.01)) # 0.011112 is three elements on Fine.
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
     # scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=elem_len_mod(0.01))
     # scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
@@ -1391,7 +1391,7 @@ if __name__ == "__main__":
         relaxation=relaxation,
         throttler=throttler,
         perturbator=perturbator_none,
-        n_steps_major=500,
+        n_steps_major=100,
         n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
         start_at_major_ratio=0.0,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
@@ -1401,7 +1401,7 @@ if __name__ == "__main__":
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_three_point],
         scale_model_x=1.0,  # Changing the model dimentions also scales the load.
-        scale_model_y=0.4,
+        scale_model_y=0.3,
     )
 
     main(run_params)
