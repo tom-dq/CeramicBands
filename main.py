@@ -100,6 +100,8 @@ class RunParams(typing.NamedTuple):
     freedom_cases: typing.List[ModelFreedomCase]
     scale_model_x: float
     scale_model_y: float
+    max_load_ratio: float
+    unload_step: bool
 
     def summary_strings(self) -> typing.Iterable[str]:
         yield "RunParams:\n"
@@ -1184,7 +1186,7 @@ def main(run_params: RunParams):
             run_params.parameter_trend.current_inc.inc_major()
 
             # Update the model with the new load
-            this_load_factor = (run_params.parameter_trend.current_inc.major_inc + 1) / run_params.n_steps_major
+            this_load_factor = run_params.max_load_ratio * (run_params.parameter_trend.current_inc.major_inc + 1) / run_params.n_steps_major
 
             should_skip = False
             if run_params.start_at_major_ratio is not None:
@@ -1391,7 +1393,7 @@ if __name__ == "__main__":
         relaxation=relaxation,
         throttler=throttler,
         perturbator=perturbator_none,
-        n_steps_major=100,
+        n_steps_major=200,
         n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
         start_at_major_ratio=0.0,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
@@ -1399,9 +1401,11 @@ if __name__ == "__main__":
         source_file_name=pathlib.Path("TestH-Fine.st7"),
         randomise_orientation=False,
         override_poisson=None,
-        freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_three_point],
+        freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
         scale_model_x=1.0,  # Changing the model dimentions also scales the load.
         scale_model_y=0.3,
+        max_load_ratio=2.0,
+        unload_step=False,
     )
 
     main(run_params)
