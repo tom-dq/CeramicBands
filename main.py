@@ -308,7 +308,7 @@ def apply_prestrain(model: st7.St7Model, case_num: int, elem_prestrains: typing.
 
 
 def setup_model_window(run_params: RunParams, model_window: st7.St7ModelWindow, case_num: int):
-    model_window.St7SetPlateResultDisplay_None()
+    # model_window.St7SetPlateResultDisplay_None()
 
     
     model_window.St7SetWindowResultCase(case_num)
@@ -1158,7 +1158,7 @@ def main(run_params: RunParams):
     print()
 
     with contextlib.ExitStack() as exit_stack:
-        model = exit_stack.enter_context(st7.St7ExistingModel(fn_st7, config.active_config.scratch_dir))
+        model = exit_stack.enter_context(st7.St7OpenFile(fn_st7, config.active_config.scratch_dir))
         model_window = exit_stack.enter_context(model.St7CreateModelWindow(DONT_MAKE_MODEL_WINDOW))
         db = exit_stack.enter_context(history.DB(fn_db))
 
@@ -1370,7 +1370,7 @@ if __name__ == "__main__":
     no_scaling = NoScaling()
     scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(0.075), amplitude=0.2, hole_width=elem_len_mod(0.01)) # 0.011112 is three elements on Fine.
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
-    # scaling = SingleHoleCentre(pt=pt, y_depth=0.01, amplitude=0.5, hole_width=elem_len_mod(0.01))
+    # scaling = SingleHoleCentre(pt=pt, y_depth=0.02, amplitude=0.5, hole_width=elem_len_mod(0.01))
     # scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
     # scaling_small_centre = SingleHoleCentre(pt=pt, y_depth=0.2, amplitude=0.5, hole_width=0.05)
     # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
@@ -1397,7 +1397,7 @@ if __name__ == "__main__":
         perturbator=perturbator_none,
         n_steps_major=200,
         n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
-        start_at_major_ratio=0.0,  # 0.42  # 0.38 for TestE, 0.53 for TestF
+        start_at_major_ratio=0.32,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
         source_file_name=pathlib.Path("TestH-Fine.st7"),
@@ -1405,7 +1405,7 @@ if __name__ == "__main__":
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
         scale_model_x=1.0,  # Changing the model dimentions also scales the load.
-        scale_model_y=0.3,
+        scale_model_y=0.3,  # 0.3 Seems good
         max_load_ratio=2.0,
         unload_step=False,
     )

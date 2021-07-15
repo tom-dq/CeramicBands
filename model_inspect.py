@@ -5,6 +5,7 @@ import typing
 import itertools
 
 from st7_wrap import st7
+from st7_wrap import const
 
 if typing.TYPE_CHECKING:
     from main import RunParams
@@ -14,8 +15,8 @@ def get_boundary_nodes(model: st7.St7Model) -> typing.FrozenSet[int]:
 
     elem_count = collections.Counter()
 
-    for plate_num in model.entity_numbers(st7.Entity.tyPLATE):
-        nodes = model.St7GetElementConnection(st7.Entity.tyPLATE, plate_num)
+    for plate_num in model.entity_numbers(const.Entity.tyPLATE):
+        nodes = model.St7GetElementConnection(const.Entity.tyPLATE, plate_num)
         for node in nodes:
             elem_count[node] += 1
 
