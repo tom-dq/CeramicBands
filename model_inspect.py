@@ -4,7 +4,7 @@ import collections
 import typing
 import itertools
 
-import st7
+from st7_wrap import st7
 
 if typing.TYPE_CHECKING:
     from main import RunParams

@@ -10,7 +10,8 @@ import numpy
 import scipy.spatial
 import scipy.sparse
 
-import st7
+from st7_wrap import st7
+
 from common_types import T_Elem, T_Result
 from common_types import TEMP_ELEMS_OF_INTEREST
 

@@ -5,7 +5,9 @@ import random
 import typing
 
 import parameter_trend
-import st7
+
+from st7_wrap import st7
+
 from common_types import SingleValue, T_ScaleKey, InitialSetupModelData, ElemVectorDict
 
 

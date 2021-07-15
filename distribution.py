@@ -2,10 +2,9 @@ import numpy
 from scipy.spatial import distance_matrix, cKDTree
 import typing
 import random
-
-import st7
 import math
 
+from st7_wrap import st7
 
 class OrientationDistribution(typing.NamedTuple):
     num_seeds: int

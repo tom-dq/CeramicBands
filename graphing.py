@@ -11,7 +11,7 @@ from scipy.optimize import curve_fit
 
 import typing
 
-import st7
+from st7_wrap import st7
 
 import history
 

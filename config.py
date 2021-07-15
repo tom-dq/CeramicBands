@@ -3,7 +3,8 @@ import typing
 import pathlib
 import platform
 
-import st7
+from st7_wrap import st7
+from st7_wrap import const
 
 class Environment(enum.Enum):
     uni_desktop = enum.auto()
@@ -40,7 +41,7 @@ class Config(typing.NamedTuple):
     fn_working_image_base: pathlib.Path
     screenshot_res: st7.CanvasSize
     scratch_dir: pathlib.Path
-    solver: st7.SolverType
+    solver: const.SolverType
     qsa_steps_per_file: int
     qsa_time_step_size: float
     max_iters: typing.Optional[MaxIters]
@@ -85,7 +86,7 @@ def _get_config():
             # screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
             screenshot_res=st7.CanvasSize(3840, 2160), # 4K
             scratch_dir=pathlib.Path(r"C:\Temp"),
-            solver=st7.SolverType.stQuasiStatic,
+            solver=const.SolverType.stQuasiStatic,
             qsa_steps_per_file=10,
             qsa_time_step_size=0.1,
             max_iters=MaxIters(major_step=5, minor_step=1),
@@ -102,7 +103,7 @@ def _get_config():
             fn_working_image_base=pathlib.Path(r"C:\Users\Tom Wilson\Documents\CeramicBandData\pics"),
             screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
             scratch_dir=pathlib.Path(r"C:\Temp"),
-            solver=st7.SolverType.stQuasiStatic,
+            solver=const.SolverType.stQuasiStatic,
             qsa_steps_per_file=10,
             qsa_time_step_size=0.1,
             max_iters=MaxIters(major_step=5, minor_step=1),

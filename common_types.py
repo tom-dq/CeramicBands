@@ -6,7 +6,8 @@ import enum
 
 import numpy.linalg
 
-import st7
+from st7_wrap import st7
+from st7_wrap import const
 
 class XY(typing.NamedTuple):
     x: float
@@ -57,12 +58,12 @@ class Actuator(enum.Enum):
             raise ValueError(self)
 
     @property
-    def input_result(self) -> st7.PlateResultType:
+    def input_result(self) -> const.PlateResultType:
         if self in (Actuator.S11, Actuator.SvM, Actuator.s_XX, Actuator.s_local):
-            return st7.PlateResultType.rtPlateStress
+            return const.PlateResultType.rtPlateStress
 
         elif self in (Actuator.e_local, Actuator.e_xx_only, Actuator.e_11):
-            return st7.PlateResultType.rtPlateTotalStrain
+            return const.PlateResultType.rtPlateTotalStrain
 
         else:
             raise ValueError(self)

@@ -2,7 +2,7 @@ import abc
 import typing
 import math
 
-import st7
+from st7_wrap import st7
 
 
 

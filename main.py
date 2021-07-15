@@ -11,10 +11,12 @@ import datetime
 import contextlib
 from PIL import Image
 
-import st7
 import pathlib
 import math
 import shutil
+
+from st7_wrap import st7
+from st7_wrap import const
 
 import config
 
@@ -302,7 +304,7 @@ def apply_prestrain(model: st7.St7Model, case_num: int, elem_prestrains: typing.
 
     for plate_num, prestrain_val in elem_to_ratio.items():
         prestrain = st7.Vector3(x=prestrain_val.xx, y=prestrain_val.yy, z=prestrain_val.zz)
-        model.St7SetPlatePreLoad3(plate_num, case_num, st7.PreLoadType.plPlatePreStrain, prestrain)
+        model.St7SetPlatePreLoad3(plate_num, case_num, const.PreLoadType.plPlatePreStrain, prestrain)
 
 
 def setup_model_window(run_params: RunParams, model_window: st7.St7ModelWindow, case_num: int):
@@ -310,11 +312,11 @@ def setup_model_window(run_params: RunParams, model_window: st7.St7ModelWindow, 
 
     
     model_window.St7SetWindowResultCase(case_num)
-    model_window.St7SetEntityContourIndex(st7.Entity.tyPLATE, st7.PlateContour.ctPlatePreStrainMagnitude)
-    model_window.St7SetDisplacementScale(5.0, st7.ScaleType.dsAbsolute)
+    model_window.St7SetEntityContourIndex(const.Entity.tyPLATE, const.PlateContour.ctPlatePreStrainMagnitude)
+    model_window.St7SetDisplacementScale(5.0, const.ScaleType.dsAbsolute)
 
     # Set the contour limits
-    contour_settings_limit = model_window.St7GetEntityContourSettingsLimits(st7.Entity.tyPLATE)
+    contour_settings_limit = model_window.St7GetEntityContourSettingsLimits(const.Entity.tyPLATE)
 
     prestrain_contour_max = run_params.parameter_trend.dilation_ratio.get_max_value_returned()
     new_contour_limits = dataclasses.replace(contour_settings_limit, 
@@ -325,7 +327,7 @@ def setup_model_window(run_params: RunParams, model_window: st7.St7ModelWindow, 
         ipMaxLimit=prestrain_contour_max
         )
 
-    model_window.St7SetEntityContourSettingsLimits(st7.Entity.tyPLATE, new_contour_limits)
+    model_window.St7SetEntityContourSettingsLimits(const.Entity.tyPLATE, new_contour_limits)
 
     # contour_settings_style = model_window.St7GetEntityContourSettingsStyle(st7.Entity.tyPLATE)
     
@@ -341,7 +343,7 @@ def write_out_screenshot(run_params: RunParams, model_window: st7.St7ModelWindow
     e = Warning("Logical Error")
     while not exported_image and (next_wait < 1.0):
         try:
-            model_window.St7ExportImage(current_result_frame.image_file, st7.ImageType.itPNG, config.active_config.screenshot_res.width, config.active_config.screenshot_res.height)
+            model_window.St7ExportImage(current_result_frame.image_file, const.ImageType.itPNG, config.active_config.screenshot_res.width, config.active_config.screenshot_res.height)
             exported_image = True
 
         except OSError as e:
@@ -408,8 +410,8 @@ def write_out_to_db(
 
     # Enforced displacements for F-D curves - always extract this
     def make_fd_results(node_num: int, dof: st7.DoF):
-        disp = results.St7GetNodeResult(st7.NodeResultType.rtNodeDisp, node_num, current_result_frame.result_case_num)
-        react = results.St7GetNodeResult(st7.NodeResultType.rtNodeReact, node_num, current_result_frame.result_case_num)
+        disp = results.St7GetNodeResult(const.NodeResultType.rtNodeDisp, node_num, current_result_frame.result_case_num)
+        react = results.St7GetNodeResult(const.NodeResultType.rtNodeReact, node_num, current_result_frame.result_case_num)
         return history.LoadDisplacementPoint(
             result_case_num=db_case_num,
             node_num=node_num,
@@ -483,7 +485,7 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
     res_type = phase_change_actuator.input_result
 
     if phase_change_actuator == Actuator.S11:
-        res_sub_type = st7.PlateResultSubType.stPlateCombined
+        res_sub_type = const.PlateResultSubType.stPlateCombined
         index_list = [
             st7.St7API.ipPlateCombPrincipal11,
             st7.St7API.ipPlateCombPrincipal11,
@@ -491,7 +493,7 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
         ]
 
     elif phase_change_actuator == Actuator.SvM:
-        res_sub_type = st7.PlateResultSubType.stPlateCombined
+        res_sub_type = const.PlateResultSubType.stPlateCombined
         index_list = [
             st7.St7API.ipPlateCombVonMises,
             st7.St7API.ipPlateCombVonMises,
@@ -499,7 +501,7 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
         ]
 
     elif phase_change_actuator == Actuator.s_XX:
-        res_sub_type = st7.PlateResultSubType.stPlateGlobal
+        res_sub_type = const.PlateResultSubType.stPlateGlobal
         index_list = [
             st7.St7API.ipPlateGlobalXX,
             st7.St7API.ipPlateGlobalXX,
@@ -507,7 +509,7 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
         ]
 
     elif phase_change_actuator in (Actuator.s_local, Actuator.e_local):
-        res_sub_type = st7.PlateResultSubType.stPlateLocal
+        res_sub_type = const.PlateResultSubType.stPlateLocal
         index_list = [
             st7.St7API.ipPlateLocalxx,
             st7.St7API.ipPlateLocalyy,
@@ -515,7 +517,7 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
         ]
 
     elif phase_change_actuator == Actuator.e_11:
-        res_sub_type = st7.PlateResultSubType.stPlateLocal
+        res_sub_type = const.PlateResultSubType.stPlateLocal
         index_list = [
             st7.St7API.ipPlateLocalxx,
             st7.St7API.ipPlateLocalyy,
@@ -526,7 +528,7 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
         ]
 
     elif phase_change_actuator == Actuator.e_xx_only:
-        res_sub_type = st7.PlateResultSubType.stPlateLocal
+        res_sub_type = const.PlateResultSubType.stPlateLocal
         index_list = [
             st7.St7API.ipPlateLocalxx,
         ]
@@ -544,8 +546,8 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
                     res_sub_type,
                     plate_num,
                     case_num,
-                    st7.SampleLocation.spCentroid,
-                    st7.PlateSurface.psPlateMidPlane,
+                    const.SampleLocation.spCentroid,
+                    const.PlateSurface.psPlateMidPlane,
                     0,
                 )
                 worked = True
@@ -568,13 +570,13 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
         while len(result_values) < 6:
             result_values.append(0.0)
 
-        if phase_change_actuator.input_result == st7.PlateResultType.rtPlateTotalStrain:
+        if phase_change_actuator.input_result == const.PlateResultType.rtPlateTotalStrain:
             return st7.StrainTensor(*result_values)
 
         else:
             raise ValueError("Only doing strains now!")
 
-    raw_dict = {plate_num: one_plate_result(plate_num) for plate_num in results.model.entity_numbers(st7.Entity.tyPLATE)}
+    raw_dict = {plate_num: one_plate_result(plate_num) for plate_num in results.model.entity_numbers(const.Entity.tyPLATE)}
     return ElemVectorDict(raw_dict)
 
 
@@ -582,7 +584,7 @@ def get_node_positions_deformed(orig_positions: T_ResultDict, results: st7.St7Re
     """Deformed node positions - only consider those in orig_positions"""
 
     def one_node_pos(node_num: int, orig_pos: st7.Vector3):
-        node_res = results.St7GetNodeResult(st7.NodeResultType.rtNodeDisp, node_num, case_num).results
+        node_res = results.St7GetNodeResult(const.NodeResultType.rtNodeDisp, node_num, case_num).results
         deformation = st7.Vector3(x=node_res[0], y=node_res[1], z=node_res[2])
         return orig_pos + deformation
 
@@ -736,14 +738,14 @@ class ResultFrame(typing.NamedTuple):
 
         this_case_with_no_history = self._replace(prev_result_case=None)
 
-        if self.configuration.solver == st7.SolverType.stNonlinearStatic:
+        if self.configuration.solver == const.SolverType.stNonlinearStatic:
             return self._replace(
                 result_case_num=proposed_new_result_case_num,
                 global_result_case_num=self.global_result_case_num + 1,
                 prev_result_case=this_case_with_no_history,
             )
 
-        elif self.configuration.solver == st7.SolverType.stQuasiStatic:
+        elif self.configuration.solver == const.SolverType.stQuasiStatic:
             need_new_result_file = proposed_new_result_case_num > self.configuration.qsa_steps_per_file
 
             if need_new_result_file:
@@ -777,10 +779,10 @@ class ResultFrame(typing.NamedTuple):
 
     @property
     def result_file(self) -> pathlib.Path:
-        if self.configuration.solver == st7.SolverType.stNonlinearStatic:
+        if self.configuration.solver == const.SolverType.stNonlinearStatic:
             return self.st7_file.with_suffix(".NLA")
 
-        elif self.configuration.solver == st7.SolverType.stQuasiStatic:
+        elif self.configuration.solver == const.SolverType.stQuasiStatic:
             number_suffix = f"{self.result_file_index:04}"
             new_name = f"{self.st7_file.stem}_{number_suffix}.QSA"
             return self.st7_file.with_name(new_name)
@@ -790,10 +792,10 @@ class ResultFrame(typing.NamedTuple):
 
     @property
     def restart_file(self) -> pathlib.Path:
-        if self.configuration.solver == st7.SolverType.stNonlinearStatic:
+        if self.configuration.solver == const.SolverType.stNonlinearStatic:
             return self.result_file.with_suffix(".SRF")
 
-        elif self.configuration.solver == st7.SolverType.stQuasiStatic:
+        elif self.configuration.solver == const.SolverType.stQuasiStatic:
             return self.result_file.with_suffix(".QRF")
 
         else:
@@ -815,13 +817,13 @@ class ResultFrame(typing.NamedTuple):
 def add_increment(model: st7.St7Model, result_frame: ResultFrame, this_load_factor, inc_name) -> ResultFrame:
     next_result_frame = result_frame.get_next_result_frame(this_load_factor)
 
-    if result_frame.configuration.solver == st7.SolverType.stNonlinearStatic:
+    if result_frame.configuration.solver == const.SolverType.stNonlinearStatic:
         model.St7AddNLAIncrement(STAGE, inc_name)
         this_inc = model.St7GetNumNLAIncrements(STAGE)
         if next_result_frame.global_result_case_num != this_inc:
             raise ValueError(f"Got {this_inc} from St7GetNumNLAIncrements but {next_result_frame.global_result_case_num} from the ResultFrame...")
 
-    elif result_frame.configuration.solver == st7.SolverType.stQuasiStatic:
+    elif result_frame.configuration.solver == const.SolverType.stQuasiStatic:
         # For QSA, we roll over the result files. So sometimes this will have changed.
         model.St7SetResultFileName(next_result_frame.result_file)
         model.St7SetStaticRestartFile(next_result_frame.restart_file)
@@ -836,10 +838,10 @@ def add_increment(model: st7.St7Model, result_frame: ResultFrame, this_load_fact
 
 def set_restart_for(model: st7.St7Model, result_frame: ResultFrame):
     previous_result_frame = result_frame.prev_result_case
-    if result_frame.configuration.solver == st7.SolverType.stNonlinearStatic:
+    if result_frame.configuration.solver == const.SolverType.stNonlinearStatic:
         model.St7SetNLAInitial(previous_result_frame.result_file, previous_result_frame.result_case_num)
 
-    elif result_frame.configuration.solver == st7.SolverType.stQuasiStatic:
+    elif result_frame.configuration.solver == const.SolverType.stQuasiStatic:
         model.St7SetQSAInitial(previous_result_frame.result_file, previous_result_frame.result_case_num)
 
     else:
@@ -849,7 +851,7 @@ def set_restart_for(model: st7.St7Model, result_frame: ResultFrame):
 def set_load_increment_table(run_params: RunParams, model: st7.St7Model, result_frame: ResultFrame, this_bending_load_factor, prestrain_load_case_num):
     # Set the load and freedom case - can use either method. Don't use both though!
 
-    if result_frame.configuration.solver == st7.SolverType.stNonlinearStatic:
+    if result_frame.configuration.solver == const.SolverType.stNonlinearStatic:
 
         for iFreedomCase in model.freedom_case_numbers():
             model_freedom_case = ModelFreedomCase(iFreedomCase)
@@ -875,7 +877,7 @@ def set_load_increment_table(run_params: RunParams, model: st7.St7Model, result_
 
             model.St7SetNLALoadIncrementFactor(STAGE, result_frame.result_case_num, iLoadCase, factor)
 
-    elif result_frame.configuration.solver == st7.SolverType.stQuasiStatic:
+    elif result_frame.configuration.solver == const.SolverType.stQuasiStatic:
         # Enable / disable the load and freedom cases.
         for iFreedomCase in model.freedom_case_numbers():
             if iFreedomCase in run_params.active_freedom_case_numbers:
@@ -898,7 +900,7 @@ def set_load_increment_table(run_params: RunParams, model: st7.St7Model, result_
             scaled_table = result_frame.load_time_table.copy_scaled(1.0, load_scale_factor)
 
             model.St7SetTableTypeData(
-                st7.TableType.ttVsTime,
+                const.TableType.ttVsTime,
                 model_freedom_case.table_id,
                 len(scaled_table.data),
                 scaled_table.as_flat_doubles(),
@@ -913,23 +915,23 @@ def set_max_iters(model: st7.St7Model, max_iters: typing.Optional[config.MaxIter
 
     if max_iters:
         iter_num = max_iters.major_step if use_major else max_iters.minor_step
-        model.St7SetSolverDefaultsLogical(st7.SolverDefaultLogical.spAllowExtraIterations, False)
-        model.St7SetSolverDefaultsInteger(st7.SolverDefaultInteger.spMaxIterationNonlin, iter_num)
+        model.St7SetSolverDefaultsLogical(const.SolverDefaultLogical.spAllowExtraIterations, False)
+        model.St7SetSolverDefaultsInteger(const.SolverDefaultInteger.spMaxIterationNonlin, iter_num)
 
 
 def _override_poisson(model: st7.St7Model, target_rho: float):
-    for prop_num in model.property_numbers(st7.Property.ptPLATEPROP):
+    for prop_num in model.property_numbers(const.Property.ptPLATEPROP):
         existing_prop = model.St7GetPlateIsotropicMaterial(prop_num)
         new_prop = dataclasses.replace(existing_prop, ipPlateIsoPoisson=target_rho)
         model.St7SetPlateIsotropicMaterial(prop_num, new_prop)
 
-    for prop_num in model.property_numbers(st7.Property.ptBRICKPROP):
+    for prop_num in model.property_numbers(const.Property.ptBRICKPROP):
         raise ValueError("Time to do St7SetBrickIsotropicMaterial!")
 
 
 def _initial_scale_node_coords(run_params: RunParams, model: st7.St7Model):
     # Run this before anything else!
-    for node_num in model.entity_numbers(st7.Entity.tyNODE):
+    for node_num in model.entity_numbers(const.Entity.tyNODE):
         node_xyz = model.St7GetNodeXYZ(node_num)
         new_xyz = node_xyz._replace(x=node_xyz.x * run_params.scale_model_x, y=node_xyz.y * run_params.scale_model_y)
         model.St7SetNodeXYZ(node_num, new_xyz)
@@ -938,18 +940,18 @@ def _initial_scale_node_coords(run_params: RunParams, model: st7.St7Model):
 def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_frame: ResultFrame) -> InitialSetupModelData:
 
     node_step_xyz = dict()
-    node_step_xyz[NodeMoveStep.original] = {node_num: model.St7GetNodeXYZ(node_num) for node_num in model.entity_numbers(st7.Entity.tyNODE)}
+    node_step_xyz[NodeMoveStep.original] = {node_num: model.St7GetNodeXYZ(node_num) for node_num in model.entity_numbers(const.Entity.tyNODE)}
 
     _initial_scale_node_coords(run_params, model)
 
-    node_step_xyz[NodeMoveStep.scaled] = {node_num: model.St7GetNodeXYZ(node_num) for node_num in model.entity_numbers(st7.Entity.tyNODE)}
+    node_step_xyz[NodeMoveStep.scaled] = {node_num: model.St7GetNodeXYZ(node_num) for node_num in model.entity_numbers(const.Entity.tyNODE)}
 
     model.St7EnableSaveRestart()
     model.St7EnableSaveLastRestartStep()
 
     elem_centroid = {
-        elem_num: model.St7GetElementCentroid(st7.Entity.tyPLATE, elem_num, 0)
-        for elem_num in model.entity_numbers(st7.Entity.tyPLATE)
+        elem_num: model.St7GetElementCentroid(const.Entity.tyPLATE, elem_num, 0)
+        for elem_num in model.entity_numbers(const.Entity.tyPLATE)
     }
 
     if run_params.override_poisson is not None:
@@ -957,11 +959,11 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
 
     # Element orientation, if needed.
     if run_params.randomise_orientation == False:
-        elem_axis_angle_deg = {elem_num: 0.0 for elem_num in model.entity_numbers(st7.Entity.tyPLATE)}
+        elem_axis_angle_deg = {elem_num: 0.0 for elem_num in model.entity_numbers(const.Entity.tyPLATE)}
 
     elif run_params.randomise_orientation == True:
         elem_axis_angle_deg = dict()
-        for elem_num in model.entity_numbers(st7.Entity.tyPLATE):
+        for elem_num in model.entity_numbers(const.Entity.tyPLATE):
             rand_ang = random.random() * 360
             elem_axis_angle_deg[elem_num] = rand_ang
             model.St7SetPlateXAngle1(elem_num, rand_ang)
@@ -986,19 +988,19 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
     node_step_xyz[NodeMoveStep.perturbed] = node_xyz_perturbed
 
     elem_conns = {
-        plate_num: model.St7GetElementConnection(st7.Entity.tyPLATE, plate_num) for
-        plate_num in model.entity_numbers(st7.Entity.tyPLATE)
+        plate_num: model.St7GetElementConnection(const.Entity.tyPLATE, plate_num) for
+        plate_num in model.entity_numbers(const.Entity.tyPLATE)
     }
 
     elem_volume = {
-        plate_num: model.St7GetElementData(st7.Entity.tyPLATE, plate_num, res_case_num=0) for
-        plate_num in model.entity_numbers(st7.Entity.tyPLATE)
+        plate_num: model.St7GetElementData(const.Entity.tyPLATE, plate_num, res_case_num=0) for
+        plate_num in model.entity_numbers(const.Entity.tyPLATE)
     }
 
     total_volume = sum(elem_volume.values())
     elem_volume_ratio = {elem: vol/total_volume for elem, vol in elem_volume.items()}
 
-    if initial_result_frame.configuration.solver == st7.SolverType.stNonlinearStatic:
+    if initial_result_frame.configuration.solver == const.SolverType.stNonlinearStatic:
         # If there's no first increment, create one.
         starting_incs = model.St7GetNumNLAIncrements(STAGE)
         if starting_incs == 0:
@@ -1022,7 +1024,7 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
         # Make the time table a single row.
         model.St7SetNumTimeStepRows(1)
         model.St7SetTimeStepData(1, 1, 1, initial_result_frame.configuration.qsa_time_step_size)
-        model.St7SetSolverDefaultsLogical(st7.SolverDefaultLogical.spAppendRemainingTime, False)  # Whole table is always just one step.
+        model.St7SetSolverDefaultsLogical(const.SolverDefaultLogical.spAppendRemainingTime, False)  # Whole table is always just one step.
 
         model.St7EnableTransientLoadCase(LOAD_CASE_BENDING)
         for iFC in model.freedom_case_numbers():
@@ -1037,7 +1039,7 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
             load_scale_factor = model_freedom_case.load_scale_factor_for_constant_tension(run_params.scale_model_x, run_params.scale_model_y)
             scaled_table = initial_result_frame.load_time_table.copy_scaled(1.0, load_scale_factor)
             model.St7NewTableType(
-                st7.TableType.ttVsTime,
+                const.TableType.ttVsTime,
                 model_freedom_case.table_id,
                 len(scaled_table.data),
                 f"Load Factor ({model_freedom_case.name})",
@@ -1072,7 +1074,7 @@ def _update_prestrain_table(run_params: RunParams, table: Table, current_inc: pa
     stress_end = run_params.parameter_trend.stress_end(current_inc)
     dilation_ratio = run_params.parameter_trend.dilation_ratio(current_inc)
 
-    if run_params.actuator.input_result == st7.PlateResultType.rtPlateStress:
+    if run_params.actuator.input_result == const.PlateResultType.rtPlateStress:
         table_data = [
             XY(0.0, 0.0),
             XY(STRESS_START, 0.0),
@@ -1080,7 +1082,7 @@ def _update_prestrain_table(run_params: RunParams, table: Table, current_inc: pa
             XY(stress_end + 200, -1 * dilation_ratio),
         ]
 
-    elif run_params.actuator.input_result == st7.PlateResultType.rtPlateTotalStrain:
+    elif run_params.actuator.input_result == const.PlateResultType.rtPlateTotalStrain:
         youngs_mod = 220000  # Hacky way!
         table_data = [
             XY(0.0, 0.0),
@@ -1156,7 +1158,7 @@ def main(run_params: RunParams):
     print()
 
     with contextlib.ExitStack() as exit_stack:
-        model = exit_stack.enter_context(st7.St7Model(fn_st7, config.active_config.scratch_dir))
+        model = exit_stack.enter_context(st7.St7ExistingModel(fn_st7, config.active_config.scratch_dir))
         model_window = exit_stack.enter_context(model.St7CreateModelWindow(DONT_MAKE_MODEL_WINDOW))
         db = exit_stack.enter_context(history.DB(fn_db))
 
@@ -1178,7 +1180,7 @@ def main(run_params: RunParams):
         prestrain_update = PrestrainUpdate.zero()
 
         set_max_iters(model, config.active_config.max_iters, use_major=True)
-        model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
+        model.St7RunSolver(current_result_frame.configuration.solver, const.SolverMode.smBackgroundRun, True)
 
         previous_load_factor = 0.0
 
@@ -1224,7 +1226,7 @@ def main(run_params: RunParams):
 
                 while should_do_another_minor_iteration(new_count, run_params.parameter_trend.current_inc.minor_inc):
                     model.St7SaveFile()
-                    model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
+                    model.St7RunSolver(current_result_frame.configuration.solver, const.SolverMode.smBackgroundRun, True)
 
                     # For the next minor increment, unless overwritten.
                     set_max_iters(model, config.active_config.max_iters, use_major=False)
@@ -1271,7 +1273,7 @@ def main(run_params: RunParams):
 
                 # Tack a final increment on the end so the result case is there as expected for the start of the following major increment.
                 model.St7SaveFile()
-                model.St7RunSolver(current_result_frame.configuration.solver, st7.SolverMode.smBackgroundRun, True)
+                model.St7RunSolver(current_result_frame.configuration.solver, const.SolverMode.smBackgroundRun, True)
 
                 prestrain_update = prestrain_update.locked_in_prestrains()
                 previous_load_factor = this_load_factor

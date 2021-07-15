@@ -2,3 +2,4 @@ matplotlib
 Pillow
 numpy
 scipy
+git+https://github.com/tom-dq/st7_wrap.git
