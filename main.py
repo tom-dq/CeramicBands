@@ -519,7 +519,7 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
             st7.St7API.ipPlateGlobalXX,
         ]
 
-    elif phase_change_actuator in (Actuator.s_local, Actuator.e_local):
+    elif phase_change_actuator in (Actuator.s_local, Actuator.e_local, Actuator.e_local_max):
         res_sub_type = const.PlateResultSubType.stPlateLocal
         index_list = [
             st7.St7API.ipPlateLocalxx,
@@ -577,6 +577,10 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
             raise ValueError()
 
         result_values = [res_array.results[index] for index in index_list]
+
+        if phase_change_actuator == Actuator.e_local_max:
+            max_in_plane = max(result_values[0:2])
+            result_values = [max_in_plane, max_in_plane, result_values[2]]
 
         while len(result_values) < 6:
             result_values.append(0.0)
@@ -1415,7 +1419,7 @@ if __name__ == "__main__":
     perturbator_sphere = perturb.SphericalIndentCenter(0.2, 0.05)
 
     run_params = RunParams(
-        actuator=Actuator.e_local,
+        actuator=Actuator.e_local_max,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,

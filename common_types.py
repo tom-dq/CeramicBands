@@ -40,6 +40,7 @@ class Actuator(enum.Enum):
     e_local = enum.auto()
     e_xx_only = enum.auto()
     e_11 = enum.auto()
+    e_local_max = enum.auto()
 
     def nice_name(self) -> str:
         if self == Actuator.S11:
@@ -60,6 +61,9 @@ class Actuator(enum.Enum):
         elif self == Actuator.e_11:
             return "Principal 11 Strain"
 
+        elif self == Actuator.e_local_max:
+            return "Maximum of Local Directional Strains"
+
         else:
             raise ValueError(self)
 
@@ -68,7 +72,7 @@ class Actuator(enum.Enum):
         if self in (Actuator.S11, Actuator.SvM, Actuator.s_XX, Actuator.s_local):
             return const.PlateResultType.rtPlateStress
 
-        elif self in (Actuator.e_local, Actuator.e_xx_only, Actuator.e_11):
+        elif self in (Actuator.e_local, Actuator.e_xx_only, Actuator.e_11, Actuator.e_local_max):
             return const.PlateResultType.rtPlateTotalStrain
 
         else:
@@ -89,6 +93,7 @@ class Actuator(enum.Enum):
             Actuator.s_local,
             Actuator.e_local,
             Actuator.e_xx_only,
+            Actuator.e_local_max,
         )
 
         if self in does_not_require:
