@@ -25,6 +25,12 @@ T_Elem_Axis = typing.Tuple[int, int]  # E.g, (2354, 0) -> Elem 2354, x axis.
 
 
 
+class IncrementType(enum.Enum):
+    # These should be in order
+    loading = enum.auto()
+    unloading = enum.auto()
+
+
 class Actuator(enum.Enum):
     """The value used to ratchet up the prestrain."""
     S11 = enum.auto()
@@ -259,7 +265,7 @@ class InitialSetupModelData(typing.NamedTuple):
     elem_axis_angle_deg: typing.Dict[int, float]
     boundary_nodes: typing.FrozenSet[int]
     element_columns: typing.Dict[float, typing.FrozenSet]
-    enforced_dofs: typing.FrozenSet[typing.Tuple[ int, st7.DoF] ] # node_num, dof
+    enforced_dofs: typing.Dict[IncrementType, typing.FrozenSet[typing.Tuple[int, st7.DoF]]] # node_num, dof
 
 
 def func_repr(f) -> str:

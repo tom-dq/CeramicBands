@@ -1,8 +1,10 @@
 import abc
+from ast import Num
 import collections
 import math
 import random
 import typing
+import bisect
 
 import parameter_trend
 
@@ -241,30 +243,41 @@ class SpacedStepScaling(CentroidAwareScaling):
 
     _hole_width: float
 
-    def __init__(self, pt: parameter_trend.ParameterTrend, y_depth: float, spacing: float, amplitude: float, hole_width: float):
+    def __init__(self, pt: parameter_trend.ParameterTrend, y_depth: float, spacing: float, amplitude: float, hole_width: float, max_variation: float):
         self._elem_scale_fact = {}
         self._y_depth = y_depth
         self._spacing = spacing
         self._amplitude = amplitude
         self._hole_width = hole_width
         self._parameter_trend = pt
+        self._max_variation = max_variation
+
+        self._hole_cent_to_amp = self._get_hole_x_cent_and_amplitude()
+        self._hole_cent_sorted = sorted(self._hole_cent_to_amp.keys())
+
+    def _get_hole_and_amplitude(self, elem_x: float) -> typing.Tuple[float, float]:
+        """Get the scaling amplitude, assuming the element is right on the top surface."""
+
+        hole_idx_lower = bisect.bisect_right(self._hole_cent_sorted, elem_x)
+        hole_idx_upper = hole_idx_lower+1
+
+        hole_dist_lower = abs(elem_x - self._hole_cent_sorted[hole_idx_lower])
+        hole_dist_upper = abs(elem_x - self._hole_cent_sorted[hole_idx_upper])
+
+        if hole_dist_lower < hole_dist_upper:
+            closest_idx = hole_idx_lower
+
+        else:
+            closest_idx = hole_idx_upper
+
+        closest_hole = self._hole_cent_sorted[closest_idx]
+        return closest_hole, self._hole_cent_to_amp[closest_hole]
 
     def _scale_factor_one_elem(self, cent: st7.Vector3):
         x, _, _ = cent[:]
 
-        real_amplitude = self.get_element_surface_depth_ratio(cent) * self._amplitude
-
-        # See how close we are to a "hole"
-        closest_hole = 0.0
-        working_hole_distance = abs(x - closest_hole)
-        while working_hole_distance > 0.5*self._spacing:
-            if x > closest_hole:
-                closest_hole += self._spacing
-
-            elif x < closest_hole:
-                closest_hole -= self._spacing
-
-            working_hole_distance = abs(x - closest_hole)
+        closest_hole, hole_raw_amp = self._get_hole_and_amplitude(x)
+        real_amplitude = self.get_element_surface_depth_ratio(cent) * hole_raw_amp
 
         hole_centre_distance = abs(x - closest_hole)
         in_hole = hole_centre_distance*2 < self._hole_width
@@ -275,8 +288,27 @@ class SpacedStepScaling(CentroidAwareScaling):
         else:
             return 1.0
 
+
+    def _get_hole_x_cent_and_amplitude(self):
+        LONG_ENOUGH = 1000
+        hole_to_amp = dict()
+
+
+        def add_hole(x):
+            hole_to_amp[x] = random.uniform(self._amplitude - self._max_variation, self._amplitude + self._max_variation)
+
+        add_hole(0.0)
+        current_x = self._spacing
+        while current_x < LONG_ENOUGH:
+            add_hole(current_x)
+            add_hole(-1*current_x)
+
+            current_x += self._spacing
+
+        return hole_to_amp
+
     def __str__(self):
-        return f"{self.__class__.__name__}(spacing={self._spacing}, amplitude={self._amplitude}, y_depth={self._y_depth}, hole_width={self._hole_width})"
+        return f"{self.__class__.__name__}(spacing={self._spacing}, amplitude={self._amplitude}, y_depth={self._y_depth}, hole_width={self._hole_width}, max_variation={self._max_variation})"
 
 
 class SingleHoleCentre(CentroidAwareScaling):

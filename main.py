@@ -21,7 +21,7 @@ from st7_wrap import const
 import config
 
 from averaging import Averaging, AveInRadius, NoAve
-from common_types import SingleValue, XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST, Actuator, SingleValueWithMissingDict, NodeMoveStep
+from common_types import SingleValue, XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST, Actuator, SingleValueWithMissingDict, NodeMoveStep, IncrementType
 from parameter_trend import ParameterTrend
 import parameter_trend
 from distribution import OrientationDistribution, distribute, random_angle_distribution_360deg, wraparound_from_zero
@@ -84,6 +84,17 @@ class ModelFreedomCase(enum.Enum):
     def table_id(self) -> int:
         return 10 + self.value
 
+    def active_during_increment(self, increment_type: IncrementType) -> bool:
+        if self == ModelFreedomCase.restraint:
+            return True
+
+        elif self in (ModelFreedomCase.bending_pure, ModelFreedomCase.tension, ModelFreedomCase.bending_three_point):
+            return increment_type == IncrementType.loading
+
+        else:
+            raise ValueError(self)
+
+
 class RunParams(typing.NamedTuple):
     actuator: Actuator
     scaling: Scaling
@@ -104,6 +115,7 @@ class RunParams(typing.NamedTuple):
     scale_model_y: float
     max_load_ratio: float
     unload_step: bool
+
 
     def summary_strings(self) -> typing.Iterable[str]:
         yield "RunParams:\n"
@@ -126,9 +138,8 @@ class RunParams(typing.NamedTuple):
 
         yield "\n"
 
-    @property
-    def active_freedom_case_numbers(self) -> typing.FrozenSet[int]:
-        return frozenset(mfc.value for mfc in self.freedom_cases)
+    def active_freedom_case_numbers(self, increment_type: IncrementType) -> typing.FrozenSet[int]:
+        return frozenset(mfc.value for mfc in self.freedom_cases if mfc.active_during_increment(increment_type))
 
 
 class Ratchet:
@@ -421,7 +432,7 @@ def write_out_to_db(
             disp_val=disp.results[dof.value],
         )
 
-    fd_curve_res = ( make_fd_results(node_num, dof) for node_num, dof in init_data.enforced_dofs)
+    fd_curve_res = ( make_fd_results(node_num, dof) for node_num, dof in init_data.enforced_dofs[current_inc.increment_type])
     db.add_many(fd_curve_res)
 
     if config.active_config.record_result_history_in_db == config.HistoryToRecord.none:
@@ -851,6 +862,8 @@ def set_restart_for(model: st7.St7Model, result_frame: ResultFrame):
 def set_load_increment_table(run_params: RunParams, model: st7.St7Model, result_frame: ResultFrame, this_bending_load_factor, prestrain_load_case_num):
     # Set the load and freedom case - can use either method. Don't use both though!
 
+    increment_type = run_params.parameter_trend.current_inc.increment_type
+
     if result_frame.configuration.solver == const.SolverType.stNonlinearStatic:
 
         for iFreedomCase in model.freedom_case_numbers():
@@ -880,7 +893,7 @@ def set_load_increment_table(run_params: RunParams, model: st7.St7Model, result_
     elif result_frame.configuration.solver == const.SolverType.stQuasiStatic:
         # Enable / disable the load and freedom cases.
         for iFreedomCase in model.freedom_case_numbers():
-            if iFreedomCase in run_params.active_freedom_case_numbers:
+            if iFreedomCase in run_params.active_freedom_case_numbers(increment_type):
                 model.St7EnableTransientFreedomCase(iFreedomCase)
 
             else:
@@ -1014,7 +1027,7 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
 
         model.St7EnableNLALoadCase(STAGE, LOAD_CASE_BENDING)
         for iFC in model.freedom_case_numbers():
-            if iFC in run_params.active_freedom_case_numbers:
+            if iFC in run_params.active_freedom_case_numbers(IncrementType.loading):
                 model.St7EnableNLAFreedomCase(STAGE, iFC)
 
             else:
@@ -1028,7 +1041,7 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
 
         model.St7EnableTransientLoadCase(LOAD_CASE_BENDING)
         for iFC in model.freedom_case_numbers():
-            if iFC in run_params.active_freedom_case_numbers:
+            if iFC in run_params.active_freedom_case_numbers(IncrementType.loading):
                 model.St7EnableTransientFreedomCase(iFC)
 
             else:
@@ -1049,7 +1062,7 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
             model.St7SetTransientLoadTimeTable(LOAD_CASE_BENDING, model_freedom_case.table_id, False)
 
             for iFC in model.freedom_case_numbers():
-                fc_table_id = model_freedom_case.table_id if iFC in run_params.active_freedom_case_numbers else 0
+                fc_table_id = model_freedom_case.table_id if iFC in run_params.active_freedom_case_numbers(IncrementType.loading) else 0
                 model.St7SetTransientFreedomTimeTable(iFC, fc_table_id, False)
 
     # For all solvers.
@@ -1184,16 +1197,29 @@ def main(run_params: RunParams):
 
         previous_load_factor = 0.0
 
-        for _ in range(run_params.n_steps_major):
+        increment_types = run_params.n_steps_major * [IncrementType.loading]
+        if run_params.unload_step:
+            increment_types.append(IncrementType.unloading)
+
+        for increment_type in increment_types:
             run_params.parameter_trend.current_inc.inc_major()
+            run_params.parameter_trend.current_inc.increment_type = increment_type
 
             # Update the model with the new load
-            this_load_factor = run_params.max_load_ratio * (run_params.parameter_trend.current_inc.major_inc + 1) / run_params.n_steps_major
+            if increment_type == IncrementType.loading:
+                this_load_factor = run_params.max_load_ratio * (run_params.parameter_trend.current_inc.major_inc + 1) / run_params.n_steps_major
+
+            elif increment_type == IncrementType.unloading:
+                this_load_factor = 0.0
+
+            else:
+                raise ValueError(increment_type)
 
             should_skip = False
             if run_params.start_at_major_ratio is not None:
-                if this_load_factor < run_params.start_at_major_ratio:
-                    should_skip = True
+                if increment_type == IncrementType.loading:
+                    if this_load_factor < run_params.start_at_major_ratio:
+                        should_skip = True
 
             if should_skip:
                 print(f"Skipping major increment {run_params.parameter_trend.current_inc.major_inc} as load factor {this_load_factor} is below cutoff of {run_params.start_at_major_ratio}")
@@ -1354,7 +1380,7 @@ if __name__ == "__main__":
     )
 
     pt = pt_baseline._replace(
-        dilation_ratio=0.008 * one,
+        dilation_ratio=0.004 * one,
         )
 
     FINE_ELEM_LEN = 0.003703703703704
@@ -1368,7 +1394,7 @@ if __name__ == "__main__":
 
 
     no_scaling = NoScaling()
-    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(0.075), amplitude=0.2, hole_width=elem_len_mod(0.01)) # 0.011112 is three elements on Fine.
+    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(0.075), amplitude=0.5, hole_width=elem_len_mod(0.01), max_variation=0.3) # 0.011112 is three elements on Fine.
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
     # scaling = SingleHoleCentre(pt=pt, y_depth=0.02, amplitude=0.5, hole_width=elem_len_mod(0.01))
     # scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
@@ -1389,25 +1415,25 @@ if __name__ == "__main__":
     perturbator_sphere = perturb.SphericalIndentCenter(0.2, 0.05)
 
     run_params = RunParams(
-        actuator=Actuator.e_local,
+        actuator=Actuator.e_11,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
         perturbator=perturbator_none,
-        n_steps_major=200,
-        n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
+        n_steps_major=50,
+        n_steps_minor_max=4,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
         start_at_major_ratio=0.32,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestH-Fine.st7"),
+        source_file_name=pathlib.Path("TestH-Med.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
         scale_model_x=1.0,  # Changing the model dimentions also scales the load.
         scale_model_y=0.3,  # 0.3 Seems good
-        max_load_ratio=2.0,
-        unload_step=False,
+        max_load_ratio=1.0,
+        unload_step=True,
     )
 
     main(run_params)

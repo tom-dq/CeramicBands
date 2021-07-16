@@ -1,6 +1,8 @@
 """Some parameters need to be adjusted as the simulation
 progresses. This class deals with that."""
 import numbers
+
+import common_types
 from common_types import XY
 from tables import Table
 
@@ -16,10 +18,14 @@ from config import active_config
 class CurrentInc:
     major_inc: int
     minor_inc: int
+    increment_type: common_types.IncrementType
 
-    def __init__(self, major_inc: int=0, minor_inc: int=0):
+    def __init__(self, major_inc: int=0, minor_inc: int=0, increment_type=None):
         self.major_inc = major_inc
         self.minor_inc = minor_inc
+
+        if not increment_type:
+            self.increment_type = list(common_types.IncrementType)[0]
 
     def set_incs(self, major_inc: int, minor_inc: int):
         self.major_inc = major_inc
