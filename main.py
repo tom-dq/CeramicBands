@@ -1380,7 +1380,7 @@ if __name__ == "__main__":
     )
 
     pt = pt_baseline._replace(
-        dilation_ratio=0.004 * one,
+        dilation_ratio=0.008 * one,
         )
 
     FINE_ELEM_LEN = 0.003703703703704
@@ -1394,7 +1394,7 @@ if __name__ == "__main__":
 
 
     no_scaling = NoScaling()
-    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(0.075), amplitude=0.5, hole_width=elem_len_mod(0.01), max_variation=0.0) # 0.011112 is three elements on Fine.
+    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(0.075), amplitude=0.5, hole_width=elem_len_mod(0.01), max_variation=0.3) # 0.011112 is three elements on Fine.
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
     # scaling = SingleHoleCentre(pt=pt, y_depth=0.02, amplitude=0.5, hole_width=elem_len_mod(0.01))
     # scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
@@ -1415,14 +1415,14 @@ if __name__ == "__main__":
     perturbator_sphere = perturb.SphericalIndentCenter(0.2, 0.05)
 
     run_params = RunParams(
-        actuator=Actuator.e_11,
+        actuator=Actuator.e_local,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
         perturbator=perturbator_none,
-        n_steps_major=8,
-        n_steps_minor_max=4,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
+        n_steps_major=100,
+        n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
         start_at_major_ratio=0.32,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
