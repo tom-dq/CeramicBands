@@ -258,19 +258,25 @@ class SpacedStepScaling(CentroidAwareScaling):
     def _get_hole_and_amplitude(self, elem_x: float) -> typing.Tuple[float, float]:
         """Get the scaling amplitude, assuming the element is right on the top surface."""
 
-        hole_idx_lower = bisect.bisect_right(self._hole_cent_sorted, elem_x)
+
+        hole_idx_lower = bisect.bisect_right(self._hole_cent_sorted, elem_x) - 1
         hole_idx_upper = hole_idx_lower+1
 
-        hole_dist_lower = abs(elem_x - self._hole_cent_sorted[hole_idx_lower])
-        hole_dist_upper = abs(elem_x - self._hole_cent_sorted[hole_idx_upper])
+        hole_on_left = self._hole_cent_sorted[hole_idx_lower]
+        hole_on_right = self._hole_cent_sorted[hole_idx_upper]
+
+        hole_dist_lower = abs(elem_x - hole_on_left)
+        hole_dist_upper = abs(elem_x - hole_on_right)
 
         if hole_dist_lower < hole_dist_upper:
-            closest_idx = hole_idx_lower
+            closest_hole = hole_on_left
 
         else:
-            closest_idx = hole_idx_upper
+            closest_hole = hole_on_right
 
-        closest_hole = self._hole_cent_sorted[closest_idx]
+        if not hole_on_left <= elem_x <= hole_on_right:
+            raise ValueError()
+
         return closest_hole, self._hole_cent_to_amp[closest_hole]
 
     def _scale_factor_one_elem(self, cent: st7.Vector3):

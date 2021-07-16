@@ -1394,7 +1394,7 @@ if __name__ == "__main__":
 
 
     no_scaling = NoScaling()
-    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(0.075), amplitude=0.5, hole_width=elem_len_mod(0.01), max_variation=0.3) # 0.011112 is three elements on Fine.
+    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(0.075), amplitude=0.5, hole_width=elem_len_mod(0.01), max_variation=0.0) # 0.011112 is three elements on Fine.
     # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
     # scaling = SingleHoleCentre(pt=pt, y_depth=0.02, amplitude=0.5, hole_width=elem_len_mod(0.01))
     # scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
@@ -1421,7 +1421,7 @@ if __name__ == "__main__":
         relaxation=relaxation,
         throttler=throttler,
         perturbator=perturbator_none,
-        n_steps_major=50,
+        n_steps_major=8,
         n_steps_minor_max=4,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
         start_at_major_ratio=0.32,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
