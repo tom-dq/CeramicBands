@@ -14,6 +14,7 @@ from PIL import Image
 import pathlib
 import math
 import shutil
+import networkx
 
 from st7_wrap import st7
 from st7_wrap import const
@@ -21,7 +22,7 @@ from st7_wrap import const
 import config
 
 from averaging import Averaging, AveInRadius, NoAve
-from common_types import SingleValue, XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST, Actuator, SingleValueWithMissingDict, NodeMoveStep, IncrementType
+from common_types import T_Elem, SingleValue, XY, ElemVectorDict, T_ResultDict, InitialSetupModelData, TEMP_ELEMS_OF_INTEREST, Actuator, SingleValueWithMissingDict, NodeMoveStep, IncrementType
 from parameter_trend import ParameterTrend
 import parameter_trend
 from distribution import OrientationDistribution, distribute, random_angle_distribution_360deg, wraparound_from_zero
@@ -329,7 +330,7 @@ def setup_model_window(run_params: RunParams, model_window: st7.St7ModelWindow, 
     # Set the contour limits
     contour_settings_limit = model_window.St7GetEntityContourSettingsLimits(const.Entity.tyPLATE)
 
-    prestrain_contour_max = run_params.parameter_trend.dilation_ratio.get_max_value_returned()
+    prestrain_contour_max = run_params.parameter_trend.dilation_ratio.get_max_value_returned() * run_params.actuator.contour_limit_scale_factor
     new_contour_limits = dataclasses.replace(contour_settings_limit, 
         ipContourLimit=st7.St7API.clUserRange,
         ipSetMinLimit=True, 
@@ -398,6 +399,23 @@ def _make_column_stats(db_case_num: int, col_x: float, elem_nums: typing.FrozenS
             mean=statistics.fmean(res_list),
             maximum=max(res_list),
         )
+
+def _transformation_band_summary(db_case_num: int, element_nums: typing.Iterable[T_Elem], init_data: InitialSetupModelData, elem_to_sum_of_values: typing.Dict[T_Elem, float]) -> history.TransformationBand:
+    elem_x_pos = [init_data.elem_centroid[elem_num].x for elem_num in element_nums]
+    elem_y_pos = [init_data.elem_centroid[elem_num].y for elem_num in element_nums]
+    elem_contributions = [elem_to_sum_of_values[elem_num] * init_data.elem_volume[elem_num] for elem_num in element_nums]
+
+    width = max(elem_x_pos) - min(elem_x_pos)
+    depth = max(elem_y_pos) - min(elem_y_pos)
+
+    return history.TransformationBand(
+        result_case_num=db_case_num,
+        x=statistics.mean(elem_x_pos),
+        elements_involved=len(element_nums),
+        band_size=sum(elem_contributions),
+        width=width,
+        depth=depth,
+    )
 
 
 def write_out_to_db(
@@ -488,6 +506,21 @@ def write_out_to_db(
 
     db.add_many(make_column_results())
 
+    # Summaries of the transformation bands
+    if config.active_config.record_result_history_in_db != config.HistoryToRecord.none:
+        def make_transformation_band_summaries():
+            elems_with_prestrain = {sv.elem for sv in prestrain_update.elem_prestrains_iteration_set}
+            prestrained_subgraph = init_data.element_topological_graph.subgraph(elems_with_prestrain)
+
+            # For quicker lookup...
+            elem_to_sum_of_values = dict()
+            for sv in prestrain_update.elem_prestrains_iteration_set:
+                elem_to_sum_of_values[sv.elem] = elem_to_sum_of_values.get(sv.elem, 0.0) + sv.value
+
+            for graph_component in networkx.connected_components(prestrained_subgraph):
+                yield _transformation_band_summary(db_case_num, graph_component, init_data, elem_to_sum_of_values)
+
+        db.add_many(sorted(make_transformation_band_summaries()))
 
 
 def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_num: int) -> ElemVectorDict:
@@ -1084,6 +1117,7 @@ def initial_setup(run_params: RunParams, model: st7.St7Model, initial_result_fra
         boundary_nodes=model_inspect.get_boundary_nodes(model),
         element_columns=model_inspect.get_element_columns(elem_centroid, elem_volume),
         enforced_dofs=model_inspect.get_enforced_displacements(run_params, model),
+        element_topological_graph=model_inspect.generate_plate_edge_connectivity_graph(model),
     )
 
 
@@ -1330,62 +1364,33 @@ def create_load_case(model, case_name):
 
 
 if __name__ == "__main__":
+
     dilation_ratio_ref = 0.008   # 0.8% expansion, according to Jerome
-
-    #relaxation = LimitedIncreaseRelaxation(0.01)
-    # relaxation = PropRelax(0.2)
     relaxation = NoRelax()
-
-
-    # averaging = AveInRadius(0.02)
     averaging = NoAve()
-
-    # elem_ratio_per_iter = 0.0001
-    # throttler = Throttler(stopping_criterion=StoppingCriterion.volume_ratio, shape=Shape.linear, cutoff_value=elem_ratio_per_iter)
-    # throttler = Throttler(stopping_criterion=StoppingCriterion.new_prestrain_total, shape=Shape.linear, cutoff_value=elem_ratio_per_iter * dilation_ratio * 2)
     throttler = RelaxedIncreaseDecrease()
 
     # Throttle relaxation
     exp_0_7 = parameter_trend.ExponetialDecayFunctionMinorInc(-0.7, init_val=0.5, start_at=60)
     
-    gradual_relax_1_0 = parameter_trend.TableInterpolateMinor([XY(0, 1.0), XY(50, 1.0), XY(70, 0.65), XY(100, 0.5), XY(200, 0.3), XY(500, 0.1), XY(1500, 0.05), XY(5000, 0.02), XY(20000, 0.01), XY(50000, 0.002)])
-
     # Stress End
     const_401 = parameter_trend.Constant(401)
-    const_440 = parameter_trend.Constant(440)  # This seems bad - leads to angled evolution
-    taper_down = parameter_trend.ExponetialDecayFunctionMinorInc(-0.8, 600, 405)
-    linear_600_405 = parameter_trend.TableInterpolateMinor([XY(0, 600), XY(50, 405)])
-    linear_500_401 = parameter_trend.TableInterpolateMinor([XY(0, 500), XY(10, 500), XY(25, 401)])
-    linear_500_420 = parameter_trend.TableInterpolateMinor([XY(0, 500), XY(10, 500), XY(100, 420)])
 
     # Dilation Ratio
-    const_dilation_ratio = parameter_trend.Constant(0.008)
-    linear_decrease = parameter_trend.TableInterpolateMinor([XY(0, 0.02), XY(120, 0.008)])
-
-    # Adjacent Strain Ratio
-    zero = parameter_trend.Constant(0.0)
     one = parameter_trend.Constant(1.0)
-    ten = parameter_trend.Constant(10.0)
-    one_to_zero_50 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(10, 1), XY(50, 0)])
-    one_to_zero_200 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(10, 1), XY(200, 0)])
-    remove_after_50 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(50, 1), XY(60, 0)])
+    const_dilation_ratio_008 =0.008  * one
+    const_dilation_ratio_008_sqrt2 =0.008 / math.sqrt(2) * one
+    const_dilation_ratio_004 =0.004  * one
 
-    # Scaling
-    remove_over_200 = parameter_trend.TableInterpolateMinor([XY(0, 1), XY(200, 0)])
-
-    pt_baseline = ParameterTrend(
+    pt = ParameterTrend(
         throttler_relaxation=0.05 * one,
         stress_end=const_401,
-        dilation_ratio=const_dilation_ratio,
+        dilation_ratio=const_dilation_ratio_004,
         adj_strain_ratio_true=0.25 * one,
         scaling_ratio=one,
         overall_iterative_prestrain_delta_limit=one,
         current_inc=parameter_trend.CurrentInc(),
     )
-
-    pt = pt_baseline._replace(
-        dilation_ratio=0.008 * one,
-        )
 
     FINE_ELEM_LEN = 0.003703703703704
     def elem_len_mod(x: float) -> float:
@@ -1430,7 +1435,7 @@ if __name__ == "__main__":
         start_at_major_ratio=0.32,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestH-Med.st7"),
+        source_file_name=pathlib.Path("TestE2-Fine.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],

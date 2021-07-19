@@ -3,6 +3,7 @@ import math
 import typing
 import collections
 import enum
+import networkx
 
 import numpy.linalg
 
@@ -100,6 +101,17 @@ class Actuator(enum.Enum):
             return False
 
         raise ValueError(self)
+
+    @property
+    def contour_limit_scale_factor(self) -> float:
+        if self in (Actuator.S11, Actuator.SvM, Actuator.s_XX, Actuator.s_local, Actuator.e_local, Actuator.e_xx_only, Actuator.e_11):
+            return 1.0
+
+        elif self == Actuator.e_local_max:
+            return math.sqrt(2.0)
+
+        else:
+            raise ValueError(self)
 
 
 class SingleValue(typing.NamedTuple):
@@ -271,6 +283,7 @@ class InitialSetupModelData(typing.NamedTuple):
     boundary_nodes: typing.FrozenSet[int]
     element_columns: typing.Dict[float, typing.FrozenSet]
     enforced_dofs: typing.Dict[IncrementType, typing.FrozenSet[typing.Tuple[int, st7.DoF]]] # node_num, dof
+    element_topological_graph: networkx.Graph
 
 
 def func_repr(f) -> str:

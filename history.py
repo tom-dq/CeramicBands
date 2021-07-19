@@ -152,6 +152,15 @@ class LoadDisplacementPoint(typing.NamedTuple):
         return cls(*nones)
 
 
+class TransformationBand(typing.NamedTuple):
+    result_case_num: int
+    x: float
+    elements_involved: int
+    band_size: float
+    width: float
+    depth: float
+
+
 def _make_table_statement(nt_class) -> str:
     type_lookup = {
         int: "INTEGER",
@@ -192,6 +201,7 @@ _T_any_db_able = typing.Union[
     ElementPrestrain,
     ColumnResult,
     LoadDisplacementPoint,
+    TransformationBand,
 ]
 
 _all_contour_keys_ = [

@@ -1,5 +1,6 @@
 matplotlib
 Pillow
 numpy
+networkx
 scipy
 git+https://github.com/tom-dq/st7_wrap.git

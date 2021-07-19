@@ -35,7 +35,6 @@ class HistoryToRecord(enum.Enum):
             raise ValueError(self)
 
 
-
 class Config(typing.NamedTuple):
     fn_st7_base: pathlib.Path
     fn_working_image_base: pathlib.Path

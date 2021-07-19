@@ -4,10 +4,13 @@ import collections
 import typing
 import itertools
 
+import networkx
+
 from st7_wrap import st7
 from st7_wrap import const
 
 import common_types
+import history
 
 if typing.TYPE_CHECKING:
     from main import RunParams
@@ -62,3 +65,26 @@ def get_enforced_displacements(run_params: "RunParams", model: st7.St7Model) -> 
         return frozenset(non_zero_enf_disp)
 
     return {increment_type: get_one_increment_type_enforced_disps(increment_type) for increment_type in common_types.IncrementType}
+
+
+def generate_plate_edge_connectivity_graph(model: st7.St7Model) -> networkx.Graph:
+    """Graph where the "nodes" are plate elements and the "edges" are plate edges shared with other plates"""
+
+    edge_to_plate_nums = collections.defaultdict(set)
+    for plate_num in model.entity_numbers(const.Entity.tyPLATE):
+        conn = model.St7GetElementConnection(const.Entity.tyPLATE, plate_num)
+        if len(conn) != 4:
+            raise ValueError(conn)
+
+        for iEdge in range(4):
+            n1 = conn[iEdge]
+            n2 = conn[(iEdge + 1) % 4]
+            edge = tuple(sorted((n1, n2)))
+            edge_to_plate_nums[edge].add(plate_num)
+
+    g = networkx.Graph()
+    for edge, plate_nums in edge_to_plate_nums.items():
+        g.add_nodes_from(plate_nums)
+        g.add_edges_from(itertools.combinations(plate_nums, 2))
+
+    return g
