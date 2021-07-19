@@ -9,6 +9,8 @@ import enum
 import collections
 import datetime
 import contextlib
+
+import st7_wrap.exc
 from PIL import Image
 
 import pathlib
@@ -596,7 +598,7 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
                 )
                 worked = True
 
-            except Exception as e:
+            except st7_wrap.exc.St7BaseException as e:
                 if num_tries > 0:
                     time.sleep(0.001 * num_tries**2)
 
@@ -1378,14 +1380,13 @@ if __name__ == "__main__":
 
     # Dilation Ratio
     one = parameter_trend.Constant(1.0)
-    const_dilation_ratio_008 =0.008  * one
+    const_dilation_ratio_008 =0.008 * one
     const_dilation_ratio_008_sqrt2 =0.008 / math.sqrt(2) * one
-    const_dilation_ratio_004 =0.004  * one
 
     pt = ParameterTrend(
         throttler_relaxation=0.05 * one,
         stress_end=const_401,
-        dilation_ratio=const_dilation_ratio_004,
+        dilation_ratio=0.008 * one,
         adj_strain_ratio_true=0.25 * one,
         scaling_ratio=one,
         overall_iterative_prestrain_delta_limit=one,
@@ -1401,22 +1402,8 @@ if __name__ == "__main__":
 
         return num_elems * FINE_ELEM_LEN
 
-
     no_scaling = NoScaling()
-    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(0.075), amplitude=0.5, hole_width=elem_len_mod(0.01), max_variation=0.3) # 0.011112 is three elements on Fine.
-    # scaling = SpacedStepScaling(pt=pt, y_depth=0.25, spacing=0.4, amplitude=0.5, hole_width=0.11)
-    # scaling = SingleHoleCentre(pt=pt, y_depth=0.02, amplitude=0.5, hole_width=elem_len_mod(0.01))
-    # scaling_big = SingleHoleCentre(pt=pt, y_depth=0.5, amplitude=0.5, hole_width=0.2)
-    # scaling_small_centre = SingleHoleCentre(pt=pt, y_depth=0.2, amplitude=0.5, hole_width=0.05)
-    # scaling_cos = CosineScaling(pt=pt, y_depth=0.5, spacing=0.5, amplitude=0.5)
-
-    # scaling = SpacedStepScaling(pt=pt, y_depth=0.1, spacing=0.2, amplitude=0.5, hole_width=0.02)
-    # scaling = SpacedStepScaling(pt=pt, y_depth=0.1, spacing=0.5, amplitude=0.5, hole_width=0.2)
-
-    orient_dist = OrientationDistribution(
-        num_seeds=480_000,
-        n_exponent=32,
-    )
+    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(0.075), amplitude=0.5, hole_width=elem_len_mod(0.01), max_variation=0.0) # 0.011112 is three elements on Fine.
 
     perturbator_none = perturb.NoPerturb()
     perturbator_wedge_wide = perturb.IndentCentre(10, 0.05)
@@ -1435,12 +1422,12 @@ if __name__ == "__main__":
         start_at_major_ratio=0.32,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestE2-Fine.st7"),
+        source_file_name=pathlib.Path("TestH-Fine.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
         scale_model_x=1.0,  # Changing the model dimentions also scales the load.
-        scale_model_y=0.3,  # 0.3 Seems good
+        scale_model_y=0.5,  # 0.3 Seems good
         max_load_ratio=1.0,
         unload_step=True,
     )
