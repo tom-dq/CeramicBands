@@ -43,6 +43,16 @@ class Actuator(enum.Enum):
     e_11 = enum.auto()
     e_local_max = enum.auto()
 
+    def __str__(self):
+        return self.name
+    
+    @staticmethod
+    def from_string(s):
+        try:
+            return Actuator[s]
+        except KeyError:
+            raise ValueError()
+
     def nice_name(self) -> str:
         if self == Actuator.S11:
             return "Principal 11 Stress"
@@ -112,6 +122,7 @@ class Actuator(enum.Enum):
 
         else:
             raise ValueError(self)
+
 
 
 class SingleValue(typing.NamedTuple):

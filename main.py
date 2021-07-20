@@ -9,6 +9,7 @@ import enum
 import collections
 import datetime
 import contextlib
+import argparse
 
 import st7_wrap.exc
 from PIL import Image
@@ -1367,6 +1368,14 @@ def create_load_case(model, case_name):
 
 if __name__ == "__main__":
 
+    parser = argparse.ArgumentParser(description="Transformation bands")
+    parser.add_argument("--dilation_ratio", default=0.008, type=float)
+    parser.add_argument("--actuator", default=Actuator.e_local, type=Actuator.from_string, choices=list(Actuator))
+    parser.add_argument("--init_variation", default=0.0, type=float)
+    parser.add_argument("--init_spacing", default=0.075, type=float)
+
+    args = parser.parse_args()
+
     dilation_ratio_ref = 0.008   # 0.8% expansion, according to Jerome
     relaxation = NoRelax()
     averaging = NoAve()
@@ -1386,7 +1395,7 @@ if __name__ == "__main__":
     pt = ParameterTrend(
         throttler_relaxation=0.05 * one,
         stress_end=const_401,
-        dilation_ratio=0.008 * one,
+        dilation_ratio= args.dilation_ratio * one,
         adj_strain_ratio_true=0.25 * one,
         scaling_ratio=one,
         overall_iterative_prestrain_delta_limit=one,
@@ -1403,7 +1412,7 @@ if __name__ == "__main__":
         return num_elems * FINE_ELEM_LEN
 
     no_scaling = NoScaling()
-    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(0.075), amplitude=0.5, hole_width=elem_len_mod(0.01), max_variation=0.0) # 0.011112 is three elements on Fine.
+    scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(args.init_spacing), amplitude=0.5, hole_width=elem_len_mod(0.01), max_variation=args.init_variation) # 0.011112 is three elements on Fine.
 
     perturbator_none = perturb.NoPerturb()
     perturbator_wedge_wide = perturb.IndentCentre(10, 0.05)
