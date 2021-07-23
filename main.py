@@ -1165,6 +1165,43 @@ def _print_update_line(run_params: RunParams, prestrain_update: PrestrainUpdate)
     print("\t".join(update_bits))
 
 
+def _results_and_screenshots(
+    get_result_strains: bool,
+    run_params: RunParams,
+    init_data: InitialSetupModelData,
+    db: history.DB,
+    current_result_frame: ResultFrame,
+    model: st7.St7Model,
+    model_window: st7.St7ModelWindow,
+    prestrain_update,
+):
+    # This is in a separate function so I can retry it in the annoying case of intermittent execptions
+    def do_it():
+        with model.open_results(current_result_frame.result_file) as results:
+            if get_result_strains:
+                result_strain = get_results(run_params.actuator, results, current_result_frame.result_case_num)
+
+            else:
+                result_strain = ElemVectorDict()
+
+            write_out_screenshot(run_params, model_window, current_result_frame)
+            write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, result_strain)
+
+        return result_strain
+
+    time_to_sleep = 0.0
+
+    while time_to_sleep < 3.0:
+        try:
+            return do_it()
+
+        except (st7_wrap.exc.ERR7_ExceededResultCase, st7_wrap.exc.ERR7_APIModuleNotLicensed) as e:
+            print(e)
+            time.sleep(time_to_sleep)
+            time_to_sleep = 1.5 * (time_to_sleep + 0.001)
+
+    raise e
+
 def main(run_params: RunParams):
     ratchet = Ratchet(
         table=Table(),
@@ -1267,9 +1304,7 @@ def main(run_params: RunParams):
 
             else:
                 # Get the results from the last major step.
-                with model.open_results(current_result_frame.result_file) as results:
-                    write_out_screenshot(run_params, model_window, current_result_frame)
-                    write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, ElemVectorDict())
+                _results_and_screenshots(False, run_params, init_data, db, current_result_frame, model, model_window, prestrain_update)
 
                 prestrain_load_case_num = create_load_case(model, run_params.parameter_trend.current_inc.step_name())
                 apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_locked_in)
@@ -1299,11 +1334,7 @@ def main(run_params: RunParams):
                     set_max_iters(model, config.active_config.max_iters, use_major=False)
 
                     # Get the results from the last minor step.
-                    with model.open_results(current_result_frame.result_file) as results:
-                        result_strain_raw = get_results(run_params.actuator, results, current_result_frame.result_case_num)
-                        result_strain = result_strain_raw
-                        write_out_screenshot(run_params, model_window, current_result_frame)
-                        write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, result_strain)
+                    result_strain = _results_and_screenshots(True, run_params, init_data, db, current_result_frame, model, model_window, prestrain_update)
 
                     _update_prestrain_table(run_params, ratchet.table, run_params.parameter_trend.current_inc)
 
@@ -1354,9 +1385,8 @@ def main(run_params: RunParams):
         model.St7SaveFile()
 
         # Save the image of pre-strain results from the maximum load step.
-        with model.open_results(current_result_frame.result_file) as results, model.St7CreateModelWindow(dont_really_make=False) as model_window:
-            write_out_screenshot(run_params, model_window, current_result_frame)
-            write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, ElemVectorDict())
+        with model.St7CreateModelWindow(dont_really_make=False) as model_window:
+            _results_and_screenshots(False, run_params, init_data, db, current_result_frame, model, model_window, prestrain_update)
 
 
 def create_load_case(model, case_name):
@@ -1420,18 +1450,18 @@ if __name__ == "__main__":
     perturbator_sphere = perturb.SphericalIndentCenter(0.2, 0.05)
 
     run_params = RunParams(
-        actuator=Actuator.e_local_max,
+        actuator=args.actuator,
         scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
         perturbator=perturbator_none,
         n_steps_major=100,
-        n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
+        n_steps_minor_max=5,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
         start_at_major_ratio=0.32,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestH-Fine.st7"),
+        source_file_name=pathlib.Path("TestH-Med.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
