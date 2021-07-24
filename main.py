@@ -1458,7 +1458,7 @@ if __name__ == "__main__":
         throttler=throttler,
         perturbator=perturbator_none,
         n_steps_major=100,
-        n_steps_minor_max=5,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
+        n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
         start_at_major_ratio=0.32,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
