@@ -51,7 +51,7 @@ STAGE = 0
 
 STRESS_START = 400
 
-NUM_PLATE_RES_RETRIES = 50
+NUM_PLATE_RES_RETRIES = 20
 
 # Make deterministic
 random.seed(123456)
@@ -604,7 +604,7 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
                     time.sleep(0.001 * num_tries**2)
 
                 num_tries += 1
-                print(f"Failed with {e}, try {num_tries}/{NUM_PLATE_RES_RETRIES}. {plate_num=}, {case_num=}, {res_type=}, {res_sub_type=}")
+                print(f"Failed with {e.__name__}, try {num_tries}/{NUM_PLATE_RES_RETRIES}. {plate_num=}, {case_num=}, {res_type=}, {res_sub_type=}")
 
                 if num_tries == NUM_PLATE_RES_RETRIES:
                     raise e
@@ -1196,11 +1196,12 @@ def _results_and_screenshots(
             return do_it()
 
         except (st7_wrap.exc.ERR7_ExceededResultCase, st7_wrap.exc.ERR7_APIModuleNotLicensed) as e:
-            print(e)
+            e_to_raise = e
+            print(f"Failed with {e.__name__}")
             time.sleep(time_to_sleep)
             time_to_sleep = 1.5 * (time_to_sleep + 0.001)
 
-    raise e
+    raise e_to_raise
 
 def main(run_params: RunParams):
     ratchet = Ratchet(
@@ -1457,11 +1458,11 @@ if __name__ == "__main__":
         throttler=throttler,
         perturbator=perturbator_none,
         n_steps_major=100,
-        n_steps_minor_max=5,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
+        n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
         start_at_major_ratio=0.32,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestH-Med.st7"),
+        source_file_name=pathlib.Path("TestH-Fine.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
