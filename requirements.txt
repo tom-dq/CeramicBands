@@ -3,5 +3,6 @@ Pillow
 numpy
 networkx
 scipy
-st7_wrap
+# st7_wrap
+git+https://github.com/tom-dq/st7_wrap.git
 

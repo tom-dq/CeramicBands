@@ -1197,11 +1197,40 @@ def _results_and_screenshots(
 
         except (st7_wrap.exc.ERR7_ExceededResultCase, st7_wrap.exc.ERR7_APIModuleNotLicensed) as e:
             e_to_raise = e
-            print(f"Failed with {e.__name__}")
+            print(e)
             time.sleep(time_to_sleep)
             time_to_sleep = 1.5 * (time_to_sleep + 0.001)
 
     raise e_to_raise
+
+
+def run_solver_slow_and_steady(model: st7.St7Model, solver_type: const.SolverType):
+    """Runs the solver and makes sure it actually ran. It seems the network drops out which causes the solver terminate..."""
+
+    model.St7SetUseSolverDLL(True)
+    
+    time_to_sleep = 0.0
+
+    while time_to_sleep < 240.0:
+        try:
+            model.St7RunSolver(solver_type, const.SolverMode.smBackgroundRun, True, raise_on_termination_error=True)
+            return
+
+        except st7_wrap.exc.St7BaseException as e:
+            e_to_raise = e
+            print(time_to_sleep, e)
+            time.sleep(time_to_sleep)
+            time_to_sleep = 1.2 * (time_to_sleep + 0.1)
+
+            try:
+                model.St7Init()
+
+            except st7_wrap.exc.St7BaseException as init_again_e:
+                print(init_again_e)
+
+
+    raise e_to_raise
+
 
 def main(run_params: RunParams):
     ratchet = Ratchet(
@@ -1272,7 +1301,7 @@ def main(run_params: RunParams):
         prestrain_update = PrestrainUpdate.zero()
 
         set_max_iters(model, config.active_config.max_iters, use_major=True)
-        model.St7RunSolver(current_result_frame.configuration.solver, const.SolverMode.smBackgroundRun, True)
+        run_solver_slow_and_steady(model, current_result_frame.configuration.solver)
 
         previous_load_factor = 0.0
 
@@ -1329,7 +1358,7 @@ def main(run_params: RunParams):
 
                 while should_do_another_minor_iteration(new_count, run_params.parameter_trend.current_inc.minor_inc):
                     model.St7SaveFile()
-                    model.St7RunSolver(current_result_frame.configuration.solver, const.SolverMode.smBackgroundRun, True)
+                    run_solver_slow_and_steady(model, current_result_frame.configuration.solver)
 
                     # For the next minor increment, unless overwritten.
                     set_max_iters(model, config.active_config.max_iters, use_major=False)
@@ -1372,7 +1401,7 @@ def main(run_params: RunParams):
 
                 # Tack a final increment on the end so the result case is there as expected for the start of the following major increment.
                 model.St7SaveFile()
-                model.St7RunSolver(current_result_frame.configuration.solver, const.SolverMode.smBackgroundRun, True)
+                run_solver_slow_and_steady(model, current_result_frame.configuration.solver)
 
                 prestrain_update = prestrain_update.locked_in_prestrains()
                 previous_load_factor = this_load_factor
@@ -1462,7 +1491,7 @@ if __name__ == "__main__":
         start_at_major_ratio=0.32,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestH-Fine.st7"),
+        source_file_name=pathlib.Path("TestH-Med.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
