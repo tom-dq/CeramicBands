@@ -1247,18 +1247,27 @@ class CheckpointState(typing.NamedTuple):
     this_load_factor: float
     prev_load_factor: float
 
-    def starting_from_scratch(self) -> bool:
-        # TODO
-        return True
+    @staticmethod
+    def starting_state() -> "CheckpointState":
+        return CheckpointState(
+            run_params=None,
+            ratchet=None,
+            current_inc=None,
+            prestrain_update=None,
+            this_load_factor=None,
+            prev_load_factor=None
+        )
+
 
 
 def main(state: CheckpointState):
-    ratchet = Ratchet(
-        table=Table(),
-        scaling=state.run_params.scaling,
-        averaging=state.run_params.averaging,
-        relaxation=state.run_params.relaxation,
-        throttler=state.run_params.throttler)
+    if not state.ratchet:
+        state.ratchet = Ratchet(
+            table=Table(),
+            scaling=state.run_params.scaling,
+            averaging=state.run_params.averaging,
+            relaxation=state.run_params.relaxation,
+            throttler=state.run_params.throttler)
 
     # Allow a maximum of 10% of the elements to yield in a given step.
 
@@ -1385,12 +1394,12 @@ def main(state: CheckpointState):
                     # Get the results from the last minor step.
                     result_strain = _results_and_screenshots(True, state.run_params, init_data, db, current_result_frame, model, model_window, prestrain_update)
 
-                    _update_prestrain_table(state.run_params, ratchet.table, state.run_params.parameter_trend.current_inc)
+                    _update_prestrain_table(state.run_params, state.ratchet.table, state.run_params.parameter_trend.current_inc)
 
                     prestrain_update = incremental_element_update_list(
                         init_data=init_data,
                         run_params=state.run_params,
-                        ratchet=ratchet,
+                        ratchet=state.ratchet,
                         previous_prestrain_update=prestrain_update,
                         result_strain=result_strain,
                     )
@@ -1411,7 +1420,7 @@ def main(state: CheckpointState):
                     if config.active_config.ratched_prestrains_during_iterations:
                         # Update the ratchet settings for the one we did ramp up.
                         for sv in prestrain_update.elem_prestrains_iteration_set:
-                            ratchet.update_minimum(True, sv.id_key, sv.value)
+                            state.ratchet.update_minimum(True, sv.id_key, sv.value)
 
                     # Keep track of the old results...
                     state.run_params.parameter_trend.current_inc.inc_minor()
@@ -1427,7 +1436,7 @@ def main(state: CheckpointState):
 
                 # Update the ratchet for what's been locked in.
                 for sv in prestrain_update.elem_prestrains_locked_in:
-                    ratchet.update_minimum(True, sv.id_key, sv.value)
+                    state.ratchet.update_minimum(True, sv.id_key, sv.value)
 
                 relaxation.flush_previous_values()
 
