@@ -10,6 +10,7 @@ import collections
 import datetime
 import contextlib
 import argparse
+import pickle
 
 import st7_wrap.exc
 from PIL import Image
@@ -119,6 +120,7 @@ class RunParams(typing.NamedTuple):
     scale_model_y: float
     max_load_ratio: float
     unload_step: bool
+    working_dir: pathlib.Path
 
 
     def summary_strings(self) -> typing.Iterable[str]:
@@ -1232,31 +1234,48 @@ def run_solver_slow_and_steady(model: st7.St7Model, solver_type: const.SolverTyp
     raise e_to_raise
 
 
-def main(run_params: RunParams):
+
+def checkpoint():
+    pass
+
+
+class CheckpointState(typing.NamedTuple):
+    run_params: RunParams
+    ratchet: Ratchet
+    current_inc: int
+    prestrain_update: PrestrainUpdate
+    this_load_factor: float
+    prev_load_factor: float
+
+    def starting_from_scratch(self) -> bool:
+        # TODO
+        return True
+
+
+def main(state: CheckpointState):
     ratchet = Ratchet(
         table=Table(),
-        scaling=run_params.scaling,
-        averaging=run_params.averaging,
-        relaxation=run_params.relaxation,
-        throttler=run_params.throttler)
+        scaling=state.run_params.scaling,
+        averaging=state.run_params.averaging,
+        relaxation=state.run_params.relaxation,
+        throttler=state.run_params.throttler)
 
     # Allow a maximum of 10% of the elements to yield in a given step.
 
-    for summary_string in run_params.summary_strings():
+    for summary_string in state.run_params.summary_strings():
         print(summary_string.strip())
         
     for summary_string in config.active_config.summary_strings():
         print(summary_string.strip())
 
-    working_dir = directories.get_unique_sub_dir(config.active_config.fn_working_image_base)
+    fn_st7 = state.run_params.working_dir / "Model.st7"
+    fn_db = state.run_params.working_dir / "history.db"
 
-    fn_st7 = working_dir / "Model.st7"
-    fn_db = working_dir / "history.db"
 
-    shutil.copy2(config.active_config.fn_st7_base / run_params.source_file_name, fn_st7)
+    shutil.copy2(config.active_config.fn_st7_base / state.run_params.source_file_name, fn_st7)
 
-    pt_plot_fn = str(working_dir / "A-ParameterTrend.png")
-    parameter_trend.save_parameter_plot(run_params.parameter_trend, pt_plot_fn)
+    pt_plot_fn = str(state.run_params.working_dir / "A-ParameterTrend.png")
+    parameter_trend.save_parameter_plot(state.run_params.parameter_trend, pt_plot_fn)
 
     load_time_table = Table()
     load_time_table.set_table_data([XY(0.0, 0.0), XY(config.active_config.qsa_time_step_size, 0.0)])
@@ -1271,11 +1290,11 @@ def main(run_params: RunParams):
         prev_result_case=None,
     )
 
-    with open(working_dir / "Meta.txt", "w") as f_meta:
-        f_meta.writelines(run_params.summary_strings())
+    with open(state.run_params.working_dir / "Meta.txt", "w") as f_meta:
+        f_meta.writelines(state.run_params.summary_strings())
         f_meta.writelines(config.active_config.summary_strings())
 
-    print(f"Working directory: {working_dir}")
+    print(f"Working directory: {state.run_params.working_dir}")
     print()
 
     with contextlib.ExitStack() as exit_stack:
@@ -1283,18 +1302,18 @@ def main(run_params: RunParams):
         model_window = exit_stack.enter_context(model.St7CreateModelWindow(DONT_MAKE_MODEL_WINDOW))
         db = exit_stack.enter_context(history.DB(fn_db))
 
-        init_data = initial_setup(run_params, model, current_result_frame)
+        init_data = initial_setup(state.run_params, model, current_result_frame)
         model.St7SaveFile()
         db.add_element_connections(init_data.elem_conns)
 
         # Write out the axis angles
-        with open(working_dir / "PlateAxisAngle.txt", "w") as f_orient:
+        with open(state.run_params.working_dir / "PlateAxisAngle.txt", "w") as f_orient:
             for elem_num, angle_deg in init_data.elem_axis_angle_deg.items():
                 # Angles go between 0 and 90, then start going back towards the same thing. So 91 deg is also -89 deg.
                 angle_wrap = wraparound_from_zero(90, angle_deg)
                 f_orient.write(f"{elem_num}\t{angle_wrap}\n")
 
-        run_params.scaling.assign_centroids(init_data)
+        state.run_params.scaling.assign_centroids(init_data)
         averaging.populate_radius(init_data.node_step_xyz[NodeMoveStep.perturbed], init_data.elem_conns)
 
         # Dummy init values
@@ -1305,17 +1324,17 @@ def main(run_params: RunParams):
 
         previous_load_factor = 0.0
 
-        increment_types = run_params.n_steps_major * [IncrementType.loading]
-        if run_params.unload_step:
+        increment_types = state.run_params.n_steps_major * [IncrementType.loading]
+        if state.run_params.unload_step:
             increment_types.append(IncrementType.unloading)
 
         for increment_type in increment_types:
-            run_params.parameter_trend.current_inc.inc_major()
-            run_params.parameter_trend.current_inc.increment_type = increment_type
+            state.run_params.parameter_trend.current_inc.inc_major()
+            state.run_params.parameter_trend.current_inc.increment_type = increment_type
 
             # Update the model with the new load
             if increment_type == IncrementType.loading:
-                this_load_factor = run_params.max_load_ratio * (run_params.parameter_trend.current_inc.major_inc + 1) / run_params.n_steps_major
+                this_load_factor = state.run_params.max_load_ratio * (state.run_params.parameter_trend.current_inc.major_inc + 1) / state.run_params.n_steps_major
 
             elif increment_type == IncrementType.unloading:
                 this_load_factor = 0.0
@@ -1324,19 +1343,19 @@ def main(run_params: RunParams):
                 raise ValueError(increment_type)
 
             should_skip = False
-            if run_params.start_at_major_ratio is not None:
+            if state.run_params.start_at_major_ratio is not None:
                 if increment_type == IncrementType.loading:
-                    if this_load_factor < run_params.start_at_major_ratio:
+                    if this_load_factor < state.run_params.start_at_major_ratio:
                         should_skip = True
 
             if should_skip:
-                print(f"Skipping major increment {run_params.parameter_trend.current_inc.major_inc} as load factor {this_load_factor} is below cutoff of {run_params.start_at_major_ratio}")
+                print(f"Skipping major increment {state.run_params.parameter_trend.current_inc.major_inc} as load factor {this_load_factor} is below cutoff of {state.run_params.start_at_major_ratio}")
 
             else:
                 # Get the results from the last major step.
-                _results_and_screenshots(False, run_params, init_data, db, current_result_frame, model, model_window, prestrain_update)
+                _results_and_screenshots(False, state.run_params, init_data, db, current_result_frame, model, model_window, prestrain_update)
 
-                prestrain_load_case_num = create_load_case(model, run_params.parameter_trend.current_inc.step_name())
+                prestrain_load_case_num = create_load_case(model, state.run_params.parameter_trend.current_inc.step_name())
                 apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_locked_in)
 
                 # Add the increment, or overwrite it
@@ -1344,19 +1363,19 @@ def main(run_params: RunParams):
                     model,
                     current_result_frame,
                     this_load_factor,
-                    run_params.parameter_trend.current_inc.step_name()
+                    state.run_params.parameter_trend.current_inc.step_name()
                 )
-                set_load_increment_table(run_params, model, current_result_frame, this_load_factor, prestrain_load_case_num)
+                set_load_increment_table(state.run_params, model, current_result_frame, this_load_factor, prestrain_load_case_num)
             
                 relaxation.set_current_relaxation(previous_load_factor, this_load_factor)
 
-                run_params.parameter_trend.current_inc.inc_minor()
+                state.run_params.parameter_trend.current_inc.inc_minor()
                 new_count = math.inf
 
                 def should_do_another_minor_iteration(new_count, minor_inc: int) -> bool:
-                    return (new_count > 0) and (minor_inc <= run_params.n_steps_minor_max)
+                    return (new_count > 0) and (minor_inc <= state.run_params.n_steps_minor_max)
 
-                while should_do_another_minor_iteration(new_count, run_params.parameter_trend.current_inc.minor_inc):
+                while should_do_another_minor_iteration(new_count, state.run_params.parameter_trend.current_inc.minor_inc):
                     model.St7SaveFile()
                     run_solver_slow_and_steady(model, current_result_frame.configuration.solver)
 
@@ -1364,28 +1383,28 @@ def main(run_params: RunParams):
                     set_max_iters(model, config.active_config.max_iters, use_major=False)
 
                     # Get the results from the last minor step.
-                    result_strain = _results_and_screenshots(True, run_params, init_data, db, current_result_frame, model, model_window, prestrain_update)
+                    result_strain = _results_and_screenshots(True, state.run_params, init_data, db, current_result_frame, model, model_window, prestrain_update)
 
-                    _update_prestrain_table(run_params, ratchet.table, run_params.parameter_trend.current_inc)
+                    _update_prestrain_table(state.run_params, ratchet.table, state.run_params.parameter_trend.current_inc)
 
                     prestrain_update = incremental_element_update_list(
                         init_data=init_data,
-                        run_params=run_params,
+                        run_params=state.run_params,
                         ratchet=ratchet,
                         previous_prestrain_update=prestrain_update,
                         result_strain=result_strain,
                     )
 
                     new_count = prestrain_update.updated_this_round
-                    _print_update_line(run_params, prestrain_update)
+                    _print_update_line(state.run_params, prestrain_update)
 
                     # Apply prestrains etc to the upcoming increment.
                     if config.active_config.case_for_every_increment:
-                        prestrain_load_case_num = create_load_case(model, run_params.parameter_trend.current_inc.step_name())
+                        prestrain_load_case_num = create_load_case(model, state.run_params.parameter_trend.current_inc.step_name())
 
                     # Add the next step
-                    current_result_frame = add_increment(model, current_result_frame, this_load_factor, run_params.parameter_trend.current_inc.step_name())
-                    set_load_increment_table(run_params, model, current_result_frame, this_load_factor, prestrain_load_case_num)
+                    current_result_frame = add_increment(model, current_result_frame, this_load_factor, state.run_params.parameter_trend.current_inc.step_name())
+                    set_load_increment_table(state.run_params, model, current_result_frame, this_load_factor, prestrain_load_case_num)
 
                     apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_iteration_set)
 
@@ -1395,7 +1414,7 @@ def main(run_params: RunParams):
                             ratchet.update_minimum(True, sv.id_key, sv.value)
 
                     # Keep track of the old results...
-                    run_params.parameter_trend.current_inc.inc_minor()
+                    state.run_params.parameter_trend.current_inc.inc_minor()
 
                     set_max_iters(model, config.active_config.max_iters, use_major=True)
 
@@ -1416,7 +1435,7 @@ def main(run_params: RunParams):
 
         # Save the image of pre-strain results from the maximum load step.
         with model.St7CreateModelWindow(dont_really_make=False) as model_window:
-            _results_and_screenshots(False, run_params, init_data, db, current_result_frame, model, model_window, prestrain_update)
+            _results_and_screenshots(False, state.run_params, init_data, db, current_result_frame, model, model_window, prestrain_update)
 
 
 def create_load_case(model, case_name):
@@ -1499,7 +1518,10 @@ if __name__ == "__main__":
         scale_model_y=0.5,  # 0.3 Seems good
         max_load_ratio=1.0,
         unload_step=True,
+        working_dir=directories.get_unique_sub_dir(config.active_config.fn_working_image_base),
     )
+
+    aaa = pickle.dumps(run_params)
 
     main(run_params)
 
