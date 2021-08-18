@@ -1240,6 +1240,7 @@ def checkpoint():
 
 
 class CheckpointState(typing.NamedTuple):
+
     run_params: RunParams
     ratchet: Ratchet
     current_inc: int
@@ -1258,6 +1259,22 @@ class CheckpointState(typing.NamedTuple):
             prev_load_factor=None
         )
 
+def _get_pickle_fn(working_dir: pathlib.Path) -> str:
+    return working_dir / "current_state.pickle"
+
+
+def save_state(state: CheckpointState):
+    state_fn = _get_pickle_fn(state.run_params.working_dir)
+    with open(state_fn, 'wb') as fp:
+        pickle.dump(state, fp)
+        
+
+def load_state(working_dir: pathlib.Path) -> CheckpointState:
+    state_fn = _get_pickle_fn(working_dir)
+    with open(state_fn, 'rb') as fp:
+        state = pickle.load(fp)
+
+    return state
 
 
 def main(state: CheckpointState):
@@ -1426,6 +1443,8 @@ def main(state: CheckpointState):
                     state.run_params.parameter_trend.current_inc.inc_minor()
 
                     set_max_iters(model, config.active_config.max_iters, use_major=True)
+
+                    save_state(state)
 
                 # Tack a final increment on the end so the result case is there as expected for the start of the following major increment.
                 model.St7SaveFile()
