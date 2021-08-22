@@ -1279,12 +1279,7 @@ def load_state(working_dir: pathlib.Path) -> CheckpointState:
 
 def main(state: CheckpointState):
     if not state.ratchet:
-        state.ratchet = Ratchet(
-            table=Table(),
-            scaling=state.run_params.scaling,
-            averaging=state.run_params.averaging,
-            relaxation=state.run_params.relaxation,
-            throttler=state.run_params.throttler)
+        raise ValueError("what? this should be set")
 
     # Allow a maximum of 10% of the elements to yield in a given step.
 
@@ -1340,7 +1335,7 @@ def main(state: CheckpointState):
                 f_orient.write(f"{elem_num}\t{angle_wrap}\n")
 
         state.run_params.scaling.assign_centroids(init_data)
-        averaging.populate_radius(init_data.node_step_xyz[NodeMoveStep.perturbed], init_data.elem_conns)
+        state.run_params.averaging.populate_radius(init_data.node_step_xyz[NodeMoveStep.perturbed], init_data.elem_conns)
 
         # Dummy init values
         prestrain_update = PrestrainUpdate.zero()
@@ -1393,7 +1388,7 @@ def main(state: CheckpointState):
                 )
                 set_load_increment_table(state.run_params, model, current_result_frame, this_load_factor, prestrain_load_case_num)
             
-                relaxation.set_current_relaxation(previous_load_factor, this_load_factor)
+                state.run_params.relaxation.set_current_relaxation(previous_load_factor, this_load_factor)
 
                 state.run_params.parameter_trend.current_inc.inc_minor()
                 new_count = math.inf
@@ -1444,6 +1439,7 @@ def main(state: CheckpointState):
 
                     set_max_iters(model, config.active_config.max_iters, use_major=True)
 
+                    # TODO - make this the point at which we flick the "doing something" switch
                     save_state(state)
 
                 # Tack a final increment on the end so the result case is there as expected for the start of the following major increment.
@@ -1457,7 +1453,7 @@ def main(state: CheckpointState):
                 for sv in prestrain_update.elem_prestrains_locked_in:
                     state.ratchet.update_minimum(True, sv.id_key, sv.value)
 
-                relaxation.flush_previous_values()
+                state.run_params.relaxation.flush_previous_values()
 
         model.St7SaveFile()
 
@@ -1473,16 +1469,8 @@ def create_load_case(model, case_name):
     return new_case_num
 
 
-if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(description="Transformation bands")
-    parser.add_argument("--dilation_ratio", default=0.008, type=float)
-    parser.add_argument("--actuator", default=Actuator.e_local, type=Actuator.from_string, choices=list(Actuator))
-    parser.add_argument("--init_variation", default=0.0, type=float)
-    parser.add_argument("--init_spacing", default=0.075, type=float)
-
-    args = parser.parse_args()
-
+def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
+    
     dilation_ratio_ref = 0.008   # 0.8% expansion, according to Jerome
     relaxation = NoRelax()
     averaging = NoAve()
@@ -1538,7 +1526,7 @@ if __name__ == "__main__":
         start_at_major_ratio=0.32,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestH-Med.st7"),
+        source_file_name=pathlib.Path("TestH-Coarse.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
@@ -1549,9 +1537,47 @@ if __name__ == "__main__":
         working_dir=directories.get_unique_sub_dir(config.active_config.fn_working_image_base),
     )
 
-    aaa = pickle.dumps(run_params)
+    # New ratchet state
+    ratchet = Ratchet(
+        table=Table(),
+        scaling=run_params.scaling,
+        averaging=run_params.averaging,
+        relaxation=run_params.relaxation,
+        throttler=run_params.throttler
+    )
 
-    main(run_params)
+    checkpoint_state_starting = CheckpointState.starting_state()._replace(
+        run_params=run_params,
+        ratchet=ratchet,
+    )
+
+    return checkpoint_state_starting
+
+
+def load_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
+    working_dir = os.path.join(config.active_config.fn_working_image_base, args.restart_prefix)
+
+    return load_state(working_dir)
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="Transformation bands")
+    parser.add_argument("--dilation_ratio", default=0.008, type=float)
+    parser.add_argument("--actuator", default=Actuator.e_local, type=Actuator.from_string, choices=list(Actuator))
+    parser.add_argument("--init_variation", default=0.0, type=float)
+    parser.add_argument("--init_spacing", default=0.075, type=float)
+    parser.add_argument("--restart_prefix", required=False, default="", type=str)
+    
+    args = parser.parse_args()
+
+    if args.restart_prefix:
+        state = load_checkpoint_state(args)
+
+    else:
+        state = new_checkpoint_state(args)
+
+    main(state)
 
 
 # Combine to one video with "C:\Utilities\ffmpeg-20181212-32601fb-win64-static\bin\ffmpeg.exe -f image2 -r 12 -i Case-%04d.png -vcodec libx264 -profile:v high444 -refs 16 -crf 0 out.mp4"
