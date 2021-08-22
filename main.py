@@ -1169,25 +1169,29 @@ def _print_update_line(run_params: RunParams, prestrain_update: PrestrainUpdate)
 
 def _results_and_screenshots(
     get_result_strains: bool,
-    run_params: RunParams,
+    state: "CheckpointState",
     init_data: InitialSetupModelData,
     db: history.DB,
     current_result_frame: ResultFrame,
     model: st7.St7Model,
     model_window: st7.St7ModelWindow,
-    prestrain_update,
 ):
+
+    if not state.should_run():
+        print("... skipping screenshot in fast-forward mode")
+        return
+
     # This is in a separate function so I can retry it in the annoying case of intermittent execptions
     def do_it():
         with model.open_results(current_result_frame.result_file) as results:
             if get_result_strains:
-                result_strain = get_results(run_params.actuator, results, current_result_frame.result_case_num)
+                result_strain = get_results(state.run_params.actuator, results, current_result_frame.result_case_num)
 
             else:
                 result_strain = ElemVectorDict()
 
-            write_out_screenshot(run_params, model_window, current_result_frame)
-            write_out_to_db(db, init_data, run_params.parameter_trend.current_inc, results, current_result_frame, prestrain_update, result_strain)
+            write_out_screenshot(state.run_params, model_window, current_result_frame)
+            write_out_to_db(db, init_data, state.run_params.parameter_trend.current_inc, results, current_result_frame, state.prestrain_update, result_strain)
 
         return result_strain
 
@@ -1206,8 +1210,12 @@ def _results_and_screenshots(
     raise e_to_raise
 
 
-def run_solver_slow_and_steady(model: st7.St7Model, solver_type: const.SolverType):
+def run_solver_slow_and_steady(model: st7.St7Model, solver_type: const.SolverType, state: "CheckpointState"):
     """Runs the solver and makes sure it actually ran. It seems the network drops out which causes the solver terminate..."""
+
+    if not state.should_run():
+        print("...skipping solve in fast-forward mode")
+        return
 
     model.St7SetUseSolverDLL(True)
     
@@ -1245,8 +1253,8 @@ class CheckpointState(typing.NamedTuple):
     ratchet: Ratchet
     current_inc: int
     prestrain_update: PrestrainUpdate
-    this_load_factor: float
-    prev_load_factor: float
+    fast_forward_until_major: int
+    fast_forward_until_minor: int
 
     @staticmethod
     def starting_state() -> "CheckpointState":
@@ -1254,19 +1262,35 @@ class CheckpointState(typing.NamedTuple):
             run_params=None,
             ratchet=None,
             current_inc=None,
-            prestrain_update=None,
-            this_load_factor=None,
-            prev_load_factor=None
+            prestrain_update=PrestrainUpdate.zero(),
+            fast_forward_until_major=0,
+            fast_forward_until_minor=0,
         )
+
+    def should_run(self) -> bool:
+        """False if we're in "fast-forwarding" mode - restarting from an old thing."""
+
+        incs = (
+            self.state.run_params.parameter_trend.current_inc.major_inc,
+            self.state.run_params.parameter_trend.current_inc.minor_inc,
+        )
+
+        return incs >= (self.fast_forward_until_major, self.fast_forward_until_minor)
+        
 
 def _get_pickle_fn(working_dir: pathlib.Path) -> str:
     return working_dir / "current_state.pickle"
 
 
 def save_state(state: CheckpointState):
+    # Record the major and minor increments we were up to
+    state_to_save = state._replace(
+        fast_forward_until_major=state.run_params.parameter_trend.current_inc.major_inc,
+        fast_forward_until_minor=state.run_params.parameter_trend.current_inc.minor_inc,
+    )
     state_fn = _get_pickle_fn(state.run_params.working_dir)
     with open(state_fn, 'wb') as fp:
-        pickle.dump(state, fp)
+        pickle.dump(state_to_save, fp)
         
 
 def load_state(working_dir: pathlib.Path) -> CheckpointState:
@@ -1337,11 +1361,8 @@ def main(state: CheckpointState):
         state.run_params.scaling.assign_centroids(init_data)
         state.run_params.averaging.populate_radius(init_data.node_step_xyz[NodeMoveStep.perturbed], init_data.elem_conns)
 
-        # Dummy init values
-        prestrain_update = PrestrainUpdate.zero()
-
         set_max_iters(model, config.active_config.max_iters, use_major=True)
-        run_solver_slow_and_steady(model, current_result_frame.configuration.solver)
+        run_solver_slow_and_steady(model, current_result_frame.configuration.solver, state)
 
         previous_load_factor = 0.0
 
@@ -1374,64 +1395,74 @@ def main(state: CheckpointState):
 
             else:
                 # Get the results from the last major step.
-                _results_and_screenshots(False, state.run_params, init_data, db, current_result_frame, model, model_window, prestrain_update)
+                _results_and_screenshots(False, state, init_data, db, current_result_frame, model, model_window, state.prestrain_update)
 
-                prestrain_load_case_num = create_load_case(model, state.run_params.parameter_trend.current_inc.step_name())
-                apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_locked_in)
+                if state.should_run():
+                    prestrain_load_case_num = create_load_case(model, state)
+                    apply_prestrain(model, prestrain_load_case_num, state.prestrain_update.elem_prestrains_locked_in)
 
-                # Add the increment, or overwrite it
-                current_result_frame = add_increment(
-                    model,
-                    current_result_frame,
-                    this_load_factor,
-                    state.run_params.parameter_trend.current_inc.step_name()
-                )
-                set_load_increment_table(state.run_params, model, current_result_frame, this_load_factor, prestrain_load_case_num)
-            
+                    # Add the increment, or overwrite it
+                    current_result_frame = add_increment(
+                        model,
+                        current_result_frame,
+                        this_load_factor,
+                        state.run_params.parameter_trend.current_inc.step_name()
+                    )
+                    set_load_increment_table(state.run_params, model, current_result_frame, this_load_factor, prestrain_load_case_num)
+                
                 state.run_params.relaxation.set_current_relaxation(previous_load_factor, this_load_factor)
 
                 state.run_params.parameter_trend.current_inc.inc_minor()
                 new_count = math.inf
 
                 def should_do_another_minor_iteration(new_count, minor_inc: int) -> bool:
-                    return (new_count > 0) and (minor_inc <= state.run_params.n_steps_minor_max)
-
+                    ff_this_major = state.run_params.parameter_trend.current_inc.major_inc == state.fast_forward_until_major
+                    ff_not_up_to_minor = state.run_params.parameter_trend.current_inc.minor_inc < state.fast_forward_until_minor
+                    is_fast_forwarding_this_increment = ff_this_major and ff_not_up_to_minor
+                    if is_fast_forwarding_this_increment:
+                        return True
+                    
+                    else:
+                        return (new_count > 0) and (minor_inc <= state.run_params.n_steps_minor_max)
+                # TODO- up to here with the fast forwarding
                 while should_do_another_minor_iteration(new_count, state.run_params.parameter_trend.current_inc.minor_inc):
                     model.St7SaveFile()
-                    run_solver_slow_and_steady(model, current_result_frame.configuration.solver)
+                    run_solver_slow_and_steady(model, current_result_frame.configuration.solver, state)
 
                     # For the next minor increment, unless overwritten.
                     set_max_iters(model, config.active_config.max_iters, use_major=False)
 
                     # Get the results from the last minor step.
-                    result_strain = _results_and_screenshots(True, state.run_params, init_data, db, current_result_frame, model, model_window, prestrain_update)
+                    result_strain = _results_and_screenshots(True, state, init_data, db, current_result_frame, model, model_window)
 
                     _update_prestrain_table(state.run_params, state.ratchet.table, state.run_params.parameter_trend.current_inc)
 
-                    prestrain_update = incremental_element_update_list(
+                    new_prestrain_update = incremental_element_update_list(
                         init_data=init_data,
                         run_params=state.run_params,
                         ratchet=state.ratchet,
-                        previous_prestrain_update=prestrain_update,
+                        previous_prestrain_update=state.prestrain_update,
                         result_strain=result_strain,
                     )
 
-                    new_count = prestrain_update.updated_this_round
-                    _print_update_line(state.run_params, prestrain_update)
+                    new_count = new_prestrain_update.updated_this_round
+                    _print_update_line(state.run_params, new_prestrain_update)
+
+                    state = state._replace(prestrain_update=new_prestrain_update)
 
                     # Apply prestrains etc to the upcoming increment.
                     if config.active_config.case_for_every_increment:
-                        prestrain_load_case_num = create_load_case(model, state.run_params.parameter_trend.current_inc.step_name())
+                        prestrain_load_case_num = create_load_case(model, state)
 
                     # Add the next step
                     current_result_frame = add_increment(model, current_result_frame, this_load_factor, state.run_params.parameter_trend.current_inc.step_name())
                     set_load_increment_table(state.run_params, model, current_result_frame, this_load_factor, prestrain_load_case_num)
 
-                    apply_prestrain(model, prestrain_load_case_num, prestrain_update.elem_prestrains_iteration_set)
+                    apply_prestrain(model, prestrain_load_case_num, state.prestrain_update.elem_prestrains_iteration_set)
 
                     if config.active_config.ratched_prestrains_during_iterations:
                         # Update the ratchet settings for the one we did ramp up.
-                        for sv in prestrain_update.elem_prestrains_iteration_set:
+                        for sv in state.prestrain_update.elem_prestrains_iteration_set:
                             state.ratchet.update_minimum(True, sv.id_key, sv.value)
 
                     # Keep track of the old results...
@@ -1444,13 +1475,13 @@ def main(state: CheckpointState):
 
                 # Tack a final increment on the end so the result case is there as expected for the start of the following major increment.
                 model.St7SaveFile()
-                run_solver_slow_and_steady(model, current_result_frame.configuration.solver)
+                run_solver_slow_and_steady(model, current_result_frame.configuration.solver, state)
 
-                prestrain_update = prestrain_update.locked_in_prestrains()
+                state._replace(prestrain_update=state.prestrain_update.locked_in_prestrains())
                 previous_load_factor = this_load_factor
 
                 # Update the ratchet for what's been locked in.
-                for sv in prestrain_update.elem_prestrains_locked_in:
+                for sv in state.prestrain_update.elem_prestrains_locked_in:
                     state.ratchet.update_minimum(True, sv.id_key, sv.value)
 
                 state.run_params.relaxation.flush_previous_values()
@@ -1459,10 +1490,18 @@ def main(state: CheckpointState):
 
         # Save the image of pre-strain results from the maximum load step.
         with model.St7CreateModelWindow(dont_really_make=False) as model_window:
-            _results_and_screenshots(False, state.run_params, init_data, db, current_result_frame, model, model_window, prestrain_update)
+            _results_and_screenshots(False, state, init_data, db, current_result_frame, model, model_window)
 
 
-def create_load_case(model, case_name):
+def create_load_case(model, state: CheckpointState):
+    
+    if not state.should_run():
+        print("... skipping making a new load case in fast-forward mode...")
+        existing_max_case_num = model.St7GetNumLoadCase()
+        return existing_max_case_num
+
+    case_name = state.run_params.parameter_trend.current_inc.step_name()
+    
     model.St7NewLoadCase(case_name)
     new_case_num = model.St7GetNumLoadCase()
     model.St7EnableNLALoadCase(STAGE, new_case_num)
@@ -1523,7 +1562,7 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
         perturbator=perturbator_none,
         n_steps_major=100,
         n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
-        start_at_major_ratio=0.32,  # 0.42  # 0.38 for TestE, 0.53 for TestF
+        start_at_major_ratio=0.50,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
         source_file_name=pathlib.Path("TestH-Coarse.st7"),
