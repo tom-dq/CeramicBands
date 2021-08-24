@@ -54,6 +54,8 @@ STRESS_START = 400
 
 NUM_PLATE_RES_RETRIES = 20
 
+DEBUG_STATE = True
+
 # Make deterministic
 random.seed(123456)
 
@@ -146,6 +148,34 @@ class RunParams(typing.NamedTuple):
 
     def active_freedom_case_numbers(self, increment_type: IncrementType) -> typing.FrozenSet[int]:
         return frozenset(mfc.value for mfc in self.freedom_cases if mfc.active_during_increment(increment_type))
+
+    @property
+    def fn_st7(self) -> pathlib.Path:
+        return self.working_dir / "Model.st7"
+
+    def get_load_increments(self) -> typing.List[typing.Tuple[IncrementType, float]]:
+        
+        if self.unload_step:
+            maj_incs = range(self.n_steps_major+1)
+
+        else:
+            maj_incs = range(self.n_steps_major)
+
+        factors = []
+        for maj_inc in maj_incs:
+            is_loading = maj_inc < self.n_steps_major
+        
+            if is_loading:
+                this_type = IncrementType.loading
+                this_factor = self.max_load_ratio * (maj_inc + 1) / self.n_steps_major
+
+            else:
+                this_type = IncrementType.unloading
+                this_factor = 0.0
+
+            factors.append((this_type, this_factor))
+
+        return factors
 
 
 class Ratchet:
@@ -606,7 +636,7 @@ def get_results(phase_change_actuator: Actuator, results: st7.St7Results, case_n
                     time.sleep(0.001 * num_tries**2)
 
                 num_tries += 1
-                print(f"Failed with {e.__name__}, try {num_tries}/{NUM_PLATE_RES_RETRIES}. {plate_num=}, {case_num=}, {res_type=}, {res_sub_type=}")
+                print(f"Failed with {e}, try {num_tries}/{NUM_PLATE_RES_RETRIES}. {plate_num=}, {case_num=}, {res_type=}, {res_sub_type=}")
 
                 if num_tries == NUM_PLATE_RES_RETRIES:
                     raise e
@@ -884,7 +914,7 @@ def add_increment(model: st7.St7Model, result_frame: ResultFrame, this_load_fact
     else:
         raise ValueError("sovler type")
 
-    set_restart_for(model, next_result_frame)
+    # set_restart_for(model, next_result_frame)
 
     return next_result_frame
 
@@ -1210,19 +1240,30 @@ def _results_and_screenshots(
     raise e_to_raise
 
 
-def run_solver_slow_and_steady(model: st7.St7Model, solver_type: const.SolverType, state: "CheckpointState"):
+def run_solver_slow_and_steady(model: st7.St7Model, state: "CheckpointState"):
     """Runs the solver and makes sure it actually ran. It seems the network drops out which causes the solver terminate..."""
 
     if not state.should_run():
         print("...skipping solve in fast-forward mode")
         return
+    
+    if DEBUG_STATE:
+        print(f"  Solving from {state.current_result_frame.prev_result_case}")
+
+    # If this is a from-restart solve, set that up here.
+    if state.current_result_frame.global_result_case_num > 1:
+        set_restart_for(model, state.current_result_frame)
+
+    use_major = state.run_params.parameter_trend.current_inc.minor_inc == 1
+    set_max_iters(model, config.active_config.max_iters, use_major=use_major)
 
     model.St7SetUseSolverDLL(True)
     
     time_to_sleep = 0.0
 
-    while time_to_sleep < 240.0:
+    while time_to_sleep < 5.0:
         try:
+            solver_type = state.current_result_frame.configuration.solver
             model.St7RunSolver(solver_type, const.SolverMode.smBackgroundRun, True, raise_on_termination_error=True)
             return
 
@@ -1251,35 +1292,39 @@ class CheckpointState(typing.NamedTuple):
 
     run_params: RunParams
     ratchet: Ratchet
-    current_inc: int
     prestrain_update: PrestrainUpdate
     fast_forward_until_major: int
     fast_forward_until_minor: int
+    current_result_frame: ResultFrame
+    init_data: InitialSetupModelData
 
     @staticmethod
     def starting_state() -> "CheckpointState":
         return CheckpointState(
             run_params=None,
             ratchet=None,
-            current_inc=None,
             prestrain_update=PrestrainUpdate.zero(),
             fast_forward_until_major=0,
             fast_forward_until_minor=0,
+            current_result_frame=None,
+            init_data=None,
         )
 
     def should_run(self) -> bool:
         """False if we're in "fast-forwarding" mode - restarting from an old thing."""
 
         incs = (
-            self.state.run_params.parameter_trend.current_inc.major_inc,
-            self.state.run_params.parameter_trend.current_inc.minor_inc,
+            self.run_params.parameter_trend.current_inc.major_inc,
+            self.run_params.parameter_trend.current_inc.minor_inc,
         )
 
         return incs >= (self.fast_forward_until_major, self.fast_forward_until_minor)
         
+    def is_fresh(self) -> bool:
+        return self.init_data is None
 
 def _get_pickle_fn(working_dir: pathlib.Path) -> str:
-    return working_dir / "current_state.pickle"
+    return os.path.join(str(working_dir), "current_state.pickle")
 
 
 def save_state(state: CheckpointState):
@@ -1313,31 +1358,22 @@ def main(state: CheckpointState):
     for summary_string in config.active_config.summary_strings():
         print(summary_string.strip())
 
-    fn_st7 = state.run_params.working_dir / "Model.st7"
+    fn_st7 = state.run_params.fn_st7
     fn_db = state.run_params.working_dir / "history.db"
 
+    if state.is_fresh():
+        shutil.copy2(config.active_config.fn_st7_base / state.run_params.source_file_name, fn_st7)
 
-    shutil.copy2(config.active_config.fn_st7_base / state.run_params.source_file_name, fn_st7)
+        pt_plot_fn = str(state.run_params.working_dir / "A-ParameterTrend.png")
+        parameter_trend.save_parameter_plot(state.run_params.parameter_trend, pt_plot_fn)
 
-    pt_plot_fn = str(state.run_params.working_dir / "A-ParameterTrend.png")
-    parameter_trend.save_parameter_plot(state.run_params.parameter_trend, pt_plot_fn)
+        with open(state.run_params.working_dir / "Meta.txt", "w") as f_meta:
+            f_meta.writelines(state.run_params.summary_strings())
+            f_meta.writelines(config.active_config.summary_strings())
 
-    load_time_table = Table()
-    load_time_table.set_table_data([XY(0.0, 0.0), XY(config.active_config.qsa_time_step_size, 0.0)])
+    else:
+        print(f"Restarting from {state.fast_forward_until_major}.{state.fast_forward_until_minor}")
 
-    current_result_frame = ResultFrame(
-        st7_file=fn_st7,
-        configuration=config.active_config,
-        result_file_index=0,
-        result_case_num=1,
-        global_result_case_num=1,
-        load_time_table=load_time_table,
-        prev_result_case=None,
-    )
-
-    with open(state.run_params.working_dir / "Meta.txt", "w") as f_meta:
-        f_meta.writelines(state.run_params.summary_strings())
-        f_meta.writelines(config.active_config.summary_strings())
 
     print(f"Working directory: {state.run_params.working_dir}")
     print()
@@ -1347,42 +1383,30 @@ def main(state: CheckpointState):
         model_window = exit_stack.enter_context(model.St7CreateModelWindow(DONT_MAKE_MODEL_WINDOW))
         db = exit_stack.enter_context(history.DB(fn_db))
 
-        init_data = initial_setup(state.run_params, model, current_result_frame)
-        model.St7SaveFile()
-        db.add_element_connections(init_data.elem_conns)
+        if state.is_fresh():
+            init_data = initial_setup(state.run_params, model, state.current_result_frame)
+            state = state._replace(init_data=init_data)
+            model.St7SaveFile()
+        
+            db.add_element_connections(init_data.elem_conns)
 
-        # Write out the axis angles
-        with open(state.run_params.working_dir / "PlateAxisAngle.txt", "w") as f_orient:
-            for elem_num, angle_deg in init_data.elem_axis_angle_deg.items():
-                # Angles go between 0 and 90, then start going back towards the same thing. So 91 deg is also -89 deg.
-                angle_wrap = wraparound_from_zero(90, angle_deg)
-                f_orient.write(f"{elem_num}\t{angle_wrap}\n")
+            # Write out the axis angles
+            with open(state.run_params.working_dir / "PlateAxisAngle.txt", "w") as f_orient:
+                for elem_num, angle_deg in init_data.elem_axis_angle_deg.items():
+                    # Angles go between 0 and 90, then start going back towards the same thing. So 91 deg is also -89 deg.
+                    angle_wrap = wraparound_from_zero(90, angle_deg)
+                    f_orient.write(f"{elem_num}\t{angle_wrap}\n")
 
-        state.run_params.scaling.assign_centroids(init_data)
-        state.run_params.averaging.populate_radius(init_data.node_step_xyz[NodeMoveStep.perturbed], init_data.elem_conns)
+            state.run_params.scaling.assign_centroids(state.init_data)
+            state.run_params.averaging.populate_radius(state.init_data.node_step_xyz[NodeMoveStep.perturbed], state.init_data.elem_conns)
 
-        set_max_iters(model, config.active_config.max_iters, use_major=True)
-        run_solver_slow_and_steady(model, current_result_frame.configuration.solver, state)
+            run_solver_slow_and_steady(model, state)
 
         previous_load_factor = 0.0
 
-        increment_types = state.run_params.n_steps_major * [IncrementType.loading]
-        if state.run_params.unload_step:
-            increment_types.append(IncrementType.unloading)
-
-        for increment_type in increment_types:
+        for increment_type, this_load_factor in state.run_params.get_load_increments():
             state.run_params.parameter_trend.current_inc.inc_major()
             state.run_params.parameter_trend.current_inc.increment_type = increment_type
-
-            # Update the model with the new load
-            if increment_type == IncrementType.loading:
-                this_load_factor = state.run_params.max_load_ratio * (state.run_params.parameter_trend.current_inc.major_inc + 1) / state.run_params.n_steps_major
-
-            elif increment_type == IncrementType.unloading:
-                this_load_factor = 0.0
-
-            else:
-                raise ValueError(increment_type)
 
             should_skip = False
             if state.run_params.start_at_major_ratio is not None:
@@ -1394,22 +1418,22 @@ def main(state: CheckpointState):
                 print(f"Skipping major increment {state.run_params.parameter_trend.current_inc.major_inc} as load factor {this_load_factor} is below cutoff of {state.run_params.start_at_major_ratio}")
 
             else:
-                # Get the results from the last major step.
-                _results_and_screenshots(False, state, init_data, db, current_result_frame, model, model_window, state.prestrain_update)
+                _results_and_screenshots(False, state, state.init_data, db, state.current_result_frame, model, model_window)
 
+                prestrain_load_case_num = create_load_case_or_return_max_if_fastforward(model, state)
                 if state.should_run():
-                    prestrain_load_case_num = create_load_case(model, state)
                     apply_prestrain(model, prestrain_load_case_num, state.prestrain_update.elem_prestrains_locked_in)
 
                     # Add the increment, or overwrite it
-                    current_result_frame = add_increment(
+                    new_current_result_frame = add_increment(
                         model,
-                        current_result_frame,
+                        state.current_result_frame,
                         this_load_factor,
                         state.run_params.parameter_trend.current_inc.step_name()
                     )
-                    set_load_increment_table(state.run_params, model, current_result_frame, this_load_factor, prestrain_load_case_num)
-                
+                    state=state._replace(current_result_frame=new_current_result_frame)
+                    set_load_increment_table(state.run_params, model, state.current_result_frame, this_load_factor, prestrain_load_case_num)
+
                 state.run_params.relaxation.set_current_relaxation(previous_load_factor, this_load_factor)
 
                 state.run_params.parameter_trend.current_inc.inc_minor()
@@ -1424,80 +1448,87 @@ def main(state: CheckpointState):
                     
                     else:
                         return (new_count > 0) and (minor_inc <= state.run_params.n_steps_minor_max)
+                        
                 # TODO- up to here with the fast forwarding
                 while should_do_another_minor_iteration(new_count, state.run_params.parameter_trend.current_inc.minor_inc):
-                    model.St7SaveFile()
-                    run_solver_slow_and_steady(model, current_result_frame.configuration.solver, state)
-
-                    # For the next minor increment, unless overwritten.
-                    set_max_iters(model, config.active_config.max_iters, use_major=False)
-
-                    # Get the results from the last minor step.
-                    result_strain = _results_and_screenshots(True, state, init_data, db, current_result_frame, model, model_window)
+                    if state.should_run(): model.St7SaveFile()
+                    run_solver_slow_and_steady(model, state)
 
                     _update_prestrain_table(state.run_params, state.ratchet.table, state.run_params.parameter_trend.current_inc)
 
-                    new_prestrain_update = incremental_element_update_list(
-                        init_data=init_data,
-                        run_params=state.run_params,
-                        ratchet=state.ratchet,
-                        previous_prestrain_update=state.prestrain_update,
-                        result_strain=result_strain,
-                    )
+                    if state.should_run():
+                        # Get the results from the last minor step.
+                        result_strain = _results_and_screenshots(True, state, state.init_data, db, state.current_result_frame, model, model_window)
 
-                    new_count = new_prestrain_update.updated_this_round
-                    _print_update_line(state.run_params, new_prestrain_update)
+                        new_prestrain_update = incremental_element_update_list(
+                            init_data=state.init_data,
+                            run_params=state.run_params,
+                            ratchet=state.ratchet,
+                            previous_prestrain_update=state.prestrain_update,
+                            result_strain=result_strain,
+                        )
 
-                    state = state._replace(prestrain_update=new_prestrain_update)
+                        new_count = new_prestrain_update.updated_this_round
+                        _print_update_line(state.run_params, new_prestrain_update)
 
-                    # Apply prestrains etc to the upcoming increment.
-                    if config.active_config.case_for_every_increment:
-                        prestrain_load_case_num = create_load_case(model, state)
+                        state = state._replace(prestrain_update=new_prestrain_update)
 
-                    # Add the next step
-                    current_result_frame = add_increment(model, current_result_frame, this_load_factor, state.run_params.parameter_trend.current_inc.step_name())
-                    set_load_increment_table(state.run_params, model, current_result_frame, this_load_factor, prestrain_load_case_num)
+                        # Apply prestrains etc to the upcoming increment.
+                        if config.active_config.case_for_every_increment:
+                            prestrain_load_case_num = create_load_case_or_return_max_if_fastforward(model, state)
 
-                    apply_prestrain(model, prestrain_load_case_num, state.prestrain_update.elem_prestrains_iteration_set)
+                        # Add the next step
+                        new_current_result_frame = add_increment(model, state.current_result_frame, this_load_factor, state.run_params.parameter_trend.current_inc.step_name())
+                        state=state._replace(current_result_frame=new_current_result_frame)
+                        set_load_increment_table(state.run_params, model, state.current_result_frame, this_load_factor, prestrain_load_case_num)
 
-                    if config.active_config.ratched_prestrains_during_iterations:
-                        # Update the ratchet settings for the one we did ramp up.
-                        for sv in state.prestrain_update.elem_prestrains_iteration_set:
-                            state.ratchet.update_minimum(True, sv.id_key, sv.value)
+                        apply_prestrain(model, prestrain_load_case_num, state.prestrain_update.elem_prestrains_iteration_set)
+
+                        if config.active_config.ratched_prestrains_during_iterations:
+                            # Update the ratchet settings for the one we did ramp up.
+                            for sv in state.prestrain_update.elem_prestrains_iteration_set:
+                                state.ratchet.update_minimum(True, sv.id_key, sv.value)
+
+                    else:
+                        print("... skipping fast forward")
 
                     # Keep track of the old results...
                     state.run_params.parameter_trend.current_inc.inc_minor()
 
-                    set_max_iters(model, config.active_config.max_iters, use_major=True)
+                    if state.should_run():
+                        # If we're fastforwarding, don't overwrite the old state.
+                        save_state(state)
 
-                    # TODO - make this the point at which we flick the "doing something" switch
-                    save_state(state)
+                if state.should_run():
+                    # Tack a final increment on the end so the result case is there as expected for the start of the following major increment.
+                    model.St7SaveFile()
+                    run_solver_slow_and_steady(model, state)
 
-                # Tack a final increment on the end so the result case is there as expected for the start of the following major increment.
-                model.St7SaveFile()
-                run_solver_slow_and_steady(model, current_result_frame.configuration.solver, state)
+                    state._replace(prestrain_update=state.prestrain_update.locked_in_prestrains())
+                    previous_load_factor = this_load_factor
 
-                state._replace(prestrain_update=state.prestrain_update.locked_in_prestrains())
-                previous_load_factor = this_load_factor
+                    # Update the ratchet for what's been locked in.
+                    for sv in state.prestrain_update.elem_prestrains_locked_in:
+                        state.ratchet.update_minimum(True, sv.id_key, sv.value)
 
-                # Update the ratchet for what's been locked in.
-                for sv in state.prestrain_update.elem_prestrains_locked_in:
-                    state.ratchet.update_minimum(True, sv.id_key, sv.value)
+                    state.run_params.relaxation.flush_previous_values()
 
-                state.run_params.relaxation.flush_previous_values()
+        if state.should_run():
+            model.St7SaveFile()
 
-        model.St7SaveFile()
-
-        # Save the image of pre-strain results from the maximum load step.
-        with model.St7CreateModelWindow(dont_really_make=False) as model_window:
-            _results_and_screenshots(False, state, init_data, db, current_result_frame, model, model_window)
+            # Save the image of pre-strain results from the maximum load step.
+            with model.St7CreateModelWindow(dont_really_make=False) as model_window:
+                _results_and_screenshots(False, state, state.init_data, db, state.current_result_frame, model, model_window)
 
 
-def create_load_case(model, state: CheckpointState):
+def create_load_case_or_return_max_if_fastforward(model, state: CheckpointState):
     
     if not state.should_run():
         print("... skipping making a new load case in fast-forward mode...")
         existing_max_case_num = model.St7GetNumLoadCase()
+        if existing_max_case_num <= LOAD_CASE_BENDING:
+            raise ValueError(f"Should be bigger! {existing_max_case_num}")
+
         return existing_max_case_num
 
     case_name = state.run_params.parameter_trend.current_inc.step_name()
@@ -1585,9 +1616,24 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
         throttler=run_params.throttler
     )
 
+    
+    load_time_table = Table()
+    load_time_table.set_table_data([XY(0.0, 0.0), XY(config.active_config.qsa_time_step_size, 0.0)])
+
+    current_result_frame = ResultFrame(
+        st7_file=run_params.fn_st7,
+        configuration=config.active_config,
+        result_file_index=0,
+        result_case_num=1,
+        global_result_case_num=1,
+        load_time_table=load_time_table,
+        prev_result_case=None,
+    )
+
     checkpoint_state_starting = CheckpointState.starting_state()._replace(
         run_params=run_params,
         ratchet=ratchet,
+        current_result_frame=current_result_frame,
     )
 
     return checkpoint_state_starting
@@ -1596,7 +1642,13 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
 def load_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
     working_dir = os.path.join(config.active_config.fn_working_image_base, args.restart_prefix)
 
-    return load_state(working_dir)
+    as_saved_state = load_state(working_dir)
+
+    # When we're reloading this, need to fast-foward to get to the right state...
+    as_saved_state.run_params.parameter_trend.current_inc.major_inc = 0
+    as_saved_state.run_params.parameter_trend.current_inc.minor_inc = 0
+
+    return as_saved_state
 
 
 if __name__ == "__main__":

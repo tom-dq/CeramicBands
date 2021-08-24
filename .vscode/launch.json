@@ -12,6 +12,14 @@
             "console": "integratedTerminal"
         },
         {
+            "name": "Python: Main (Restart)",
+            "type": "python",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "args": ["--restart_prefix", "2S"]
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
