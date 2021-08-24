@@ -54,7 +54,7 @@ STRESS_START = 400
 
 NUM_PLATE_RES_RETRIES = 20
 
-DEBUG_STATE = True
+DEBUG_STATE = False
 
 # Make deterministic
 random.seed(123456)
@@ -1257,14 +1257,15 @@ def run_solver_slow_and_steady(model: st7.St7Model, state: "CheckpointState"):
     use_major = state.run_params.parameter_trend.current_inc.minor_inc == 1
     set_max_iters(model, config.active_config.max_iters, use_major=use_major)
 
-    model.St7SetUseSolverDLL(True)
+    use_dll = False
+    model.St7SetUseSolverDLL(use_dll)
     
     time_to_sleep = 0.0
 
     while time_to_sleep < 5.0:
         try:
             solver_type = state.current_result_frame.configuration.solver
-            model.St7RunSolver(solver_type, const.SolverMode.smBackgroundRun, True, raise_on_termination_error=True)
+            model.St7RunSolver(solver_type, const.SolverMode.smBackgroundRun, True, raise_on_termination_error=use_dll)
             return
 
         except st7_wrap.exc.St7BaseException as e:
