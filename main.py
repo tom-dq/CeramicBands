@@ -1421,6 +1421,7 @@ def main(state: CheckpointState):
                 _results_and_screenshots(False, state, state.init_data, db, state.current_result_frame, model, model_window)
 
                 prestrain_load_case_num = create_load_case_or_return_max_if_fastforward(model, state)
+                
                 if state.should_run():
                     apply_prestrain(model, prestrain_load_case_num, state.prestrain_update.elem_prestrains_locked_in)
 
@@ -1502,8 +1503,9 @@ def main(state: CheckpointState):
                 if state.should_run():
                     # Tack a final increment on the end so the result case is there as expected for the start of the following major increment.
                     model.St7SaveFile()
+                    apply_prestrain(model, prestrain_load_case_num, state.prestrain_update.elem_prestrains_iteration_set)
+                    
                     run_solver_slow_and_steady(model, state)
-
                     state._replace(prestrain_update=state.prestrain_update.locked_in_prestrains())
                     previous_load_factor = this_load_factor
 
@@ -1591,8 +1593,8 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
         relaxation=relaxation,
         throttler=throttler,
         perturbator=perturbator_none,
-        n_steps_major=100,
-        n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
+        n_steps_major=50,
+        n_steps_minor_max=10,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
         start_at_major_ratio=0.50,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
