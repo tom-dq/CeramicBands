@@ -1459,7 +1459,7 @@ def main(state: CheckpointState):
                     _update_prestrain_table(state.run_params, state.ratchet.table, state.run_params.parameter_trend.current_inc)
 
                     if state.should_run():
-                        # Get the results from the last minor step.
+                        # Get the results from the last minor step.  TODO - on the first iteration of a new major inc, this is getting zero
                         result_strain = _results_and_screenshots(True, state, state.init_data, db, state.current_result_frame, model, model_window)
 
                         new_prestrain_update = incremental_element_update_list(
@@ -1507,7 +1507,8 @@ def main(state: CheckpointState):
                     apply_prestrain(model, prestrain_load_case_num, state.prestrain_update.elem_prestrains_iteration_set)
                     
                     run_solver_slow_and_steady(model, state)
-                    state._replace(prestrain_update=state.prestrain_update.locked_in_prestrains())
+                    prestrain_update_locked_in = state.prestrain_update.locked_in_prestrains()
+                    state = state._replace(prestrain_update=prestrain_update_locked_in)
                     previous_load_factor = this_load_factor
 
                     # Update the ratchet for what's been locked in.
@@ -1594,12 +1595,12 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
         relaxation=relaxation,
         throttler=throttler,
         perturbator=perturbator_none,
-        n_steps_major=50,
-        n_steps_minor_max=10,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
+        n_steps_major=100,
+        n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
         start_at_major_ratio=0.50,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestH-Fine.st7"),
+        source_file_name=pathlib.Path("TestH-Coarse.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
