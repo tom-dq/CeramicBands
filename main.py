@@ -1605,7 +1605,7 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
         scale_model_x=1.0,  # Changing the model dimentions also scales the load.
-        scale_model_y=0.5,  # 0.3 Seems good
+        scale_model_y=args.scale_y,  # 0.3 Seems good
         max_load_ratio=1.0,
         unload_step=True,
         working_dir=directories.get_unique_sub_dir(config.active_config.fn_working_image_base),
@@ -1663,6 +1663,7 @@ if __name__ == "__main__":
     parser.add_argument("--init_variation", default=0.0, type=float)
     parser.add_argument("--init_spacing", default=0.075, type=float)
     parser.add_argument("--restart_prefix", required=False, default="", type=str)
+    parser.add_argument("--scale_y", required=False, default=0.5, type=float)
     
     args = parser.parse_args()
 
