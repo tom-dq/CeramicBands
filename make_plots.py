@@ -4,6 +4,8 @@ import matplotlib.ticker
 from tables import Table
 from common_types import XY
 
+import main
+
 
 def make_example_table() -> Table:
     STRESS_START = 400
