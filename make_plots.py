@@ -38,6 +38,10 @@ def show_table(table: Table):
     plt.show()
 
 
+def make_band_min_maj_comparison():
+    pass
+    # TODO!
+
 if __name__ == "__main__":
     table = make_example_table()
     show_table(table)
