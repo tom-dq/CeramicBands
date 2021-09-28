@@ -52,6 +52,9 @@ class BandSizeRatio(typing.NamedTuple):
         quantiles = statistics.quantiles(self._abs_band_sizes(), n=10)
         return quantiles[-1]
 
+    def get_scale(self) -> float:
+        return self.get_nominal_lower_size()
+
     def major_band_threshold(self) -> float:
 
         # TODO - fine tuning this...
@@ -59,13 +62,17 @@ class BandSizeRatio(typing.NamedTuple):
         bs_max = self.get_nominal_upper_size()
         bs_diff = bs_max - bs_min
 
-        bs_prop = bs_min + 1/10 * bs_diff
+        bs_prop = bs_min + 1/8 * bs_diff
         return bs_prop
 
-    def get_major_band_count(minor_band_percentile: int, minor_percentile_ratio: float) -> int:
-        """i.e., if minor_band_percentile = 20, take """
+    def get_major_band_count_ratio(self) -> float:
+        """Proportion of the transformation bands which are "major" bands."""
 
-        unscaled_cutoff = ...
+        cutoff = self.major_band_threshold()
+
+        maj_bands = [bs for bs in self._abs_band_sizes() if bs > cutoff]
+        return len(maj_bands) / len(self.bands)
+
 
 def make_example_table() -> Table:
     STRESS_START = 400
@@ -150,17 +157,17 @@ if __name__ == "__main__":
         x, y = [], []
         for idx, bs in enumerate(band_sizes):
             x.append(idx/(len(band_sizes)-1))
-            y.append(bs / comp.get_nominal_lower_size())
+            y.append(bs / comp.get_scale())
 
         label = f"{de} ScaleY={comp.run_params.scale_model_y}"
 
         base_line, = plt.plot(x, y, label=label)
 
         # Add a proposed "cutoff_line"
-        bs_prop = comp.get_nominal_upper_size() / comp.get_nominal_lower_size()
+        bs_prop = comp.major_band_threshold() / comp.get_scale()
         plt.plot([-1, 2.0], [bs_prop, bs_prop], color=base_line.get_color(), linestyle='--')
 
-        print(label, comp.get_nominal_lower_size(), comp.get_nominal_upper_size(), bs_prop)
+        print(label, comp.get_major_band_count_ratio(), comp.get_nominal_upper_size() / comp.get_scale(), bs_prop)
 
     plt.xlim(0.0, 1.0)
     plt.ylim(1.0, 50.0)
