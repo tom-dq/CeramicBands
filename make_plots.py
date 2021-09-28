@@ -1,10 +1,14 @@
+import pathlib
+import typing
+
 import matplotlib.pyplot as plt
 import matplotlib.ticker
 
 from tables import Table
-from common_types import XY
+import common_types
 
 import main
+import history
 
 
 def make_example_table() -> Table:
@@ -13,10 +17,10 @@ def make_example_table() -> Table:
     dilation_ratio = 0.008
 
     prestrain_table = Table([
-        XY(0.0, 0.0),
-        XY(STRESS_START, 0.0),
-        XY(stress_end, -1*dilation_ratio),
-        XY(stress_end+200, -1*dilation_ratio),
+        common_types.XY(0.0, 0.0),
+        common_types.XY(STRESS_START, 0.0),
+        common_types.XY(stress_end, -1*dilation_ratio),
+        common_types.XY(stress_end+200, -1*dilation_ratio),
     ])
 
     return prestrain_table
@@ -40,10 +44,22 @@ def show_table(table: Table):
     plt.show()
 
 
-def make_band_min_maj_comparison():
-    pass
-    # TODO!
+def make_band_min_maj_comparison(working_dir: typing.Union[pathlib.Path, str]):
+
+    working_dir = pathlib.Path(working_dir)
+    saved_state = main.load_state(working_dir)
+
+    with history.DB(working_dir / "history.db") as db:
+        cases = list(db.get_all(history.ResultCase))
+        bands = list(db.get_all(history.TransformationBand))
+
+    for c in cases:
+        print(c)
+
+    for b in bands:
+        print(b)
+
+
 
 if __name__ == "__main__":
-    table = make_example_table()
-    show_table(table)
+    make_band_min_maj_comparison(r"/Users/tomwilson/Documents/phd-data/ceramic_test_DBs/CM")
