@@ -160,6 +160,12 @@ class TransformationBand(typing.NamedTuple):
     width: float
     depth: float
 
+    @classmethod
+    def _all_nones(cls) -> "LoadDisplacementPoint":
+        nones = [None for _ in cls._fields]
+        return cls(*nones)
+
+
 
 def _make_table_statement(nt_class) -> str:
     type_lookup = {

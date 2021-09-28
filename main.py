@@ -153,16 +153,20 @@ class RunParams(typing.NamedTuple):
     def fn_st7(self) -> pathlib.Path:
         return self.working_dir / "Model.st7"
 
-    def get_load_increments(self) -> typing.List[typing.Tuple[IncrementType, float]]:
-        
-        if self.unload_step:
-            maj_incs = range(self.n_steps_major+1)
+    def get_maj_incs(self, one_based: bool) -> range:
+        n_maj = self.n_steps_major + 1 if self.unload_step else self.n_steps_major
+
+        if one_based:
+            return range(1, n_maj+1)
 
         else:
-            maj_incs = range(self.n_steps_major)
+            return range(n_maj)
 
+
+    def get_load_increments(self) -> typing.List[typing.Tuple[IncrementType, float]]:
+        
         factors = []
-        for maj_inc in maj_incs:
+        for maj_inc in self.get_maj_incs(one_based=False):
             is_loading = maj_inc < self.n_steps_major
         
             if is_loading:
