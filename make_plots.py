@@ -62,4 +62,4 @@ def make_band_min_maj_comparison(working_dir: typing.Union[pathlib.Path, str]):
 
 
 if __name__ == "__main__":
-    make_band_min_maj_comparison(r"/Users/tomwilson/Documents/phd-data/ceramic_test_DBs/CM")
+    make_band_min_maj_comparison(r"C:\Users\Tom Wilson\Dropbox\PhD\Ceramic Bands Source Models\Test Output\CM")
