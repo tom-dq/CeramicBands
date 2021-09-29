@@ -22,6 +22,12 @@ from main import Ratchet
 from main import PrestrainUpdate
 from main import ResultFrame
 
+T_Path = typing.Union[pathlib.Path, str]
+
+plot_data_base=pathlib.Path(r"C:\Users\Tom Wilson\Dropbox\PhD\Ceramic Bands Source Models\Test Output")
+
+class NoResultException(Exception):
+    pass
 
 class BandSizeRatio(typing.NamedTuple):
     run_params: RunParams
@@ -120,12 +126,12 @@ def _get_last_result_case_num(saved_state: CheckpointState, cases: typing.List[h
     one_case = [c for c in cases_subset if c.minor_inc == last_minor_inc]
 
     if len(one_case) != 1:
-        raise ValueError(one_case)
+        raise NoResultException(one_case)
 
     return one_case.pop()
 
 
-def make_band_min_maj_comparison(working_dir: typing.Union[pathlib.Path, str]) -> BandSizeRatio:
+def make_band_min_maj_comparison(working_dir: T_Path) -> BandSizeRatio:
 
     working_dir = pathlib.Path(working_dir)
     saved_state = main.load_state(working_dir)
@@ -142,13 +148,56 @@ def make_band_min_maj_comparison(working_dir: typing.Union[pathlib.Path, str]) -
     return BandSizeRatio(run_params=saved_state.run_params, bands=last_case_bands)
 
 
+def generate_plot_data(first_considered_subdir: str, last_considered_subdir: str) -> typing.Iterable[BandSizeRatio]:
+    # Get the relevant subdirectories for inclusion
+
+    def gen_relevant_subdirectories():
+        min_hex = int(first_considered_subdir, base=36)
+        max_hex = int(last_considered_subdir, base=36)
+
+
+        for working_dir in plot_data_base.iterdir():
+            if working_dir.is_dir():
+                this_hex = int(working_dir.parts[-1], base=36)
+                if min_hex <= this_hex <= max_hex:
+                    yield working_dir
+
+    for working_dir in gen_relevant_subdirectories():
+        try:
+            band_size_ratio = make_band_min_maj_comparison(working_dir)
+            yield band_size_ratio
+
+        except NoResultException:
+            pass
+
+
+def make_main_plot(first_considered_subdir: str, last_considered_subdir: str):
+    
+    band_size_ratios = list(generate_plot_data(first_considered_subdir, last_considered_subdir))
+
+    def sort_key(band_size_ratio: BandSizeRatio):
+        return band_size_ratio.run_params.scale_model_y
+
+    x, y = [], []
+    for bsr in sorted(band_size_ratios, key=sort_key):
+        x.append(bsr.run_params.scale_model_y)
+        y.append(bsr.get_major_band_count_ratio())
+
+    plt.plot(x, y)
+
+    plt.show()
+
+
 if __name__ == "__main__":
 
+    make_main_plot("CM", "CT")
+
+    exit()
     dir_ends = ['CM', 'CN', 'CO', 'CP', 'CQ', 'CR', 'CS', 'CT']
 
 
     for de in dir_ends:
-        d = os.path.join(r"C:\Users\Tom Wilson\Dropbox\PhD\Ceramic Bands Source Models\Test Output", de)
+        d = os.path.join('', de)
 
         comp = make_band_min_maj_comparison(d)
 
@@ -170,7 +219,7 @@ if __name__ == "__main__":
         print(label, comp.get_major_band_count_ratio(), comp.get_nominal_upper_size() / comp.get_scale(), bs_prop)
 
     plt.xlim(0.0, 1.0)
-    plt.ylim(1.0, 50.0)
+    plt.ylim(1.0, 30.0)
 
     plt.legend()
     plt.show()
