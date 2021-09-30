@@ -24,7 +24,9 @@ from main import ResultFrame
 
 T_Path = typing.Union[pathlib.Path, str]
 
-plot_data_base=pathlib.Path(r"C:\Users\Tom Wilson\Dropbox\PhD\Ceramic Bands Source Models\Test Output")
+# plot_data_base=pathlib.Path(r"C:\Users\Tom Wilson\Dropbox\PhD\Ceramic Bands Source Models\Test Output")
+plot_data_base=pathlib.Path(r"C:\Users\Tom Wilson\Documents\CeramicBandData\outputs\192.168.1.104+8080\v7\pics")
+
 
 class NoResultException(Exception):
     pass
