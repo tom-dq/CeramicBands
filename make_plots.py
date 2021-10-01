@@ -123,6 +123,10 @@ def _get_last_result_case_num(saved_state: CheckpointState, cases: typing.List[h
 
     cases_subset = [c for c in cases if c.major_inc == last_maj_inc]
     minor_incs = [c.minor_inc for c in cases_subset]
+
+    if not minor_incs:
+        raise NoResultException(minor_incs)
+
     last_minor_inc = max(minor_incs)
 
     one_case = [c for c in cases_subset if c.minor_inc == last_minor_inc]
@@ -187,12 +191,17 @@ def make_main_plot(first_considered_subdir: str, last_considered_subdir: str):
 
     plt.plot(x, y)
 
+    plt.xlabel("Relative depth of beam")
+    plt.ylabel("Proportion of major transformation bands")
+
     plt.show()
 
 
 if __name__ == "__main__":
 
-    make_main_plot("CM", "CT")
+
+    make_main_plot("CM", "CO")
+    # make_main_plot("CM", "D5")
 
     exit()
     dir_ends = ['CM', 'CN', 'CO', 'CP', 'CQ', 'CR', 'CS', 'CT']
