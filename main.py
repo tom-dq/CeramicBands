@@ -1023,6 +1023,7 @@ def _initial_scale_node_coords(run_params: RunParams, model: st7.St7Model):
     for node_num in model.entity_numbers(const.Entity.tyNODE):
         node_xyz = model.St7GetNodeXYZ(node_num)
         new_xyz = node_xyz._replace(x=node_xyz.x * run_params.scale_model_x, y=node_xyz.y * run_params.scale_model_y)
+        print(node_num, new_xyz)
         model.St7SetNodeXYZ(node_num, new_xyz)
 
 
@@ -1383,6 +1384,7 @@ def main(state: CheckpointState):
     print(f"Working directory: {state.run_params.working_dir}")
     print()
 
+    # TODO - speed up the model window stuff (have to supress then resume updates I guess?)
     with contextlib.ExitStack() as exit_stack:
         model = exit_stack.enter_context(st7.St7OpenFile(fn_st7, config.active_config.scratch_dir))
         model_window = exit_stack.enter_context(model.St7CreateModelWindow(DONT_MAKE_MODEL_WINDOW))
@@ -1604,7 +1606,7 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
         start_at_major_ratio=0.50,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestH-Fine.st7"),
+        source_file_name=pathlib.Path("TestH-Coarse.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
