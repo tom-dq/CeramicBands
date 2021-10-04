@@ -1023,7 +1023,6 @@ def _initial_scale_node_coords(run_params: RunParams, model: st7.St7Model):
     for node_num in model.entity_numbers(const.Entity.tyNODE):
         node_xyz = model.St7GetNodeXYZ(node_num)
         new_xyz = node_xyz._replace(x=node_xyz.x * run_params.scale_model_x, y=node_xyz.y * run_params.scale_model_y)
-        print(node_num, new_xyz)
         model.St7SetNodeXYZ(node_num, new_xyz)
 
 
@@ -1352,6 +1351,11 @@ def load_state(working_dir: pathlib.Path) -> CheckpointState:
     return state
 
 
+def unsync_model_window(model_window: st7.St7ModelWindow):
+    model_window.St7SetModelWindowRefresh(const.WindowsRefreshMode.wrPauseClear)
+    model_window.St7SetWindowStatusBarRefreshMode(auto_refresh=False)
+
+
 def main(state: CheckpointState):
     if not state.ratchet:
         raise ValueError("what? this should be set")
@@ -1389,6 +1393,8 @@ def main(state: CheckpointState):
         model = exit_stack.enter_context(st7.St7OpenFile(fn_st7, config.active_config.scratch_dir))
         model_window = exit_stack.enter_context(model.St7CreateModelWindow(DONT_MAKE_MODEL_WINDOW))
         db = exit_stack.enter_context(history.DB(fn_db))
+
+        unsync_model_window(model_window)
 
         if state.is_fresh():
             init_data = initial_setup(state.run_params, model, state.current_result_frame)
