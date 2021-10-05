@@ -11,7 +11,7 @@ class Codec(enum.Enum):
     x265 = enum.auto()
 
 codec = Codec.x264
-N_WORKERS = 1
+N_WORKERS = 6
 MAX_THREADS = None  # Was 6 for very large images
 
 base_dir = r"E:\Simulations\CeramicBands\v7\pics"
