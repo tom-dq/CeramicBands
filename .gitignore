@@ -5,6 +5,7 @@ Strand7 R3 API Manual*.pdf
 /venv/*
 /venv-py38/*
 /venv-py39/*
+/venv-py310/*
 *.pyc
 /.vscode/settings.json
 *.pstat
