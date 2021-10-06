@@ -2,11 +2,13 @@ import pathlib
 import statistics
 import typing
 import os
+import enum
 
 import scipy.stats
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker
+import matplotlib.markers
 
 from tables import Table
 import common_types
@@ -81,6 +83,19 @@ class BandSizeRatio(typing.NamedTuple):
         maj_bands = [bs for bs in self._abs_band_sizes() if bs > cutoff]
         return len(maj_bands) / len(self.bands)
 
+    def get_major_band_spacing(self) -> float:
+        """Average distance between major bands."""
+
+        cutoff = self.major_band_threshold()
+
+        maj_bands = [b for b in self.bands if abs(b.band_size) > cutoff]
+
+        maj_band_x_vals = sorted(bs.x for bs in maj_bands)
+
+        n_band_gaps = len(maj_bands) - 1
+        maj_band_span = maj_band_x_vals[-1] - maj_band_x_vals[0]
+
+        return maj_band_span / n_band_gaps
 
 def make_example_table() -> Table:
     STRESS_START = 400
@@ -177,7 +192,12 @@ def generate_plot_data(first_considered_subdir: str, last_considered_subdir: str
             pass
 
 
-def make_main_plot(first_considered_subdir: str, last_considered_subdir: str):
+class PlotType(enum.Enum):
+    maj_ratio = "Proportion of major transformation bands"
+    maj_spacing = "Average spacing between major bands"
+
+
+def make_main_plot(plot_type: PlotType, first_considered_subdir: str, last_considered_subdir: str):
     
     band_size_ratios = list(generate_plot_data(first_considered_subdir, last_considered_subdir))
 
@@ -187,12 +207,21 @@ def make_main_plot(first_considered_subdir: str, last_considered_subdir: str):
     x, y = [], []
     for bsr in sorted(band_size_ratios, key=sort_key):
         x.append(bsr.run_params.scale_model_y)
-        y.append(bsr.get_major_band_count_ratio())
 
-    plt.plot(x, y)
+        if plot_type == PlotType.maj_ratio:
+            y.append(bsr.get_major_band_count_ratio())
+        
+        elif plot_type == PlotType.maj_spacing:
+            y.append(bsr.get_major_band_spacing())
+
+        else:
+            raise ValueError(plot_type)
+
+
+    plt.plot(x, y, marker='.')
 
     plt.xlabel("Relative depth of beam")
-    plt.ylabel("Proportion of major transformation bands")
+    plt.ylabel(plot_type.value)
 
     plt.show()
 
@@ -200,8 +229,8 @@ def make_main_plot(first_considered_subdir: str, last_considered_subdir: str):
 if __name__ == "__main__":
 
 
-    make_main_plot("CM", "CO")
-    # make_main_plot("CM", "D5")
+    # make_main_plot(PlotType.maj_spacing, "CM", "CO")
+    make_main_plot(PlotType.maj_spacing, "CM", "D5")
 
     exit()
     dir_ends = ['CM', 'CN', 'CO', 'CP', 'CQ', 'CR', 'CS', 'CT']
