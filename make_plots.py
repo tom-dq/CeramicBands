@@ -27,7 +27,7 @@ from main import ResultFrame
 T_Path = typing.Union[pathlib.Path, str]
 
 # plot_data_base=pathlib.Path(r"C:\Users\Tom Wilson\Dropbox\PhD\Ceramic Bands Source Models\Test Output")
-plot_data_base=pathlib.Path(r"C:\Users\Tom Wilson\Documents\CeramicBandData\outputs\192.168.1.104+8080\v7\pics")
+plot_data_base=pathlib.Path(r"C:\Users\Tom Wilson\Documents\CeramicBandData\outputs\192.168.1.109+8080\v7\pics")
 
 
 class NoResultException(Exception):
@@ -161,6 +161,8 @@ def make_band_min_maj_comparison(working_dir: T_Path) -> BandSizeRatio:
         cases = list(db.get_all(history.ResultCase))
         last_case = _get_last_result_case_num(saved_state, cases)
 
+        print(working_dir.parts[-1], last_case._replace(name=''), saved_state.run_params.scale_model_y)
+
         band_skeleton = history.TransformationBand._all_nones()._replace(result_case_num=last_case.num)
 
         last_case_bands = list(db.get_all_matching(band_skeleton))
@@ -175,7 +177,6 @@ def generate_plot_data(first_considered_subdir: str, last_considered_subdir: str
     def gen_relevant_subdirectories():
         min_hex = int(first_considered_subdir, base=36)
         max_hex = int(last_considered_subdir, base=36)
-
 
         for working_dir in plot_data_base.iterdir():
             if working_dir.is_dir():
@@ -230,7 +231,7 @@ if __name__ == "__main__":
 
 
     # make_main_plot(PlotType.maj_spacing, "CM", "CO")
-    make_main_plot(PlotType.maj_spacing, "CM", "D5")
+    make_main_plot(PlotType.maj_spacing, "CM", "DO")
 
     exit()
     dir_ends = ['CM', 'CN', 'CO', 'CP', 'CQ', 'CR', 'CS', 'CT']
