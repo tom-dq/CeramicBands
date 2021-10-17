@@ -106,6 +106,15 @@ class BandSizeRatio(typing.NamedTuple):
 
         return maj_band_span / n_band_gaps
 
+    def get_band_and_maj_ratio(self) -> typing.Iterable[typing.Tuple[float, history.TransformationBand]]:
+        """Returns the bands in order, with the ratio of the band size. So if larger than one, it's a major band."""
+
+        cutoff = self.major_band_threshold()
+
+        for band in sorted(self.bands):
+            yield abs(band.band_size) / cutoff, band
+
+
 def make_example_table() -> Table:
     STRESS_START = 400
     stress_end = 450
@@ -323,14 +332,13 @@ def make_cutoff_example(band_size_ratios: typing.List[BandSizeRatio]):
 def print_band_size_info(band_size_ratios: typing.List[BandSizeRatio]):
     
     csv_fn = graph_output_base / f"cutoff_demo-{_bsr_list_hash(band_size_ratios)}.csv"
-    with open(csv_fn, 'w') as csv_file:
+    with open(csv_fn, 'w', newline='') as csv_file:
         f_out = csv.writer(csv_file)
 
-        # TODO!!!
-    for bsr in band_size_ratios:
-        for band in sorted(bsr.bands):
-            bits = [bsr.run_params.working_dir.name, band.x, abs(band.band_size)]
-            print(*bits, sep='\t')
+        for bsr in band_size_ratios:
+            for maj_ratio, band in bsr.get_band_and_maj_ratio():
+                bits = [bsr.run_params.working_dir.name, band.x, abs(band.band_size), maj_ratio]
+                f_out.writerow(bits)
 
         
         
@@ -371,12 +379,17 @@ DR ScaleY=0.875 0.30612244897959184 131.33836092919856 17.29229511614982
 
 if __name__ == "__main__":
 
-    # all_band_sizes = list(generate_plot_data_range("CM", "DR"))
+    
     cherry_pick = list(generate_plot_data_specified(["CM", "CO", "CT"]))
 
     print_band_size_info(cherry_pick)
 
     make_cutoff_example(cherry_pick)
+
+    all_band_sizes = list(generate_plot_data_range("CM", "DR"))
+    print_band_size_info(all_band_sizes)
+
+    make_cutoff_example(all_band_sizes)
     # make_main_plot(all_band_sizes)
 
     exit()
