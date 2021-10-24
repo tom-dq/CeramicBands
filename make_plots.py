@@ -292,7 +292,7 @@ def make_main_plot(band_size_ratios: typing.List[BandSizeRatio]):
 
 
 def make_cutoff_example(band_size_ratios: typing.List[BandSizeRatio]):
-    DPI = 200
+    DPI = 150
 
     fig, ax = plt.subplots(1, 1, sharex=True, 
         figsize=(active_config.screenshot_res.width/2/DPI, active_config.screenshot_res.height/2/DPI), 
@@ -308,7 +308,7 @@ def make_cutoff_example(band_size_ratios: typing.List[BandSizeRatio]):
             y.append(bs / bsr.get_scale())
 
         de = bsr.run_params.working_dir.name
-        label = f"{de} ScaleY={bsr.run_params.scale_model_y}"
+        label = f"ScaleY={bsr.run_params.scale_model_y}"
 
         base_line, = plt.plot(x, y, label=label)
 
@@ -323,8 +323,11 @@ def make_cutoff_example(band_size_ratios: typing.List[BandSizeRatio]):
 
     plt.legend()
 
+    plt.xlabel("Band size rank")
+    plt.ylabel("Band size")
+
     fig_fn = graph_output_base / f"cutoff_demo-{_bsr_list_hash(band_size_ratios)}.png"
-    plt.savefig(fig_fn, dpi=DPI, layout='tight',)
+    plt.savefig(fig_fn, dpi=2*DPI)
 
     plt.show()
 
