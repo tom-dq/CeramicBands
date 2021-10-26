@@ -72,7 +72,7 @@ class BandSizeRatio(typing.NamedTuple):
         return quantiles[-1]
 
     def get_scale(self) -> float:
-        return self.get_nominal_lower_size()
+        return self.major_band_threshold()
 
     def major_band_threshold(self) -> float:
 
@@ -314,12 +314,12 @@ def make_cutoff_example(band_size_ratios: typing.List[BandSizeRatio]):
 
         # Add a proposed "cutoff_line"
         bs_prop = bsr.major_band_threshold() / bsr.get_scale()
-        ax.plot([-1, 2.0], [bs_prop, bs_prop], color=base_line.get_color(), linestyle='--')
+        ax.plot([-1, 2.0], [bs_prop, bs_prop], color='k', linestyle=':')  # color=base_line.get_color()
 
         print(label, bsr.get_major_band_count_ratio(), bsr.get_nominal_upper_size() / bsr.get_scale(), bs_prop)
 
     plt.xlim(0.0, 1.0)
-    plt.ylim(1.0, 30.0)
+    # plt.ylim(1.0, 30.0)
 
     plt.legend()
 
@@ -340,7 +340,7 @@ def print_band_size_info(band_size_ratios: typing.List[BandSizeRatio]):
 
         for bsr in band_size_ratios:
             for maj_ratio, band in bsr.get_band_and_maj_ratio():
-                bits = [bsr.run_params.working_dir.name, band.x, abs(band.band_size), maj_ratio]
+                bits = [bsr.run_params.working_dir.name, band.x, abs(band.band_size), abs(band.band_size) / bsr.get_scale(), maj_ratio]
                 f_out.writerow(bits)
 
         
@@ -383,11 +383,14 @@ DR ScaleY=0.875 0.30612244897959184 131.33836092919856 17.29229511614982
 if __name__ == "__main__":
 
     
-    cherry_pick = list(generate_plot_data_specified(["CM", "CO", "CT"]))
+    # cherry_pick = list(generate_plot_data_specified(["CM", "CO", "CT"]))
+    cherry_pick = list(generate_plot_data_specified(["CM"]))
 
     print_band_size_info(cherry_pick)
 
     make_cutoff_example(cherry_pick)
+
+    exit()
 
     all_band_sizes = list(generate_plot_data_range("CM", "DR"))
     print_band_size_info(all_band_sizes)
