@@ -38,6 +38,12 @@ T_Path = typing.Union[pathlib.Path, str]
 plot_data_base=pathlib.Path(r"C:\Users\Tom Wilson\Documents\CeramicBandData\outputs\192.168.1.109+8080\v7\pics")
 graph_output_base = pathlib.Path(r"C:\Users\Tom Wilson\Dropbox\PhD\Papers\Mike-1-Ceramic Bands\2021-v5")
 
+# For comparison with the physical specimen, adjust some graphs with these quantities...
+SPECIMEN_NOMINAL_LENGTH_MM = 21.0 
+FULL_BEAM_HEIGHT = 3.0
+
+
+
 class NoResultException(Exception):
     pass
 
@@ -114,6 +120,11 @@ class BandSizeRatio(typing.NamedTuple):
         for band in sorted(self.bands):
             yield abs(band.band_size) / cutoff, band
 
+    def get_num_maj_bands_full_length(self) -> float:
+        raise ValueError("TODO!")
+
+    def get_beam_depth_nm(self) -> float:
+        raise ValueError("TODO")
 
 def make_example_table() -> Table:
     STRESS_START = 400
