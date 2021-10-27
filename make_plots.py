@@ -121,10 +121,16 @@ class BandSizeRatio(typing.NamedTuple):
             yield abs(band.band_size) / cutoff, band
 
     def get_num_maj_bands_full_length(self) -> float:
-        raise ValueError("TODO!")
+        """Assume the major band density seen in the current range is replicated along the full length"""
+
+        maj_band_spacing = self.get_major_band_spacing()
+        return SPECIMEN_NOMINAL_LENGTH_MM / maj_band_spacing
 
     def get_beam_depth_nm(self) -> float:
-        raise ValueError("TODO")
+
+        MM_TO_NM = 1_000
+        return  MM_TO_NM * FULL_BEAM_HEIGHT * self.run_params.scale_model_y
+
 
 def make_example_table() -> Table:
     STRESS_START = 400
