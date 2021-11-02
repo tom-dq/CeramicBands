@@ -7,6 +7,7 @@ import itertools
 import collections
 import hashlib
 import csv
+from matplotlib.patches import Polygon
 from networkx.drawing import layout
 from networkx.readwrite import graph6
 
@@ -126,10 +127,9 @@ class BandSizeRatio(typing.NamedTuple):
         maj_band_spacing = self.get_major_band_spacing()
         return SPECIMEN_NOMINAL_LENGTH_MM / maj_band_spacing
 
-    def get_beam_depth_nm(self) -> float:
+    def get_beam_depth(self) -> float:
 
-        MM_TO_NM = 1_000
-        return  MM_TO_NM * FULL_BEAM_HEIGHT * self.run_params.scale_model_y
+        return FULL_BEAM_HEIGHT * self.run_params.scale_model_y
 
 
 def make_example_table() -> Table:
@@ -250,6 +250,19 @@ def generate_plot_data_specified(dir_ends: typing.List[str]) -> typing.Iterable[
 class PlotType(enum.Enum):
     maj_ratio = "Proportion of major transformation bands"
     maj_spacing = "Average spacing between major bands"
+    num_bands = f"Number of bands over {SPECIMEN_NOMINAL_LENGTH_MM} mm length"
+
+
+class XAxis(enum.Enum):
+    beam_depth = enum.auto()
+
+
+class Study(typing.NamedTuple):
+    name: str
+    band_size_ratios: typing.List[BandSizeRatio]
+    x_axis: XAxis
+
+
 
 
 def _fig_fn(plot_type: typing.Optional[PlotType]=None):
@@ -266,7 +279,7 @@ def _bsr_list_hash(bsr_list: typing.List[BandSizeRatio]) -> str:
     return f"{len(bsr_list)}-{hash_bit}"
 
 
-def make_main_plot(band_size_ratios: typing.List[BandSizeRatio]):
+def make_main_plot(plot_type: PlotType, band_size_ratios: typing.List[BandSizeRatio]):
     
     DPI = 150
 
@@ -274,38 +287,56 @@ def make_main_plot(band_size_ratios: typing.List[BandSizeRatio]):
         return band_size_ratio.run_params.scale_model_y
 
     fig, ax = plt.subplots(1, 1, sharex=True, 
-        figsize=(active_config.screenshot_res.width/2/DPI, active_config.screenshot_res.height/2/DPI), 
+        figsize=(active_config.screenshot_res.height/2/DPI, active_config.screenshot_res.height/2/DPI), 
         dpi=DPI,
     )
 
     plot_type_to_data = collections.defaultdict(list)
     x = []
     for bsr in sorted(band_size_ratios, key=sort_key):
-        x.append(bsr.run_params.scale_model_y)
+        x.append(bsr.get_beam_depth())
 
-        for plot_type in PlotType:
-            if plot_type == PlotType.maj_ratio:
-                val = bsr.get_major_band_count_ratio()
-            
-            elif plot_type == PlotType.maj_spacing:
-                val = bsr.get_major_band_spacing()
+        if plot_type == PlotType.maj_ratio:
+            val = bsr.get_major_band_count_ratio()
+        
+        elif plot_type == PlotType.maj_spacing:
+            MM_TO_NM = 1_000
+            val = MM_TO_NM * bsr.get_major_band_spacing()
 
-            else:
-                raise ValueError(plot_type)
+        elif plot_type == PlotType.num_bands:
+            val = bsr.get_num_maj_bands_full_length()
 
-            plot_type_to_data[plot_type].append(val)
+        else:
+            raise ValueError(plot_type)
 
-    for plot_type in PlotType:
-        ax.plot(x, plot_type_to_data[plot_type], marker='.', label=plot_type.value)
+        plot_type_to_data[plot_type].append(val)
 
-    plt.xlabel("Relative depth of beam")
-    plt.legend()    
+    ax.plot(x, plot_type_to_data[plot_type], marker='.', label=plot_type.value)
+
+    plt.xlabel("Beam depth (mm)")
+    plt.ylabel(plot_type.value)
+    # plt.legend()    
+
+    plt.xlim(0.0, 3.5)
+    if plot_type == PlotType.num_bands:
+        # plt.ylim(0, 150)
+        pass
+
+    elif plot_type == PlotType.maj_spacing:
+        # plt.ylim(0, 1000)
+        pass
+    
+    elif plot_type == PlotType.maj_ratio:
+        pass
+
+    else:
+        raise ValueError(plot_type)
 
 
-    fig_fn = graph_output_base / f"depth_compare-{_bsr_list_hash(band_size_ratios)}.png"
-    plt.savefig(fig_fn, dpi=2*DPI, layout='tight',)
+    fig_fn = graph_output_base / f"{plot_type.name}-{_bsr_list_hash(band_size_ratios)}.png"
+    plt.savefig(fig_fn, dpi=2*DPI, bbox_inches='tight',)
 
-    plt.show()
+    # plt.show()
 
 
 def make_cutoff_example(band_size_ratios: typing.List[BandSizeRatio]):
@@ -372,13 +403,16 @@ if __name__ == "__main__":
     # print_band_size_info(cherry_pick)
 
     # make_cutoff_example(cherry_pick)
-    make_main_plot(cherry_pick)
+    for plot_type in PlotType:
+        make_main_plot(plot_type, cherry_pick)
 
     all_band_sizes = list(generate_plot_data_range("CM", "DR"))
     print_band_size_info(all_band_sizes)
 
     make_cutoff_example(all_band_sizes)
-    make_main_plot(all_band_sizes)
+
+    for plot_type in PlotType:
+        make_main_plot(plot_type, all_band_sizes)
 
     exit()
     dir_ends = ['CM', 'CN', 'CO', 'CP', 'CQ', 'CR', 'CS', 'CT']
