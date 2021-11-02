@@ -211,42 +211,6 @@ def make_band_min_maj_comparison(working_dir: T_Path) -> BandSizeRatio:
     return BandSizeRatio(run_params=saved_state.run_params, bands=last_case_bands, result_case_num=last_case.num)
 
 
-def _generate_plot_data(gen_relevant_subdirectories) -> typing.Iterable[BandSizeRatio]:
-    # Get the relevant subdirectories for inclusion
-
-    for working_dir in gen_relevant_subdirectories():
-        try:
-            band_size_ratio = make_band_min_maj_comparison(working_dir)
-            if band_size_ratio.result_case_num > 1000:
-                yield band_size_ratio
-
-        except NoResultException:
-            pass
-
-
-def generate_plot_data_range(first_considered_subdir: str, last_considered_subdir: str) -> typing.Iterable[BandSizeRatio]:
-    
-    def gen_relevant_subdirectories():
-        min_hex = int(first_considered_subdir, base=36)
-        max_hex = int(last_considered_subdir, base=36)
-
-        for working_dir in plot_data_base.iterdir():
-            if working_dir.is_dir():
-                this_hex = int(working_dir.parts[-1], base=36)
-                if min_hex <= this_hex <= max_hex:
-                    yield working_dir
-
-    yield from _generate_plot_data(gen_relevant_subdirectories)
-
-
-def generate_plot_data_specified(dir_ends: typing.List[str]) -> typing.Iterable[BandSizeRatio]:
-    def gen_relevant_subdirectories():
-        for de in dir_ends:
-            yield plot_data_base / de
-
-    yield from _generate_plot_data(gen_relevant_subdirectories)
-
-
 class PlotType(enum.Enum):
     maj_ratio = "Proportion of major transformation bands"
     maj_spacing = "Average spacing between major bands"
@@ -261,6 +225,47 @@ class Study(typing.NamedTuple):
     name: str
     band_size_ratios: typing.List[BandSizeRatio]
     x_axis: XAxis
+
+
+def _generate_study_data(name, x_axis, gen_relevant_subdirectories) -> Study:
+    # Get the relevant subdirectories for inclusion
+
+    def make_bsrs():
+        for working_dir in gen_relevant_subdirectories():
+            try:
+                band_size_ratio = make_band_min_maj_comparison(working_dir)
+                if band_size_ratio.result_case_num > 1000:
+                    yield band_size_ratio
+
+            except NoResultException:
+                pass
+
+    return Study(name=name, band_size_ratios=list(make_bsrs()), x_axis=x_axis)
+
+
+def generate_plot_data_range(name, x_axis, first_considered_subdir: str, last_considered_subdir: str) -> Study:
+    
+    def gen_relevant_subdirectories():
+        min_hex = int(first_considered_subdir, base=36)
+        max_hex = int(last_considered_subdir, base=36)
+
+        for working_dir in plot_data_base.iterdir():
+            if working_dir.is_dir():
+                this_hex = int(working_dir.parts[-1], base=36)
+                if min_hex <= this_hex <= max_hex:
+                    yield working_dir
+
+    return _generate_study_data(name, x_axis, gen_relevant_subdirectories)
+
+
+def generate_plot_data_specified(name, x_axis, dir_ends: typing.List[str]) -> Study:
+    def gen_relevant_subdirectories():
+        for de in dir_ends:
+            yield plot_data_base / de
+
+    return _generate_study_data(name, x_axis, gen_relevant_subdirectories)
+
+
 
 
 
@@ -279,7 +284,7 @@ def _bsr_list_hash(bsr_list: typing.List[BandSizeRatio]) -> str:
     return f"{len(bsr_list)}-{hash_bit}"
 
 
-def make_main_plot(plot_type: PlotType, band_size_ratios: typing.List[BandSizeRatio]):
+def make_main_plot(plot_type: PlotType, study: Study):
     
     DPI = 150
 
@@ -293,7 +298,7 @@ def make_main_plot(plot_type: PlotType, band_size_ratios: typing.List[BandSizeRa
 
     plot_type_to_data = collections.defaultdict(list)
     x = []
-    for bsr in sorted(band_size_ratios, key=sort_key):
+    for bsr in sorted(study.band_size_ratios, key=sort_key):
         x.append(bsr.get_beam_depth())
 
         if plot_type == PlotType.maj_ratio:
@@ -333,7 +338,7 @@ def make_main_plot(plot_type: PlotType, band_size_ratios: typing.List[BandSizeRa
         raise ValueError(plot_type)
 
 
-    fig_fn = graph_output_base / f"{plot_type.name}-{_bsr_list_hash(band_size_ratios)}.png"
+    fig_fn = graph_output_base / f"{study.name}-{plot_type.name}-{_bsr_list_hash(study.band_size_ratios)}.png"
     plt.savefig(fig_fn, dpi=2*DPI, bbox_inches='tight',)
 
     # plt.show()
@@ -380,9 +385,9 @@ def make_cutoff_example(band_size_ratios: typing.List[BandSizeRatio]):
     plt.show()
 
 
-def print_band_size_info(band_size_ratios: typing.List[BandSizeRatio]):
-    
-    csv_fn = graph_output_base / f"cutoff_demo-{_bsr_list_hash(band_size_ratios)}.csv"
+def print_band_size_info(study: Study, band_size_ratios: typing.List[BandSizeRatio]):
+    # TODO - refactor to use "Study" everywhere
+    csv_fn = graph_output_base / f"{study.name}-cutoff_demo-{_bsr_list_hash(band_size_ratios)}.csv"
     with open(csv_fn, 'w', newline='') as csv_file:
         f_out = csv.writer(csv_file)
 
@@ -398,7 +403,7 @@ if __name__ == "__main__":
 
     
     # cherry_pick = list(generate_plot_data_specified(["CM", "CO", "CT"]))
-    cherry_pick = list(generate_plot_data_specified(["CM", "CO",]))
+    cherry_pick = generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",])
 
     # print_band_size_info(cherry_pick)
 
@@ -406,13 +411,14 @@ if __name__ == "__main__":
     for plot_type in PlotType:
         make_main_plot(plot_type, cherry_pick)
 
-    all_band_sizes = list(generate_plot_data_range("CM", "DR"))
-    print_band_size_info(all_band_sizes)
+    beam_depth_study = generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR")
 
-    make_cutoff_example(all_band_sizes)
+    print_band_size_info(beam_depth_study)
+
+    make_cutoff_example(beam_depth_study)
 
     for plot_type in PlotType:
-        make_main_plot(plot_type, all_band_sizes)
+        make_main_plot(plot_type, beam_depth_study)
 
     exit()
     dir_ends = ['CM', 'CN', 'CO', 'CP', 'CQ', 'CR', 'CS', 'CT']
