@@ -219,6 +219,10 @@ class PlotType(enum.Enum):
 
 class XAxis(enum.Enum):
     beam_depth = enum.auto()
+    dilation_max = enum.auto()
+    run_index = enum.auto()  # Just order the simulations one by one.
+    initiation_variation = enum.auto()
+    initiation_spacing = enum.auto()
 
 
 class Study(typing.NamedTuple):
@@ -288,6 +292,22 @@ def make_main_plot(plot_type: PlotType, study: Study):
     
     DPI = 150
 
+    def get_x_axis_val_raw(bsr: BandSizeRatio):
+        if study.x_axis == XAxis.beam_depth:
+            return bsr.get_beam_depth()
+
+        elif study.x_axis == XAxis.initiation_spacing:
+            return bsr.run_params.scaling._spacing
+
+        elif study.x_axis == XAxis.initiation_variation:
+            return bsr.run_params.scaling._max_variation
+
+        elif study.x_axis == XAxis.run_index:
+            return bsr.run_params.working_dir.name
+
+        else:
+            raise ValueError(study.x_axis)
+
     def sort_key(band_size_ratio: BandSizeRatio):
         return band_size_ratio.run_params.scale_model_y
 
@@ -298,8 +318,17 @@ def make_main_plot(plot_type: PlotType, study: Study):
 
     plot_type_to_data = collections.defaultdict(list)
     x = []
-    for bsr in sorted(study.band_size_ratios, key=sort_key):
-        x.append(bsr.get_beam_depth())
+    for idx, bsr in enumerate(sorted(study.band_size_ratios, key=sort_key)):
+
+        if study.x_axis == XAxis.run_index:
+            x.append(idx)
+
+        elif study.x_axis in (XAxis.beam_depth, XAxis.initiation_variation, XAxis.initiation_spacing):
+            x.append(get_x_axis_val_raw(bsr))
+
+        else:
+            raise ValueError(study.x_axis)
+
 
         if plot_type == PlotType.maj_ratio:
             val = bsr.get_major_band_count_ratio()
@@ -344,7 +373,7 @@ def make_main_plot(plot_type: PlotType, study: Study):
     # plt.show()
 
 
-def make_cutoff_example(band_size_ratios: typing.List[BandSizeRatio]):
+def make_cutoff_example(study: Study):
     DPI = 150
 
     fig, ax = plt.subplots(1, 1, sharex=True, 
@@ -352,7 +381,7 @@ def make_cutoff_example(band_size_ratios: typing.List[BandSizeRatio]):
         dpi=DPI,
     )
 
-    for bsr in band_size_ratios:
+    for bsr in study.band_size_ratios:
         band_sizes = bsr._abs_band_sizes()
 
         x, y = [], []
@@ -379,46 +408,48 @@ def make_cutoff_example(band_size_ratios: typing.List[BandSizeRatio]):
     plt.xlabel("Band size rank")
     plt.ylabel("Band size")
 
-    fig_fn = graph_output_base / f"cutoff_demo-{_bsr_list_hash(band_size_ratios)}.png"
+    fig_fn = graph_output_base / f"{study.name}-cutoff_demo-{_bsr_list_hash(study.band_size_ratios)}.png"
     plt.savefig(fig_fn, dpi=2*DPI)
 
-    plt.show()
+    # plt.clear()
 
 
-def print_band_size_info(study: Study, band_size_ratios: typing.List[BandSizeRatio]):
+def print_band_size_info(study: Study):
     # TODO - refactor to use "Study" everywhere
-    csv_fn = graph_output_base / f"{study.name}-cutoff_demo-{_bsr_list_hash(band_size_ratios)}.csv"
+    csv_fn = graph_output_base / f"{study.name}-cutoff_demo-{_bsr_list_hash(study.band_size_ratios)}.csv"
     with open(csv_fn, 'w', newline='') as csv_file:
         f_out = csv.writer(csv_file)
 
-        for bsr in band_size_ratios:
+        for bsr in study.band_size_ratios:
             for maj_ratio, band in bsr.get_band_and_maj_ratio():
                 bits = [bsr.run_params.working_dir.name, band.x, abs(band.band_size), abs(band.band_size) / bsr.get_scale(), maj_ratio]
                 f_out.writerow(bits)
 
-        
-        
+
+def run_study(study: Study):
+    for plot_type in PlotType:
+        make_main_plot(plot_type, study)
+
+    print_band_size_info(study)
+
+    make_cutoff_example(study)
+
 
 if __name__ == "__main__":
 
     
     # cherry_pick = list(generate_plot_data_specified(["CM", "CO", "CT"]))
-    cherry_pick = generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",])
+    studies = [
+        generate_plot_data_range("SpacingVariation", XAxis.initiation_spacing, "CI", "CL"),
+        generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"]),
+        generate_plot_data_range("SpreadStudy", XAxis.run_index, "CA", "CE"),
+        generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9"),
+        generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR"),
+        generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",])
+    ]
 
-    # print_band_size_info(cherry_pick)
-
-    # make_cutoff_example(cherry_pick)
-    for plot_type in PlotType:
-        make_main_plot(plot_type, cherry_pick)
-
-    beam_depth_study = generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR")
-
-    print_band_size_info(beam_depth_study)
-
-    make_cutoff_example(beam_depth_study)
-
-    for plot_type in PlotType:
-        make_main_plot(plot_type, beam_depth_study)
+    for study in studies:
+        run_study(study)
 
     exit()
     dir_ends = ['CM', 'CN', 'CO', 'CP', 'CQ', 'CR', 'CS', 'CT']
