@@ -41,9 +41,6 @@ import perturb
 import directories
 import state_tracker
 
-# To make reproducible
-random.seed(123)
-
 DONT_MAKE_MODEL_WINDOW = False
 
 LOAD_CASE_BENDING = 1
@@ -56,8 +53,6 @@ NUM_PLATE_RES_RETRIES = 20
 
 DEBUG_STATE = False
 
-# Make deterministic
-random.seed(123456)
 
 #fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD2.st7")
 #fn_working_image_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3-pics")
@@ -1676,6 +1671,7 @@ if __name__ == "__main__":
     parser.add_argument("--init_spacing", default=0.075, type=float)
     parser.add_argument("--restart_prefix", required=False, default="", type=str)
     parser.add_argument("--scale_y", required=False, default=0.5, type=float)
+    parser.add_argument("--random_seed", required=False, default=123456, type=int)
     
     args = parser.parse_args()
 
@@ -1686,6 +1682,9 @@ if __name__ == "__main__":
         state = new_checkpoint_state(args)
 
     main(state)
+
+    # Make deterministic
+    random.seed(args.random_seed)
 
 
 # Combine to one video with "C:\Utilities\ffmpeg-20181212-32601fb-win64-static\bin\ffmpeg.exe -f image2 -r 12 -i Case-%04d.png -vcodec libx264 -profile:v high444 -refs 16 -crf 0 out.mp4"

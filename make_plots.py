@@ -241,6 +241,17 @@ class XAxis(enum.Enum):
 
         return None
 
+    def get_legend_label(self) -> str:
+        d = {
+            XAxis.beam_depth: "BeamDepth",
+            XAxis.dilation_max: "DilationRatio",
+            XAxis.run_index: "Run",
+            XAxis.initiation_variation: "InitiationVariation",
+            XAxis.initiation_spacing: "InitiationSpacing",
+        }
+
+        return d[self]
+
 class Study(typing.NamedTuple):
     name: str
     band_size_ratios: typing.List[BandSizeRatio]
@@ -304,25 +315,28 @@ def _bsr_list_hash(bsr_list: typing.List[BandSizeRatio]) -> str:
     return f"{len(bsr_list)}-{hash_bit}"
 
 
+def get_x_axis_val_raw(study: Study, bsr: BandSizeRatio):
+    if study.x_axis == XAxis.beam_depth:
+        return bsr.get_beam_depth()
+
+    elif study.x_axis == XAxis.initiation_spacing:
+        return bsr.run_params.scaling._spacing
+
+    elif study.x_axis == XAxis.initiation_variation:
+        return bsr.run_params.scaling._max_variation
+
+    elif study.x_axis == XAxis.run_index:
+        return bsr.run_params.working_dir.name
+
+    else:
+        raise ValueError(study.x_axis)
+
+
+
 def make_main_plot(plot_type: PlotType, study: Study):
     
     DPI = 150
 
-    def get_x_axis_val_raw(bsr: BandSizeRatio):
-        if study.x_axis == XAxis.beam_depth:
-            return bsr.get_beam_depth()
-
-        elif study.x_axis == XAxis.initiation_spacing:
-            return bsr.run_params.scaling._spacing
-
-        elif study.x_axis == XAxis.initiation_variation:
-            return bsr.run_params.scaling._max_variation
-
-        elif study.x_axis == XAxis.run_index:
-            return bsr.run_params.working_dir.name
-
-        else:
-            raise ValueError(study.x_axis)
 
     def sort_key(band_size_ratio: BandSizeRatio):
         return band_size_ratio.run_params.scale_model_y
@@ -340,7 +354,7 @@ def make_main_plot(plot_type: PlotType, study: Study):
             x.append(idx)
 
         elif study.x_axis in (XAxis.beam_depth, XAxis.initiation_variation, XAxis.initiation_spacing):
-            x.append(get_x_axis_val_raw(bsr))
+            x.append(get_x_axis_val_raw(study, bsr))
 
         else:
             raise ValueError(study.x_axis)
@@ -409,8 +423,7 @@ def make_cutoff_example(study: Study):
             y.append(bs / bsr.get_scale())
 
         de = bsr.run_params.working_dir.name
-        label = f"ScaleY={bsr.run_params.scale_model_y}"
-
+        label = f"{study.x_axis.get_legend_label()}={get_x_axis_val_raw(study, bsr)}"
         base_line, = plt.plot(x, y, label=label)
 
         # Add a proposed "cutoff_line"
