@@ -224,6 +224,22 @@ class XAxis(enum.Enum):
     initiation_variation = enum.auto()
     initiation_spacing = enum.auto()
 
+    def get_x_label(self) -> str:
+        d = {
+            XAxis.beam_depth: "Beam Depth (mm)",
+            XAxis.dilation_max: "Dilation (Max)",
+            XAxis.run_index: "Run Index",
+            XAxis.initiation_variation: "Initiation Variation",
+            XAxis.initiation_spacing: "Initiation Spacing",
+        }
+        
+        return d[self]
+
+    def get_x_range(self) -> typing.Optional[typing.Tuple[float, float]]:
+        if self == XAxis.beam_depth:
+            return (0.0, 3.5)
+
+        return None
 
 class Study(typing.NamedTuple):
     name: str
@@ -347,11 +363,14 @@ def make_main_plot(plot_type: PlotType, study: Study):
 
     ax.plot(x, plot_type_to_data[plot_type], marker='.', label=plot_type.value)
 
-    plt.xlabel("Beam depth (mm)")
+    plt.xlabel(study.x_axis.get_x_label())
     plt.ylabel(plot_type.value)
     # plt.legend()    
 
-    plt.xlim(0.0, 3.5)
+    if study.x_axis.get_x_range():
+        plt.xlim(*study.x_axis.get_x_range())
+
+
     if plot_type == PlotType.num_bands:
         # plt.ylim(0, 150)
         pass
