@@ -24,10 +24,14 @@ bands*.
 
 #### Requirements
  - Python 3.7, 3.8 or 3.9, 64-bit
- - [Strand7 R3](http://www.strand7.com/r3/) (developed with Preview 40), including the API.
+ - [Strand7 R3](http://www.strand7.com/r3/) R3.1.1, including the API.
 
 
 #### Usage
-TODO
 
+```
+> cd "D:\Tom Wilson\Documents\Code\CeramicBands"
+> E:\VirtualEnvs\ceramic-bands-p38\Scripts\Activate.ps1
+> python.exe .\main.py --scale_y 0.5 --random_seed 101 (for example)
+```
 
