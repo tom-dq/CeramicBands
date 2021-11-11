@@ -5,7 +5,7 @@ import pathlib
 import collections
 import itertools
 
-START = "CA"
+START = "C3"
 END = "DR"
 
 ALL_FILES = r"C:\Users\Tom Wilson\Documents\CeramicBandData\outputs\all_files.txt"

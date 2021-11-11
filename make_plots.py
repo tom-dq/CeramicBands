@@ -1,3 +1,4 @@
+import functools
 import pathlib
 import statistics
 import typing
@@ -187,6 +188,7 @@ def _get_last_result_case_num(saved_state: CheckpointState, cases: typing.List[h
     return one_case.pop()
 
 
+@functools.lru_cache(maxsize=256)
 def make_band_min_maj_comparison(working_dir: T_Path) -> BandSizeRatio:
 
     working_dir = pathlib.Path(working_dir)
@@ -265,7 +267,7 @@ def _generate_study_data(name, x_axis, gen_relevant_subdirectories) -> Study:
         for working_dir in gen_relevant_subdirectories():
             try:
                 band_size_ratio = make_band_min_maj_comparison(working_dir)
-                if band_size_ratio.result_case_num > 1000:
+                if band_size_ratio.result_case_num > 800:
                     yield band_size_ratio
 
             except NoResultException:
@@ -328,6 +330,9 @@ def get_x_axis_val_raw(study: Study, bsr: BandSizeRatio):
     elif study.x_axis == XAxis.run_index:
         return bsr.run_params.working_dir.name
 
+    elif study.x_axis == XAxis.dilation_max:
+        return bsr.run_params.parameter_trend.dilation_ratio.get_single_value_returned()
+
     else:
         raise ValueError(study.x_axis)
 
@@ -353,7 +358,7 @@ def make_main_plot(plot_type: PlotType, study: Study):
         if study.x_axis == XAxis.run_index:
             x.append(idx)
 
-        elif study.x_axis in (XAxis.beam_depth, XAxis.initiation_variation, XAxis.initiation_spacing):
+        elif study.x_axis in (XAxis.beam_depth, XAxis.initiation_variation, XAxis.initiation_spacing, XAxis.dilation_max):
             x.append(get_x_axis_val_raw(study, bsr))
 
         else:

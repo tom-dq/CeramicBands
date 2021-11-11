@@ -49,21 +49,33 @@ class CurrentInc:
 
 class ParameterGetter:
     _cached_max_value_ever = None
+    _cached_single_value = None
 
     @abc.abstractmethod
     def __call__(self, current_inc: CurrentInc) -> float:
         raise NotImplementedError()
 
+    def _get_values_minor_inc(self) -> typing.Iterable[float]:
+        for i in range(1_000_000):
+            fake_curr_inc = CurrentInc(major_inc=None, minor_inc=i)
+            yield self(fake_curr_inc)
+
     def get_max_value_returned(self) -> float:
         if self._cached_max_value_ever is None:
-            def make_values():
-                for i in range(1_000_000):
-                    fake_curr_inc = CurrentInc(major_inc=None, minor_inc=i)
-                    yield self(fake_curr_inc)
-
-            self._cached_max_value_ever = max(make_values())
+            self._cached_max_value_ever = max(self._get_values_minor_inc())
 
         return self._cached_max_value_ever
+
+    def get_single_value_returned(self) -> float:
+        if self._cached_single_value is None:
+            all_vals = set(self._get_values_minor_inc())
+            if len(all_vals) == 1:
+                self._cached_single_value = all_vals.pop()
+
+            else:
+                raise ValueError(f"Expected to get one value - got {len(all_vals)}")
+
+        return self._cached_single_value
 
 class Constant(ParameterGetter):
     _const: float = None
