@@ -45,6 +45,23 @@ SPECIMEN_NOMINAL_LENGTH_MM = 21.0
 FULL_BEAM_HEIGHT = 3.0
 
 
+def friendly_str(x: typing.Union[str, int, float]) -> str:
+    if isinstance(x, float):
+        return f"{x:g}"
+
+    return str(x)
+
+
+def get_last_case_image_fn(path: pathlib.Path) -> pathlib.Path:
+    """Get the image file from the directory"""
+
+    images = list(path.glob("Case-*.png"))
+    if len(images) != 1:
+        raise ValueError(images)
+
+    return images[0]
+
+
 
 class NoResultException(Exception):
     pass
@@ -276,8 +293,11 @@ def _generate_study_data(name, x_axis, gen_relevant_subdirectories) -> Study:
     return Study(name=name, band_size_ratios=list(make_bsrs()), x_axis=x_axis)
 
 
-def generate_plot_data_range(name, x_axis, first_considered_subdir: str, last_considered_subdir: str) -> Study:
+def generate_plot_data_range(name, x_axis, first_considered_subdir: str, last_considered_subdir: str, images_to_annotate: typing.Optional[dict] = None) -> Study:
     
+    if images_to_annotate is None:
+        images_to_annotate = dict()
+
     def gen_relevant_subdirectories():
         min_hex = int(first_considered_subdir, base=36)
         max_hex = int(last_considered_subdir, base=36)
@@ -291,7 +311,10 @@ def generate_plot_data_range(name, x_axis, first_considered_subdir: str, last_co
     return _generate_study_data(name, x_axis, gen_relevant_subdirectories)
 
 
-def generate_plot_data_specified(name, x_axis, dir_ends: typing.List[str]) -> Study:
+def generate_plot_data_specified(name, x_axis, dir_ends: typing.List[str], images_to_annotate: typing.Optional[dict] = None) -> Study:
+    if images_to_annotate is None:
+        images_to_annotate = dict()
+
     def gen_relevant_subdirectories():
         for de in dir_ends:
             yield plot_data_base / de
@@ -428,7 +451,8 @@ def make_cutoff_example(study: Study):
             y.append(bs / bsr.get_scale())
 
         de = bsr.run_params.working_dir.name
-        label = f"{study.x_axis.get_legend_label()}={get_x_axis_val_raw(study, bsr)}"
+        label_value = friendly_str(get_x_axis_val_raw(study, bsr))
+        label = f"{study.x_axis.get_legend_label()}={label_value}"
         base_line, = plt.plot(x, y, label=label)
 
         # Add a proposed "cutoff_line"
