@@ -6,7 +6,7 @@ import collections
 import itertools
 
 START = "C3"
-END = "DR"
+END = "E5"
 
 ALL_FILES = r"C:\Users\Tom Wilson\Documents\CeramicBandData\outputs\all_files.txt"
 
