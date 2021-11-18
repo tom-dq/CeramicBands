@@ -435,7 +435,6 @@ def make_main_plot(plot_type: PlotType, study: Study):
             imagebox = OffsetImage(cropped_sub_image, zoom=0.2)
             imagebox.image.axes = ax
 
-            
             ab = AnnotationBbox(imagebox, (x_val, y_val),
                     xybox=(120., -80.),
                     xycoords='data',

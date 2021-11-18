@@ -35,9 +35,21 @@ def _find_pink_pixels_crop_dims(image: Image):
         max(y_pixels) + buffer,
     )
 
-def get_dilation_region(image: Image):
+def get_dilation_region(crop_to_square: bool, image: Image):
 
     crop_dims = _find_pink_pixels_crop_dims(image)
+
+    if crop_to_square:
+        x_range = crop_dims[2] - crop_dims[0]
+        y_range = crop_dims[3] - crop_dims[1]
+
+        shortest_dim = min(x_range, y_range)
+
+        delta_x = (x_range - shortest_dim) // 2
+        delta_y = (y_range - shortest_dim) // 2
+
+
+
     image_cropped = image.crop(crop_dims)
 
     return image_cropped
