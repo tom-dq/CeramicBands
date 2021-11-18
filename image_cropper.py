@@ -1,8 +1,8 @@
 import itertools
+import pathlib
 
-from PIL import Image, ImageDraw, ImageFont
-import PIL
-import numpy
+from PIL import Image
+
 
 MAXED_OUT_PINK = (217, 26, 217)
 
@@ -26,7 +26,7 @@ def _find_pink_pixels_crop_dims(image: Image):
         x_pixels.add(x)
         y_pixels.add(y)
 
-    buffer = int(width / 40)
+    buffer = int(width / 100)
 
     return (
         min(x_pixels) - buffer,
@@ -35,7 +35,7 @@ def _find_pink_pixels_crop_dims(image: Image):
         max(y_pixels) + buffer,
     )
 
-def find_dilation_region(image: Image):
+def get_dilation_region(image: Image):
 
     crop_dims = _find_pink_pixels_crop_dims(image)
     image_cropped = image.crop(crop_dims)
@@ -52,5 +52,5 @@ def find_dilation_region(image: Image):
 
 if __name__ == "__main__":
     image = Image.open(_test_image)
-    find_dilation_region(image)
+    get_dilation_region(image)
 

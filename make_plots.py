@@ -18,8 +18,13 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker
 import matplotlib.markers
 
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+
+from PIL import Image
+
 from tables import Table
 import common_types
+import image_cropper
 
 from config import active_config
 
@@ -275,10 +280,15 @@ class Study(typing.NamedTuple):
     name: str
     band_size_ratios: typing.List[BandSizeRatio]
     x_axis: XAxis
+    images_to_annotate: typing.Set[str]
 
 
-def _generate_study_data(name, x_axis, gen_relevant_subdirectories) -> Study:
+def _generate_study_data(name, x_axis, images_to_annotate: typing.Optional[typing.Set[str]], gen_relevant_subdirectories) -> Study:
     # Get the relevant subdirectories for inclusion
+
+    if images_to_annotate is None:
+        images_to_annotate = set()
+
 
     def make_bsrs():
         for working_dir in gen_relevant_subdirectories():
@@ -290,14 +300,11 @@ def _generate_study_data(name, x_axis, gen_relevant_subdirectories) -> Study:
             except NoResultException:
                 pass
 
-    return Study(name=name, band_size_ratios=list(make_bsrs()), x_axis=x_axis)
+    return Study(name=name, band_size_ratios=list(make_bsrs()), x_axis=x_axis, images_to_annotate=images_to_annotate)
 
 
-def generate_plot_data_range(name, x_axis, first_considered_subdir: str, last_considered_subdir: str, images_to_annotate: typing.Optional[dict] = None) -> Study:
+def generate_plot_data_range(name, x_axis, first_considered_subdir: str, last_considered_subdir: str, images_to_annotate: typing.Optional[typing.Set[str]] = None) -> Study:
     
-    if images_to_annotate is None:
-        images_to_annotate = dict()
-
     def gen_relevant_subdirectories():
         min_hex = int(first_considered_subdir, base=36)
         max_hex = int(last_considered_subdir, base=36)
@@ -308,18 +315,16 @@ def generate_plot_data_range(name, x_axis, first_considered_subdir: str, last_co
                 if min_hex <= this_hex <= max_hex:
                     yield working_dir
 
-    return _generate_study_data(name, x_axis, gen_relevant_subdirectories)
+    return _generate_study_data(name, x_axis, images_to_annotate, gen_relevant_subdirectories)
 
 
-def generate_plot_data_specified(name, x_axis, dir_ends: typing.List[str], images_to_annotate: typing.Optional[dict] = None) -> Study:
-    if images_to_annotate is None:
-        images_to_annotate = dict()
+def generate_plot_data_specified(name, x_axis, dir_ends: typing.List[str], images_to_annotate: typing.Optional[typing.Set[str]] = None) -> Study:
 
     def gen_relevant_subdirectories():
         for de in dir_ends:
             yield plot_data_base / de
 
-    return _generate_study_data(name, x_axis, gen_relevant_subdirectories)
+    return _generate_study_data(name, x_axis, images_to_annotate, gen_relevant_subdirectories)
 
 
 
@@ -360,6 +365,24 @@ def get_x_axis_val_raw(study: Study, bsr: BandSizeRatio):
         raise ValueError(study.x_axis)
 
 
+def _get_close_up_subfigure(bsr: BandSizeRatio) -> Image:
+    working_dir_end = bsr.run_params.working_dir.parts[-1]
+    local_copy_working_dir = plot_data_base / working_dir_end
+
+    images = list(local_copy_working_dir.glob("Case-*.png"))
+    if len(images) != 1:
+        raise ValueError(images)
+
+    image_fn = images.pop()
+
+    full_image = Image.open(image_fn)
+
+    cropped_image = image_cropper.get_dilation_region(full_image)
+
+    return cropped_image
+
+
+
 
 def make_main_plot(plot_type: PlotType, study: Study):
     
@@ -379,29 +402,51 @@ def make_main_plot(plot_type: PlotType, study: Study):
     for idx, bsr in enumerate(sorted(study.band_size_ratios, key=sort_key)):
 
         if study.x_axis == XAxis.run_index:
-            x.append(idx)
+            x_val = idx
 
         elif study.x_axis in (XAxis.beam_depth, XAxis.initiation_variation, XAxis.initiation_spacing, XAxis.dilation_max):
-            x.append(get_x_axis_val_raw(study, bsr))
+            x_val = get_x_axis_val_raw(study, bsr)
+            
 
         else:
             raise ValueError(study.x_axis)
 
+        x.append(x_val)
 
         if plot_type == PlotType.maj_ratio:
-            val = bsr.get_major_band_count_ratio()
+            y_val = bsr.get_major_band_count_ratio()
         
         elif plot_type == PlotType.maj_spacing:
             MM_TO_NM = 1_000
-            val = MM_TO_NM * bsr.get_major_band_spacing()
+            y_val = MM_TO_NM * bsr.get_major_band_spacing()
 
         elif plot_type == PlotType.num_bands:
-            val = bsr.get_num_maj_bands_full_length()
+            y_val = bsr.get_num_maj_bands_full_length()
 
         else:
             raise ValueError(plot_type)
 
-        plot_type_to_data[plot_type].append(val)
+        plot_type_to_data[plot_type].append(y_val)
+
+        # Annotations?
+        working_dir_end = bsr.run_params.working_dir.parts[-1]
+        if working_dir_end in study.images_to_annotate:
+            cropped_sub_image = _get_close_up_subfigure(bsr)
+            imagebox = OffsetImage(cropped_sub_image, zoom=0.2)
+            imagebox.image.axes = ax
+
+            
+            ab = AnnotationBbox(imagebox, (x_val, y_val),
+                    xybox=(120., -80.),
+                    xycoords='data',
+                    boxcoords="offset points",
+                    pad=0.5,
+                    arrowprops=dict(
+                        arrowstyle="->",
+                        connectionstyle="angle,angleA=0,angleB=90,rad=3")
+                    )
+
+            ax.add_artist(ab)
 
     ax.plot(x, plot_type_to_data[plot_type], marker='.', label=plot_type.value)
 
@@ -501,12 +546,12 @@ if __name__ == "__main__":
     
     # cherry_pick = list(generate_plot_data_specified(["CM", "CO", "CT"]))
     studies = [
-        generate_plot_data_range("SpacingVariation", XAxis.initiation_spacing, "CI", "CL"),
-        generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"]),
-        generate_plot_data_range("SpreadStudy", XAxis.run_index, "CA", "CE"),
-        generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9"),
-        generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR"),
-        generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",])
+        # generate_plot_data_range("SpacingVariation", XAxis.initiation_spacing, "CI", "CL"),
+        # generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"]),
+        # generate_plot_data_range("SpreadStudy", XAxis.run_index, "CA", "CE"),
+        # generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9"),
+        # generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR"),
+        generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",], images_to_annotate={"CM",})
     ]
 
     for study in studies:
