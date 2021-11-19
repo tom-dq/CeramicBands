@@ -399,6 +399,7 @@ def make_main_plot(plot_type: PlotType, study: Study):
 
     # Subfigure tiles dimensions
     tile_size_dots = [int(figsize_dots[0] / TILE_N_X), int(figsize_dots[1] / TILE_N_Y)]
+    tile_aspect_ratio = tile_size_dots[0] / tile_size_dots[1]
 
     def sort_key(band_size_ratio: BandSizeRatio):
         return band_size_ratio.run_params.scale_model_y
@@ -444,7 +445,7 @@ def make_main_plot(plot_type: PlotType, study: Study):
         # Annotations?
         working_dir_end = bsr.run_params.working_dir.parts[-1]
         if working_dir_end in study.images_to_annotate:
-            cropped_sub_image = _get_close_up_subfigure(bsr)
+            cropped_sub_image = _get_close_up_subfigure(target_aspect_ratio=tile_aspect_ratio, bsr=bsr)
             imagebox = OffsetImage(cropped_sub_image, zoom=0.2)
             imagebox.image.axes = ax
 
