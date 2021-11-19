@@ -37,21 +37,38 @@ def _find_pink_pixels_crop_dims(image: Image):
 
 def get_dilation_region(target_aspect_ratio: float, image: Image):
 
+    # Get the full image with "pink dilation"
     crop_dims = _find_pink_pixels_crop_dims(image)
 
-    # TODO - aspect ratio stuff
-    if False:
-        x_range = crop_dims[2] - crop_dims[0]
-        y_range = crop_dims[3] - crop_dims[1]
+    # Crop that to the right aspect ratio
+    x_range = crop_dims[2] - crop_dims[0]
+    y_range = crop_dims[3] - crop_dims[1]
+    
+    full_region_aspect = x_range / y_range
+    if target_aspect_ratio < full_region_aspect:
+        # Need to remove the ends in X
+        space_for_x = target_aspect_ratio * y_range
+        removed_x = int((x_range - space_for_x) / 2)
+        cropped_aspect_dims = (
+            crop_dims[0] + removed_x,
+            crop_dims[1],
+            crop_dims[2] - removed_x,
+            crop_dims[3],
+        )
 
-        shortest_dim = min(x_range, y_range)
+    else:
+        # Need to remove the ends in Y
+        space_for_y = x_range / target_aspect_ratio
+        removed_y = int((y_range - space_for_y) / 2)
 
-        delta_x = (x_range - shortest_dim) // 2
-        delta_y = (y_range - shortest_dim) // 2
+        cropped_aspect_dims = (
+            crop_dims[0],
+            crop_dims[1] + removed_y,
+            crop_dims[2],
+            crop_dims[3] - removed_y,
+        )
 
-
-
-    image_cropped = image.crop(crop_dims)
+    image_cropped = image.crop(cropped_aspect_dims)
 
     return image_cropped
     
@@ -65,5 +82,5 @@ def get_dilation_region(target_aspect_ratio: float, image: Image):
 
 if __name__ == "__main__":
     image = Image.open(_test_image)
-    get_dilation_region(image)
+    get_dilation_region(1.2, image)
 

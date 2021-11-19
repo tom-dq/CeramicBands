@@ -377,7 +377,7 @@ def _get_close_up_subfigure(bsr: BandSizeRatio) -> Image:
 
     full_image = Image.open(image_fn)
 
-    cropped_image = image_cropper.get_dilation_region(full_image)
+    cropped_image = image_cropper.get_dilation_region(1.2, full_image)
 
     return cropped_image
 
