@@ -399,6 +399,8 @@ def make_main_plot(plot_type: PlotType, study: Study):
 
     plot_type_to_data = collections.defaultdict(list)
     x = []
+    annotation_bboxes: typing.List[AnnotationBbox] = []
+
     for idx, bsr in enumerate(sorted(study.band_size_ratios, key=sort_key)):
 
         if study.x_axis == XAxis.run_index:
@@ -446,6 +448,7 @@ def make_main_plot(plot_type: PlotType, study: Study):
                     )
 
             ax.add_artist(ab)
+            annotation_bboxes.append(ab)
 
     ax.plot(x, plot_type_to_data[plot_type], marker='.', label=plot_type.value)
 
