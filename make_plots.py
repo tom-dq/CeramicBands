@@ -30,6 +30,7 @@ from config import active_config
 
 import main
 import history
+import annotation_tile
 
 # To get pickle to unpickle
 from main import CheckpointState, save_state
@@ -38,6 +39,7 @@ from main import ModelFreedomCase
 from main import Ratchet
 from main import PrestrainUpdate
 from main import ResultFrame
+
 
 T_Path = typing.Union[pathlib.Path, str]
 
@@ -365,7 +367,7 @@ def get_x_axis_val_raw(study: Study, bsr: BandSizeRatio):
         raise ValueError(study.x_axis)
 
 
-def _get_close_up_subfigure(bsr: BandSizeRatio) -> Image:
+def _get_close_up_subfigure(target_aspect_ratio: float, bsr: BandSizeRatio) -> Image:
     working_dir_end = bsr.run_params.working_dir.parts[-1]
     local_copy_working_dir = plot_data_base / working_dir_end
 
@@ -377,7 +379,7 @@ def _get_close_up_subfigure(bsr: BandSizeRatio) -> Image:
 
     full_image = Image.open(image_fn)
 
-    cropped_image = image_cropper.get_dilation_region(1.2, full_image)
+    cropped_image = image_cropper.get_dilation_region(target_aspect_ratio, full_image)
 
     return cropped_image
 
@@ -388,12 +390,21 @@ def make_main_plot(plot_type: PlotType, study: Study):
     
     DPI = 150
 
+    TILE_N_X = 2
+    TILE_N_Y = 3
+
+
+    figsize_inches=(active_config.screenshot_res.height/2/DPI, active_config.screenshot_res.height/2/DPI)
+    figsize_dots = [DPI*i for i in figsize_inches]
+
+    # Subfigure tiles dimensions
+    tile_size_dots = [int(figsize_dots[0] / TILE_N_X), int(figsize_dots[1] / TILE_N_Y)]
 
     def sort_key(band_size_ratio: BandSizeRatio):
         return band_size_ratio.run_params.scale_model_y
 
     fig, ax = plt.subplots(1, 1, sharex=True, 
-        figsize=(active_config.screenshot_res.height/2/DPI, active_config.screenshot_res.height/2/DPI), 
+        figsize=figsize_inches, 
         dpi=DPI,
     )
 
@@ -451,6 +462,11 @@ def make_main_plot(plot_type: PlotType, study: Study):
             annotation_bboxes.append(ab)
 
     ax.plot(x, plot_type_to_data[plot_type], marker='.', label=plot_type.value)
+
+    for xxx in annotation_tile.generate_proposed_tiles(n_x=TILE_N_X, n_y=TILE_N_Y, ax=ax, annotation_bboxes=annotation_bboxes):
+        print(xxx)
+
+    print()
 
     plt.xlabel(study.x_axis.get_x_label())
     plt.ylabel(plot_type.value)
@@ -553,7 +569,7 @@ if __name__ == "__main__":
         # generate_plot_data_range("SpreadStudy", XAxis.run_index, "CA", "CE"),
         # generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9"),
         # generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR"),
-        generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",], images_to_annotate={"CM",})
+        generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",], images_to_annotate={"CM", "CO",})
     ]
 
     for study in studies:
