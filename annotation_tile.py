@@ -9,6 +9,7 @@ import pathlib
 import matplotlib.pyplot as plt
 import matplotlib.ticker
 import matplotlib.markers
+import matplotlib.lines
 
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
@@ -93,6 +94,25 @@ def _test_close_up_subfigure(target_aspect_ratio: float, working_dir_end) -> Ima
     return cropped_image
 
 
+def measure_configuration_badness(
+        main_line: matplotlib.lines.Line2D,
+        proposed_configuration: ProposedConfiguration,
+        r,
+    ) -> typing.Tuple[int, float]:
+
+    line_path = main_line.get_path()
+    inv_trans = proposed_configuration.ax.transData.inverted()
+    intersects = 0
+    for proposed_tile in proposed_configuration.tiles:
+        offset_box_try1 = proposed_tile.annotation_bbox.offsetbox
+        offset_box_try2 = proposed_tile.annotation_bbox.clipbox
+        exts = inv_trans.transform(...)
+        if line_path.intersects_bbox(exts):
+            intersects += 1
+
+    return intersects, 0.0
+    
+
 def make_test_plot():
     screen_h = 2160
     DPI = 150
@@ -111,7 +131,7 @@ def make_test_plot():
         dpi=DPI,
     )
 
-    ax.plot([3,4,5,6], [1.1, 1.2, 1.5, 2.5], marker='.', label="Legend!")
+    main_line, = ax.plot([3,4,5,6], [1.1, 1.2, 1.5, 2.5], marker='.', label="Legend!")
 
     annotation_bboxes=[]
     for working_dir_end in ["CO", "CM", "CN",]:
@@ -144,11 +164,16 @@ def make_test_plot():
     for idx, proposed_configuration in enumerate(generate_proposed_tiles(TILE_N_X, TILE_N_Y, ax, annotation_bboxes)):
         apply_tile_configuration(proposed_configuration)
 
+        badness = measure_configuration_badness(main_line, proposed_configuration, fig.canvas.get_renderer())
         # TODO - function to check "badness" of the proposed arrangement (overlap, length of annotation, etc)
         fig.canvas.draw()
 
+        # TEMP!
+        
+
         fig_fn = rf"c:\temp\Prop-{idx}.png"
         plt.savefig(fig_fn, dpi=2*DPI, bbox_inches='tight',)
+        print(f"{fig_fn} - {badness}")
         # plt.show()
 
 
