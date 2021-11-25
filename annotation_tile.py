@@ -12,6 +12,7 @@ import matplotlib.markers
 import matplotlib.lines
 
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from matplotlib.transforms import Bbox
 
 from PIL import Image
 
@@ -33,9 +34,14 @@ class ProposedConfiguration(typing.NamedTuple):
     ax: Axes
     tiles: typing.List[ProposedTile]
 
-    def get_axis_fraction_limits(one_tile) -> ...:
+    def get_axis_fraction_limits(self, proposed_tile: ProposedTile) -> Bbox:
         # TODO - return bounding box in 0..1 fraction limits
-        pass
+        
+        xmin, xmax = [(proposed_tile.i_x + ii) / self.n_x for ii in (0, 1)]
+        ymin, ymax = [(proposed_tile.i_y + ii) / self.n_y for ii in (0, 1)]
+        
+        data = [[xmin, ymin], [xmax, ymax]]
+        return Bbox(data)
 
 def generate_proposed_tiles(n_x: int, n_y: int, ax: Axes, annotation_bboxes: typing.List[AnnotationBbox]) -> typing.Iterable[ProposedConfiguration]:
     
@@ -65,9 +71,11 @@ def apply_tile_configuration(proposed_configuration: ProposedConfiguration):
     for proposed_tile in proposed_configuration.tiles:
 
         # Size and place the figure correctly
+        bbox_axes_fraction = proposed_configuration.get_axis_fraction_limits(proposed_tile)
+
         new_xybox = (
-            (0.5 + proposed_tile.i_x) / proposed_configuration.n_x,
-            (0.5 + proposed_tile.i_y) / proposed_configuration.n_y,
+            0.5 * (bbox_axes_fraction.xmin + bbox_axes_fraction.xmax),
+            0.5 * (bbox_axes_fraction.ymin + bbox_axes_fraction.ymax),
         )
 
         proposed_tile.annotation_bbox.xybox = new_xybox
@@ -98,6 +106,7 @@ def _test_close_up_subfigure(target_aspect_ratio: float, working_dir_end) -> Ima
 
 
 def measure_configuration_badness(
+        ax: Axes,
         main_line: matplotlib.lines.Line2D,
         proposed_configuration: ProposedConfiguration,
         r,
@@ -106,12 +115,27 @@ def measure_configuration_badness(
     line_path = main_line.get_path()
     inv_trans = proposed_configuration.ax.transData.inverted()
     intersects = 0
+    total_distance = 0.0
     for proposed_tile in proposed_configuration.tiles:
-        offset_box_try1 = proposed_tile.annotation_bbox.offsetbox
-        offset_box_try2 = proposed_tile.annotation_bbox.clipbox
-        exts = inv_trans.transform_bbox(offset_box_try2)
 
-        line_intersects = line_path.intersects_bbox(exts)
+        bbox_axes_fraction = proposed_configuration.get_axis_fraction_limits(proposed_tile)
+
+        # There must be a better way to do this!
+        xmin = ax.dataLim.x0 + ax.dataLim.width*bbox_axes_fraction.x0
+        xmax = ax.dataLim.x0 + ax.dataLim.width*bbox_axes_fraction.x1
+
+        ymin = ax.dataLim.y0 + ax.dataLim.height*bbox_axes_fraction.y0
+        ymax = ax.dataLim.y0 + ax.dataLim.height*bbox_axes_fraction.y1
+
+        bbox_data = Bbox([[xmin, ymin], [xmax, ymax]])
+
+
+        # Distance between figure and annotation point...
+        fig_x = 0.5 * (xmin + xmax)
+        fig_y = 0.5 * (ymin + ymax)
+        # TODO -up to here
+
+        line_intersects = line_path.intersects_bbox(bbox_data)
         if line_intersects:
             intersects += 1
 
@@ -171,8 +195,7 @@ def make_test_plot():
     for idx, proposed_configuration in enumerate(generate_proposed_tiles(TILE_N_X, TILE_N_Y, ax, annotation_bboxes)):
         apply_tile_configuration(proposed_configuration)
 
-        plt.show()
-        badness = measure_configuration_badness(main_line, proposed_configuration, fig.canvas.get_renderer())
+        badness = measure_configuration_badness(ax, main_line, proposed_configuration, fig.canvas.get_renderer())
         # TODO - function to check "badness" of the proposed arrangement (overlap, length of annotation, etc)
         fig.canvas.draw()
 
