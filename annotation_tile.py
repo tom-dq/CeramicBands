@@ -4,6 +4,7 @@ import itertools
 import math
 import typing
 import pathlib
+import time
 
 
 import matplotlib.pyplot as plt
@@ -210,6 +211,7 @@ def make_test_plot():
 
     fig.canvas.draw()
     all_options = []
+    t_start = time.time()
     for idx, proposed_configuration in enumerate(generate_proposed_tiles(TILE_N_X, TILE_N_Y, ax, main_line, annotation_bboxes)):
         apply_tile_configuration(proposed_configuration)
 
@@ -228,6 +230,8 @@ def make_test_plot():
         all_options.append(this_option)
         # plt.show()
 
+    t_total = time.time() - t_start
+    print(f"Took {t_total} seconds for {len(all_options)} - {len(all_options) / t_total} per second.")
     all_options.sort()
     for this_option in all_options:
         print(this_option[0], this_option[1], sep='\t')
