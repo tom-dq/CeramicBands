@@ -33,6 +33,9 @@ class ProposedConfiguration(typing.NamedTuple):
     ax: Axes
     tiles: typing.List[ProposedTile]
 
+    def get_axis_fraction_limits(one_tile) -> ...:
+        # TODO - return bounding box in 0..1 fraction limits
+        pass
 
 def generate_proposed_tiles(n_x: int, n_y: int, ax: Axes, annotation_bboxes: typing.List[AnnotationBbox]) -> typing.Iterable[ProposedConfiguration]:
     
@@ -106,9 +109,13 @@ def measure_configuration_badness(
     for proposed_tile in proposed_configuration.tiles:
         offset_box_try1 = proposed_tile.annotation_bbox.offsetbox
         offset_box_try2 = proposed_tile.annotation_bbox.clipbox
-        exts = inv_trans.transform(...)
-        if line_path.intersects_bbox(exts):
+        exts = inv_trans.transform_bbox(offset_box_try2)
+
+        line_intersects = line_path.intersects_bbox(exts)
+        if line_intersects:
             intersects += 1
+
+        print(proposed_tile, line_intersects)
 
     return intersects, 0.0
     
@@ -164,6 +171,7 @@ def make_test_plot():
     for idx, proposed_configuration in enumerate(generate_proposed_tiles(TILE_N_X, TILE_N_Y, ax, annotation_bboxes)):
         apply_tile_configuration(proposed_configuration)
 
+        plt.show()
         badness = measure_configuration_badness(main_line, proposed_configuration, fig.canvas.get_renderer())
         # TODO - function to check "badness" of the proposed arrangement (overlap, length of annotation, etc)
         fig.canvas.draw()
