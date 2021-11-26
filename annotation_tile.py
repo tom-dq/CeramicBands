@@ -22,6 +22,8 @@ from matplotlib.offsetbox import AnnotationBbox
 
 import image_cropper
 
+DPI = 150
+
 
 class ProposedTile(typing.NamedTuple):
     i_x: int
@@ -59,7 +61,13 @@ class ProposedConfiguration(typing.NamedTuple):
         return bbox_data
 
 
-def generate_proposed_tiles(n_x: int, n_y: int, ax: Axes, main_line, annotation_bboxes: typing.List[AnnotationBbox], ) -> typing.Iterable[ProposedConfiguration]:
+class AssessedConfiguration(typing.NamedTuple):
+    intersections: int
+    total_arrow_distance: float
+    proposed_configuration: ProposedConfiguration
+
+
+def generate_proposed_tiles(n_x: int, n_y: int, ax: Axes, main_lines, annotation_bboxes: typing.List[AnnotationBbox], ) -> typing.Iterable[ProposedConfiguration]:
     
 
     all_tiles = list(itertools.product(range(n_x), range(n_y)))
@@ -70,11 +78,14 @@ def generate_proposed_tiles(n_x: int, n_y: int, ax: Axes, main_line, annotation_
         proposed_tile = ProposedTile(i_x=i_x, i_y=i_y, annotation_bbox=...)
         dummy_proposed_config = ProposedConfiguration(n_x, n_y, ax, [])
         bbox_data = dummy_proposed_config.get_bbox_axis_data_limits(ax, proposed_tile)
-        line_path = main_line.get_path()
-        line_intersects = line_path.intersects_bbox(bbox_data)
-        if not line_intersects:
-            non_intersecting_tiles.append((i_x, i_y))
+        intersect_free = True
+        for main_line in main_lines:
+            line_path = main_line.get_path()
+            if line_path.intersects_bbox(bbox_data):
+                intersect_free = False
 
+        if intersect_free:
+            non_intersecting_tiles.append((i_x, i_y))
 
     # Preflight check - how many options are we dealing with?
     n_perms = math.perm(len(all_tiles), len(annotation_bboxes))
@@ -131,14 +142,13 @@ def _test_close_up_subfigure(target_aspect_ratio: float, working_dir_end) -> Ima
     return cropped_image
 
 
-def measure_configuration_badness(
+def assess_configuration_badness(
         ax: Axes,
-        main_line: matplotlib.lines.Line2D,
+        main_lines: typing.List[matplotlib.lines.Line2D],
         proposed_configuration: ProposedConfiguration,
-        r,
-    ) -> typing.Tuple[int, float]:
+    ) -> AssessedConfiguration:
 
-    line_path = main_line.get_path()
+    line_paths = [main_line.get_path() for main_line in main_lines]
 
     intersects = 0
     total_distance = 0.0
@@ -155,16 +165,29 @@ def measure_configuration_badness(
         dist = math.sqrt(d_x**2 + d_y**2)
         total_distance += dist
 
-        line_intersects = line_path.intersects_bbox(bbox_data)
-        if line_intersects:
-            intersects += 1
+        for line_path in line_paths:
+            line_intersects = line_path.intersects_bbox(bbox_data)
+            if line_intersects:
+                intersects += 1
 
-    return intersects, total_distance
+    return AssessedConfiguration(intersects, total_distance, proposed_configuration)
     
+
+def save_best_configuration_to(ax, main_lines, proposed_configurations: typing.Iterable[ProposedConfiguration], fn_out: str):
+
+    assessed_configurations = [assess_configuration_badness(ax, main_lines, proposed_configuration) for proposed_configuration in proposed_configurations]
+
+    assessed_configurations.sort()
+
+    best_configuration = assessed_configurations[0].proposed_configuration
+
+    apply_tile_configuration(best_configuration)
+    plt.savefig(fn_out, dpi=2*DPI, bbox_inches='tight',)
+
+
 
 def make_test_plot():
     screen_h = 2160
-    DPI = 150
 
     TILE_N_X, TILE_N_Y = 3, 4
 
@@ -181,6 +204,8 @@ def make_test_plot():
     )
 
     main_line, = ax.plot([3,4,5,6], [1.1, 1.2, 1.5, 2.5], marker='.', label="Legend!")
+
+    main_lines = [main_line]
 
     annotation_bboxes=[]
     for working_dir_end in ["CO", "CM", "CN",]:
@@ -208,39 +233,15 @@ def make_test_plot():
         annotation_bboxes.append(ab)
 
 
-
     fig.canvas.draw()
-    all_options = []
-    t_start = time.time()
-    for idx, proposed_configuration in enumerate(generate_proposed_tiles(TILE_N_X, TILE_N_Y, ax, main_line, annotation_bboxes)):
-        apply_tile_configuration(proposed_configuration)
 
-        badness = measure_configuration_badness(ax, main_line, proposed_configuration, fig.canvas.get_renderer())
-        # TODO - function to check "badness" of the proposed arrangement (overlap, length of annotation, etc)
-        fig.canvas.draw()
-
-        # TEMP!
-        
-
-        fig_fn = rf"c:\temp\bad_checks\Prop-{badness[0]}-{badness[1]}-idx-{idx}.png"
-        plt.savefig(fig_fn, dpi=2*DPI, bbox_inches='tight',)
-        print(f"{fig_fn} - {badness}")
-
-        this_option = (badness, fig_fn, proposed_configuration)
-        all_options.append(this_option)
-        # plt.show()
-
-    t_total = time.time() - t_start
-    print(f"Took {t_total} seconds for {len(all_options)} - {len(all_options) / t_total} per second.")
-    all_options.sort()
-    for this_option in all_options:
-        print(this_option[0], this_option[1], sep='\t')
-
-    print()
-
-    print(f"Best: {all_options[0]}")
-    print(f"Worst: {all_options[-1]}")
-
+    proposed_configurations = generate_proposed_tiles(TILE_N_X, TILE_N_Y, ax, main_lines, annotation_bboxes)
+    save_best_configuration_to(
+        ax,
+        main_lines,
+        proposed_configurations,
+        rf"c:\temp\bad_checks\Best.png",
+    )
 
 if __name__ == "__main__":
 

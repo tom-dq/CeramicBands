@@ -390,8 +390,8 @@ def make_main_plot(plot_type: PlotType, study: Study):
     
     DPI = 150
 
-    TILE_N_X = 2
-    TILE_N_Y = 3
+    TILE_N_X = 3
+    TILE_N_Y = 4
 
 
     figsize_inches=(active_config.screenshot_res.height/2/DPI, active_config.screenshot_res.height/2/DPI)
@@ -446,8 +446,16 @@ def make_main_plot(plot_type: PlotType, study: Study):
         working_dir_end = bsr.run_params.working_dir.parts[-1]
         if working_dir_end in study.images_to_annotate:
             cropped_sub_image = _get_close_up_subfigure(target_aspect_ratio=tile_aspect_ratio, bsr=bsr)
-            imagebox = OffsetImage(cropped_sub_image, zoom=0.2)
+            
+            zoom_x = tile_size_dots[0] / cropped_sub_image.width
+            zoom_y = tile_size_dots[1] / cropped_sub_image.height
+            buffer = 2.0
+            zoom = 0.5 * (zoom_x + zoom_y) * 72.0 / DPI / buffer
+
+            imagebox = OffsetImage(cropped_sub_image, zoom=zoom)
             imagebox.image.axes = ax
+
+            
 
             ab = AnnotationBbox(imagebox, (x_val, y_val),
                     xybox=(120., -80.),
@@ -456,18 +464,19 @@ def make_main_plot(plot_type: PlotType, study: Study):
                     pad=0.5,
                     arrowprops=dict(
                         arrowstyle="->",
-                        connectionstyle="angle,angleA=0,angleB=90,rad=3")
+                        # connectionstyle="angle,angleA=0,angleB=90,rad=3")
                     )
+                )
 
             ax.add_artist(ab)
             annotation_bboxes.append(ab)
 
-    ax.plot(x, plot_type_to_data[plot_type], marker='.', label=plot_type.value)
+    main_line, = ax.plot(x, plot_type_to_data[plot_type], marker='.', label=plot_type.value)
+    main_lines = [main_line,]
 
-    for xxx in annotation_tile.generate_proposed_tiles(n_x=TILE_N_X, n_y=TILE_N_Y, ax=ax, annotation_bboxes=annotation_bboxes):
-        print(xxx)
+    fig.canvas.draw()
 
-    print()
+    proposed_configurations = annotation_tile.generate_proposed_tiles(TILE_N_X, TILE_N_Y, ax, main_lines, annotation_bboxes)
 
     plt.xlabel(study.x_axis.get_x_label())
     plt.ylabel(plot_type.value)
@@ -492,8 +501,15 @@ def make_main_plot(plot_type: PlotType, study: Study):
         raise ValueError(plot_type)
 
 
-    fig_fn = graph_output_base / f"{study.name}-{plot_type.name}-{_bsr_list_hash(study.band_size_ratios)}.png"
-    plt.savefig(fig_fn, dpi=2*DPI, bbox_inches='tight',)
+    fig_fn = graph_output_base / f"BEST-{study.name}-{plot_type.name}-{_bsr_list_hash(study.band_size_ratios)}.png"
+    # plt.savefig(fig_fn, dpi=2*DPI, bbox_inches='tight',)
+
+    annotation_tile.save_best_configuration_to(
+        ax,
+        main_lines,
+        proposed_configurations,
+        fig_fn,
+    )
 
     # plt.show()
 
@@ -565,11 +581,11 @@ if __name__ == "__main__":
     
     # cherry_pick = list(generate_plot_data_specified(["CM", "CO", "CT"]))
     studies = [
-        # generate_plot_data_range("SpacingVariation", XAxis.initiation_spacing, "CI", "CL"),
-        # generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"]),
-        # generate_plot_data_range("SpreadStudy", XAxis.run_index, "CA", "CE"),
-        # generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9"),
-        # generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR"),
+        generate_plot_data_range("SpacingVariation", XAxis.initiation_spacing, "CI", "CL", images_to_annotate={"CI", "CK", "CL",}),
+        generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"], images_to_annotate={"C3", "CF", "CG", "CH",}),
+        generate_plot_data_range("SpreadStudy", XAxis.run_index, "CA", "CE", images_to_annotate={"CA", "CC", "CE",}),
+        generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9", images_to_annotate={"C4", "C6", "C9",}),
+        generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR", images_to_annotate={"CM", "CO", "CQ", "CT",}),
         generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",], images_to_annotate={"CM", "CO",})
     ]
 
