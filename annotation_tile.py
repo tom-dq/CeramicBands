@@ -67,14 +67,21 @@ class AssessedConfiguration(typing.NamedTuple):
     proposed_configuration: ProposedConfiguration
 
 
-def generate_proposed_tiles(n_x: int, n_y: int, ax: Axes, main_lines, annotation_bboxes: typing.List[AnnotationBbox], ) -> typing.Iterable[ProposedConfiguration]:
+def generate_proposed_tiles(n_x: int, n_y: int, only_edges: bool, ax: Axes, main_lines, annotation_bboxes: typing.List[AnnotationBbox], ) -> typing.Iterable[ProposedConfiguration]:
     
 
     all_tiles = list(itertools.product(range(n_x), range(n_y)))
 
+    # If needed, only consider the tiles around the perimeter
+    if only_edges:
+        edge_filtered_tiles = [(i_x, i_y) for (i_x, i_y) in all_tiles if i_x in (0, n_x-1) or i_y in (0, n_y-1)]
+
+    else:
+        edge_filtered_tiles = all_tiles
+
     # Remove any tiles which would intersect
     non_intersecting_tiles = []
-    for i_x, i_y in all_tiles:
+    for i_x, i_y in edge_filtered_tiles:
         proposed_tile = ProposedTile(i_x=i_x, i_y=i_y, annotation_bbox=...)
         dummy_proposed_config = ProposedConfiguration(n_x, n_y, ax, [])
         bbox_data = dummy_proposed_config.get_bbox_axis_data_limits(ax, proposed_tile)
