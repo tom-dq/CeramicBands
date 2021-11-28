@@ -5,6 +5,7 @@ import math
 import typing
 import pathlib
 import time
+import enum
 
 
 import matplotlib.pyplot as plt
@@ -67,32 +68,51 @@ class AssessedConfiguration(typing.NamedTuple):
     proposed_configuration: ProposedConfiguration
 
 
-def generate_proposed_tiles(n_x: int, n_y: int, only_edges: bool, ax: Axes, main_lines, annotation_bboxes: typing.List[AnnotationBbox], ) -> typing.Iterable[ProposedConfiguration]:
+class TilePosition(enum.IntFlag):
+    left = 1
+    top = 2
+    right = 4
+    bottom = 8
+    any_position = 16
+
+def generate_proposed_tiles(n_x: int, n_y: int, tile_position: TilePosition, filter_intersecting: bool, ax: Axes, main_lines, annotation_bboxes: typing.List[AnnotationBbox], ) -> typing.Iterable[ProposedConfiguration]:
     
 
     all_tiles = list(itertools.product(range(n_x), range(n_y)))
 
     # If needed, only consider the tiles around the perimeter
-    if only_edges:
-        edge_filtered_tiles = [(i_x, i_y) for (i_x, i_y) in all_tiles if i_x in (0, n_x-1) or i_y in (0, n_y-1)]
+    allowable_x = []
+    allowable_y = []
+    if TilePosition.left in tile_position: allowable_x.append(0)
+    if TilePosition.right in tile_position: allowable_x.append(n_x-1)
+    if TilePosition.top in tile_position: allowable_y.append(n_y-1)
+    if TilePosition.bottom in tile_position: allowable_y.append(0)
 
-    else:
+
+    if TilePosition.any_position in tile_position:
         edge_filtered_tiles = all_tiles
 
-    # Remove any tiles which would intersect
-    non_intersecting_tiles = []
-    for i_x, i_y in edge_filtered_tiles:
-        proposed_tile = ProposedTile(i_x=i_x, i_y=i_y, annotation_bbox=...)
-        dummy_proposed_config = ProposedConfiguration(n_x, n_y, ax, [])
-        bbox_data = dummy_proposed_config.get_bbox_axis_data_limits(ax, proposed_tile)
-        intersect_free = True
-        for main_line in main_lines:
-            line_path = main_line.get_path()
-            if line_path.intersects_bbox(bbox_data):
-                intersect_free = False
+    else:
+        edge_filtered_tiles = [(i_x, i_y) for (i_x, i_y) in all_tiles if i_x in allowable_x or i_y in allowable_y]
 
-        if intersect_free:
-            non_intersecting_tiles.append((i_x, i_y))
+    if filter_intersecting:
+        # Remove any tiles which would intersect
+        non_intersecting_tiles = []
+        for i_x, i_y in edge_filtered_tiles:
+            proposed_tile = ProposedTile(i_x=i_x, i_y=i_y, annotation_bbox=...)
+            dummy_proposed_config = ProposedConfiguration(n_x, n_y, ax, [])
+            bbox_data = dummy_proposed_config.get_bbox_axis_data_limits(ax, proposed_tile)
+            intersect_free = True
+            for main_line in main_lines:
+                line_path = main_line.get_path()
+                if line_path.intersects_bbox(bbox_data):
+                    intersect_free = False
+
+            if intersect_free:
+                non_intersecting_tiles.append((i_x, i_y))
+
+    else:
+        non_intersecting_tiles = edge_filtered_tiles
 
     # Preflight check - how many options are we dealing with?
     n_perms = math.perm(len(all_tiles), len(annotation_bboxes))
@@ -196,7 +216,7 @@ def save_best_configuration_to(ax, main_lines, proposed_configurations: typing.I
 def make_test_plot():
     screen_h = 2160
 
-    TILE_N_X, TILE_N_Y = 3, 4
+    TILE_N_X, TILE_N_Y = 4, 5
 
     figsize_inches=(screen_h/2/DPI, screen_h/2/DPI)
     figsize_dots = [DPI*i for i in figsize_inches]

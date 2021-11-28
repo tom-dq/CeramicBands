@@ -242,6 +242,19 @@ class PlotType(enum.Enum):
     maj_spacing = "Average spacing between major bands"
     num_bands = f"Number of bands over {SPECIMEN_NOMINAL_LENGTH_MM} mm length"
 
+    def get_y_axis_limits(self) -> typing.Optional[typing.Tuple[float, float]]:
+        if self == PlotType.maj_spacing:
+            return (120.0, 320.0,)
+
+        elif self == PlotType.num_bands:
+            return (60.0, 180.0,)
+
+        elif self == PlotType.maj_ratio:
+            return (0.25, 0.65,)
+
+        else:
+            raise ValueError(self)
+
 
 class XAxis(enum.Enum):
     beam_depth = enum.auto()
@@ -390,8 +403,8 @@ def make_main_plot(plot_type: PlotType, study: Study):
     
     DPI = 150
 
-    TILE_N_X = 4
-    TILE_N_Y = 5
+    TILE_N_X = 3
+    TILE_N_Y = 4
 
 
     figsize_inches=(active_config.screenshot_res.height/2/DPI, active_config.screenshot_res.height/2/DPI)
@@ -455,8 +468,6 @@ def make_main_plot(plot_type: PlotType, study: Study):
             imagebox = OffsetImage(cropped_sub_image, zoom=zoom)
             imagebox.image.axes = ax
 
-            
-
             ab = AnnotationBbox(imagebox, (x_val, y_val),
                     xybox=(120., -80.),
                     xycoords='data',
@@ -474,10 +485,6 @@ def make_main_plot(plot_type: PlotType, study: Study):
     main_line, = ax.plot(x, plot_type_to_data[plot_type], marker='.', label=plot_type.value)
     main_lines = [main_line,]
 
-    fig.canvas.draw()
-
-    edge_only = True
-    proposed_configurations = annotation_tile.generate_proposed_tiles(TILE_N_X, TILE_N_Y, edge_only, ax, main_lines, annotation_bboxes)
 
     plt.xlabel(study.x_axis.get_x_label())
     plt.ylabel(plot_type.value)
@@ -486,21 +493,14 @@ def make_main_plot(plot_type: PlotType, study: Study):
     if study.x_axis.get_x_range():
         plt.xlim(*study.x_axis.get_x_range())
 
+    if plot_type.get_y_axis_limits():
+        plt.ylim(*plot_type.get_y_axis_limits())
 
-    if plot_type == PlotType.num_bands:
-        # plt.ylim(0, 150)
-        pass
+    fig.canvas.draw()
 
-    elif plot_type == PlotType.maj_spacing:
-        # plt.ylim(0, 1000)
-        pass
-    
-    elif plot_type == PlotType.maj_ratio:
-        pass
-
-    else:
-        raise ValueError(plot_type)
-
+    tile_position = annotation_tile.TilePosition.top
+    filter_intersecting = False
+    proposed_configurations = annotation_tile.generate_proposed_tiles(TILE_N_X, TILE_N_Y, tile_position, filter_intersecting, ax, main_lines, annotation_bboxes)
 
     fig_fn = graph_output_base / f"EDGE-{study.name}-{plot_type.name}-{_bsr_list_hash(study.band_size_ratios)}.png"
     # plt.savefig(fig_fn, dpi=2*DPI, bbox_inches='tight',)
