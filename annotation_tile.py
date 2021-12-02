@@ -75,7 +75,7 @@ class TilePosition(enum.IntFlag):
     bottom = 8
     any_position = 16
 
-def generate_proposed_tiles(n_x: int, n_y: int, tile_position: TilePosition, filter_intersecting: bool, ax: Axes, main_lines, annotation_bboxes: typing.List[AnnotationBbox], ) -> typing.Iterable[ProposedConfiguration]:
+def generate_proposed_tiles(n_x: int, n_y: int, tile_position: TilePosition, try_filter_intersecting: bool, ax: Axes, main_lines, annotation_bboxes: typing.List[AnnotationBbox], ) -> typing.Iterable[ProposedConfiguration]:
     
 
     all_tiles = list(itertools.product(range(n_x), range(n_y)))
@@ -95,9 +95,9 @@ def generate_proposed_tiles(n_x: int, n_y: int, tile_position: TilePosition, fil
     else:
         edge_filtered_tiles = [(i_x, i_y) for (i_x, i_y) in all_tiles if i_x in allowable_x or i_y in allowable_y]
 
-    if filter_intersecting:
+    non_intersecting_tiles = []
+    if try_filter_intersecting:
         # Remove any tiles which would intersect
-        non_intersecting_tiles = []
         for i_x, i_y in edge_filtered_tiles:
             proposed_tile = ProposedTile(i_x=i_x, i_y=i_y, annotation_bbox=...)
             dummy_proposed_config = ProposedConfiguration(n_x, n_y, ax, [])
@@ -111,16 +111,24 @@ def generate_proposed_tiles(n_x: int, n_y: int, tile_position: TilePosition, fil
             if intersect_free:
                 non_intersecting_tiles.append((i_x, i_y))
 
+    if len(non_intersecting_tiles) >= len(annotation_bboxes):
+        # The caller requested to remove intersections, and we can!
+        to_use_tiles = non_intersecting_tiles
     else:
-        non_intersecting_tiles = edge_filtered_tiles
+
+        if try_filter_intersecting:
+            print(f"WARNING - try_filter_intersecting=True was passed in but we couldn't find acceptable tile positions.")
+            
+        to_use_tiles = edge_filtered_tiles
+
 
     # Preflight check - how many options are we dealing with?
     n_perms = math.perm(len(all_tiles), len(annotation_bboxes))
-    n_perms_non_intersecting = math.perm(len(non_intersecting_tiles), len(annotation_bboxes))
+    n_perms_non_intersecting = math.perm(len(to_use_tiles), len(annotation_bboxes))
     print(f"Total options on the table: {n_perms}")
     print(f"After filtering intersections: {n_perms_non_intersecting}")
 
-    for tile_proposal in itertools.permutations(non_intersecting_tiles, len(annotation_bboxes)):
+    for tile_proposal in itertools.permutations(to_use_tiles, len(annotation_bboxes)):
         tiles = []
         for (i_x, i_y), annotation_bbox in itertools.zip_longest(tile_proposal, annotation_bboxes):
             proposed_tile = ProposedTile(i_x=i_x, i_y=i_y, annotation_bbox=annotation_bbox)

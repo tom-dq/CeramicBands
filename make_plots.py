@@ -502,7 +502,7 @@ def make_main_plot(plot_type: PlotType, study: Study):
     filter_intersecting = False
     proposed_configurations = annotation_tile.generate_proposed_tiles(TILE_N_X, TILE_N_Y, tile_position, filter_intersecting, ax, main_lines, annotation_bboxes)
 
-    fig_fn = graph_output_base / f"EDGE-{study.name}-{plot_type.name}-{_bsr_list_hash(study.band_size_ratios)}.png"
+    fig_fn = graph_output_base / f"E2-{study.name}-{plot_type.name}-{_bsr_list_hash(study.band_size_ratios)}.png"
     # plt.savefig(fig_fn, dpi=2*DPI, bbox_inches='tight',)
 
     annotation_tile.save_best_configuration_to(
@@ -583,12 +583,12 @@ if __name__ == "__main__":
     # cherry_pick = list(generate_plot_data_specified(["CM", "CO", "CT"]))
     # TODO - include the x-range, y-range, etc in these.
     studies = [
-        # generate_plot_data_range("SpacingVariation", XAxis.initiation_spacing, "CI", "CL", images_to_annotate={"CI", "CK", "CL",}),
-        # generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"], images_to_annotate={"C3", "CF", "CG", "CH",}),
+        generate_plot_data_range("SpacingVariation", XAxis.initiation_spacing, "CI", "CL", images_to_annotate={"CI", "CK", "CL",}),
+        generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"], images_to_annotate={"C3", "CF", "CG", "CH",}),
         generate_plot_data_range("SpreadStudy", XAxis.run_index, "DZ", "E5", images_to_annotate={"DZ", "E2", "E5",}),
-        # generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9", images_to_annotate={"C4", "C6", "C9",}),
-        # generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR", images_to_annotate={"CM", "CO", "CQ", "CT",}),
-        # generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",], images_to_annotate={"CM", "CO",})
+        generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9", images_to_annotate={"C4", "C6", "C9",}),
+        generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR", images_to_annotate={"CM", "CO", "CQ", "CT",}),
+        generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",], images_to_annotate={"CM", "CO",})
     ]
 
     for study in studies:
