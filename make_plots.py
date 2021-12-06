@@ -296,9 +296,10 @@ class Study(typing.NamedTuple):
     band_size_ratios: typing.List[BandSizeRatio]
     x_axis: XAxis
     images_to_annotate: typing.Set[str]
+    tile_position: annotation_tile.TilePosition
 
 
-def _generate_study_data(name, x_axis, images_to_annotate: typing.Optional[typing.Set[str]], gen_relevant_subdirectories) -> Study:
+def _generate_study_data(name, x_axis, images_to_annotate: typing.Optional[typing.Set[str]], tile_position: annotation_tile.TilePosition, gen_relevant_subdirectories) -> Study:
     # Get the relevant subdirectories for inclusion
 
     if images_to_annotate is None:
@@ -315,10 +316,16 @@ def _generate_study_data(name, x_axis, images_to_annotate: typing.Optional[typin
             except NoResultException:
                 pass
 
-    return Study(name=name, band_size_ratios=list(make_bsrs()), x_axis=x_axis, images_to_annotate=images_to_annotate)
+    return Study(
+        name=name, 
+        band_size_ratios=list(make_bsrs()), 
+        x_axis=x_axis, 
+        images_to_annotate=images_to_annotate, 
+        tile_position=tile_position,
+    )
 
 
-def generate_plot_data_range(name, x_axis, first_considered_subdir: str, last_considered_subdir: str, images_to_annotate: typing.Optional[typing.Set[str]] = None) -> Study:
+def generate_plot_data_range(name, x_axis, first_considered_subdir: str, last_considered_subdir: str, tile_position: annotation_tile.TilePosition, images_to_annotate: typing.Optional[typing.Set[str]] = None) -> Study:
     
     def gen_relevant_subdirectories():
         min_hex = int(first_considered_subdir, base=36)
@@ -330,16 +337,16 @@ def generate_plot_data_range(name, x_axis, first_considered_subdir: str, last_co
                 if min_hex <= this_hex <= max_hex:
                     yield working_dir
 
-    return _generate_study_data(name, x_axis, images_to_annotate, gen_relevant_subdirectories)
+    return _generate_study_data(name, x_axis, images_to_annotate, tile_position, gen_relevant_subdirectories)
 
 
-def generate_plot_data_specified(name, x_axis, dir_ends: typing.List[str], images_to_annotate: typing.Optional[typing.Set[str]] = None) -> Study:
+def generate_plot_data_specified(name, x_axis, dir_ends: typing.List[str], tile_position: annotation_tile.TilePosition, images_to_annotate: typing.Optional[typing.Set[str]] = None) -> Study:
 
     def gen_relevant_subdirectories():
         for de in dir_ends:
             yield plot_data_base / de
 
-    return _generate_study_data(name, x_axis, images_to_annotate, gen_relevant_subdirectories)
+    return _generate_study_data(name, x_axis, images_to_annotate, tile_position, gen_relevant_subdirectories)
 
 
 
@@ -498,9 +505,8 @@ def make_main_plot(plot_type: PlotType, study: Study):
 
     fig.canvas.draw()
 
-    tile_position = annotation_tile.TilePosition.top
     filter_intersecting = False
-    proposed_configurations = annotation_tile.generate_proposed_tiles(TILE_N_X, TILE_N_Y, tile_position, filter_intersecting, ax, main_lines, annotation_bboxes)
+    proposed_configurations = annotation_tile.generate_proposed_tiles(TILE_N_X, TILE_N_Y, study.tile_position, filter_intersecting, ax, main_lines, annotation_bboxes)
 
     fig_fn = graph_output_base / f"E2-{study.name}-{plot_type.name}-{_bsr_list_hash(study.band_size_ratios)}.png"
     # plt.savefig(fig_fn, dpi=2*DPI, bbox_inches='tight',)
@@ -579,16 +585,17 @@ def run_study(study: Study):
 
 if __name__ == "__main__":
 
+    TP = annotation_tile.TilePosition
     
     # cherry_pick = list(generate_plot_data_specified(["CM", "CO", "CT"]))
     # TODO - include the x-range, y-range, etc in these.
     studies = [
-        generate_plot_data_range("SpacingVariation", XAxis.initiation_spacing, "CI", "CL", images_to_annotate={"CI", "CK", "CL",}),
-        generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"], images_to_annotate={"C3", "CF", "CG", "CH",}),
-        generate_plot_data_range("SpreadStudy", XAxis.run_index, "DZ", "E5", images_to_annotate={"DZ", "E2", "E5",}),
-        generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9", images_to_annotate={"C4", "C6", "C9",}),
-        generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR", images_to_annotate={"CM", "CO", "CQ", "CT",}),
-        generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",], images_to_annotate={"CM", "CO",})
+        generate_plot_data_range("SpacingVariation", XAxis.initiation_spacing, "CI", "CL", tile_position=TP.top, images_to_annotate={"CI", "CK", "CL",}),
+        generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"], tile_position=TP.edges, images_to_annotate={"C3", "CF", "CG", "CH",}),
+        generate_plot_data_range("SpreadStudy", XAxis.run_index, "DZ", "E5", tile_position=TP.top, images_to_annotate={"DZ", "E1", "E5",}),
+        generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9", tile_position=TP.top, images_to_annotate={"C4", "C6", "C9",}),
+        generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR", tile_position=TP.edges, images_to_annotate={"CM", "CO", "CQ", "CT",}),
+        generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",], tile_position=TP.top, images_to_annotate={"CM", "CO",})
     ]
 
     for study in studies:

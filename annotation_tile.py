@@ -73,6 +73,7 @@ class TilePosition(enum.IntFlag):
     top = 2
     right = 4
     bottom = 8
+    edges = 15
     any_position = 16
 
 def generate_proposed_tiles(n_x: int, n_y: int, tile_position: TilePosition, try_filter_intersecting: bool, ax: Axes, main_lines, annotation_bboxes: typing.List[AnnotationBbox], ) -> typing.Iterable[ProposedConfiguration]:
@@ -121,7 +122,9 @@ def generate_proposed_tiles(n_x: int, n_y: int, tile_position: TilePosition, try
             
         to_use_tiles = edge_filtered_tiles
 
-
+    if len(to_use_tiles) < len(annotation_bboxes):
+        raise ValueError(f"Have {len(annotation_bboxes)} annotations to render but only {len(to_use_tiles)} places!")
+        
     # Preflight check - how many options are we dealing with?
     n_perms = math.perm(len(all_tiles), len(annotation_bboxes))
     n_perms_non_intersecting = math.perm(len(to_use_tiles), len(annotation_bboxes))
