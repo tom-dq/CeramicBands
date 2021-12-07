@@ -74,7 +74,8 @@ class TilePosition(enum.IntFlag):
     right = 4
     bottom = 8
     edges = 15
-    any_position = 16
+    corners = 16
+    any_position = 32
 
 def generate_proposed_tiles(n_x: int, n_y: int, tile_position: TilePosition, try_filter_intersecting: bool, ax: Axes, main_lines, annotation_bboxes: typing.List[AnnotationBbox], ) -> typing.Iterable[ProposedConfiguration]:
     
@@ -84,17 +85,20 @@ def generate_proposed_tiles(n_x: int, n_y: int, tile_position: TilePosition, try
     # If needed, only consider the tiles around the perimeter
     allowable_x = []
     allowable_y = []
+    allowable_xy = []
     if TilePosition.left in tile_position: allowable_x.append(0)
     if TilePosition.right in tile_position: allowable_x.append(n_x-1)
     if TilePosition.top in tile_position: allowable_y.append(n_y-1)
     if TilePosition.bottom in tile_position: allowable_y.append(0)
 
+    if TilePosition.corners:
+        allowable_xy.extend([(0, 0), (0, n_y-1), (n_x-1, 0), (n_x-1, n_y-1)])
 
     if TilePosition.any_position in tile_position:
         edge_filtered_tiles = all_tiles
 
     else:
-        edge_filtered_tiles = [(i_x, i_y) for (i_x, i_y) in all_tiles if i_x in allowable_x or i_y in allowable_y]
+        edge_filtered_tiles = [(i_x, i_y) for (i_x, i_y) in all_tiles if i_x in allowable_x or i_y in allowable_y or (i_x, i_y) in allowable_xy]
 
     non_intersecting_tiles = []
     if try_filter_intersecting:

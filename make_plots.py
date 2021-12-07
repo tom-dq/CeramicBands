@@ -244,7 +244,7 @@ class PlotType(enum.Enum):
 
     def get_y_axis_limits(self) -> typing.Optional[typing.Tuple[float, float]]:
         if self == PlotType.maj_spacing:
-            return (120.0, 320.0,)
+            return (80.0, 320.0,)
 
         elif self == PlotType.num_bands:
             return (60.0, 180.0,)
@@ -269,7 +269,7 @@ class XAxis(enum.Enum):
             XAxis.dilation_max: "Dilation (Max)",
             XAxis.run_index: "Run Index",
             XAxis.initiation_variation: "Initiation Variation",
-            XAxis.initiation_spacing: "Initiation Spacing",
+            XAxis.initiation_spacing: "Initiation Spacing (mm)",
         }
         
         return d[self]
@@ -413,8 +413,9 @@ def make_main_plot(plot_type: PlotType, study: Study):
     TILE_N_X = 3
     TILE_N_Y = 4
 
+    SCALE_DOWN = 1.5
 
-    figsize_inches=(active_config.screenshot_res.height/2/DPI, active_config.screenshot_res.height/2/DPI)
+    figsize_inches=(active_config.screenshot_res.width/SCALE_DOWN/DPI, active_config.screenshot_res.height/SCALE_DOWN/DPI)
     figsize_dots = [DPI*i for i in figsize_inches]
 
     # Subfigure tiles dimensions
@@ -422,7 +423,7 @@ def make_main_plot(plot_type: PlotType, study: Study):
     tile_aspect_ratio = tile_size_dots[0] / tile_size_dots[1]
 
     def sort_key(band_size_ratio: BandSizeRatio):
-        return band_size_ratio.run_params.scale_model_y
+        return get_x_axis_val_raw(study, band_size_ratio)
 
     fig, ax = plt.subplots(1, 1, sharex=True, 
         figsize=figsize_inches, 
@@ -508,7 +509,7 @@ def make_main_plot(plot_type: PlotType, study: Study):
     filter_intersecting = False
     proposed_configurations = annotation_tile.generate_proposed_tiles(TILE_N_X, TILE_N_Y, study.tile_position, filter_intersecting, ax, main_lines, annotation_bboxes)
 
-    fig_fn = graph_output_base / f"E2-{study.name}-{plot_type.name}-{_bsr_list_hash(study.band_size_ratios)}.png"
+    fig_fn = graph_output_base / f"E4-{study.name}-{plot_type.name}-{_bsr_list_hash(study.band_size_ratios)}.png"
     # plt.savefig(fig_fn, dpi=2*DPI, bbox_inches='tight',)
 
     annotation_tile.save_best_configuration_to(
@@ -556,7 +557,7 @@ def make_cutoff_example(study: Study):
     plt.xlabel("Band size rank")
     plt.ylabel("Band size")
 
-    fig_fn = graph_output_base / f"{study.name}-cutoff_demo-{_bsr_list_hash(study.band_size_ratios)}.png"
+    fig_fn = graph_output_base / f"E4-{study.name}-cutoff_demo-{_bsr_list_hash(study.band_size_ratios)}.png"
     plt.savefig(fig_fn, dpi=2*DPI)
 
     # plt.clear()
@@ -590,14 +591,14 @@ if __name__ == "__main__":
     # cherry_pick = list(generate_plot_data_specified(["CM", "CO", "CT"]))
     # TODO - include the x-range, y-range, etc in these.
     studies = [
-        generate_plot_data_range("SpacingVariation", XAxis.initiation_spacing, "CI", "CL", tile_position=TP.top, images_to_annotate={"CI", "CK", "CL",}),
-        generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"], tile_position=TP.edges, images_to_annotate={"C3", "CF", "CG", "CH",}),
-        generate_plot_data_range("SpreadStudy", XAxis.run_index, "DZ", "E5", tile_position=TP.top, images_to_annotate={"DZ", "E1", "E5",}),
-        generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9", tile_position=TP.top, images_to_annotate={"C4", "C6", "C9",}),
-        generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR", tile_position=TP.edges, images_to_annotate={"CM", "CO", "CQ", "CT",}),
-        generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",], tile_position=TP.top, images_to_annotate={"CM", "CO",})
-    ]
+        generate_plot_data_specified("SpacingVariation", XAxis.initiation_spacing, ["C3", "CI", "CK", "CJ", "CL",], tile_position=TP.top | TP.bottom, images_to_annotate={"C3", "CI", "CK", "CJ", "CL",}),
+        # generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"], tile_position=TP.top | TP.bottom, images_to_annotate={"C3", "CF", "CG", "CH",}),
+        # generate_plot_data_range("SpreadStudy", XAxis.run_index, "DZ", "E5", tile_position=TP.top, images_to_annotate={"DZ", "E1", "E5",}),
 
+        # generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR", tile_position=TP.left | TP.right, images_to_annotate={"CM", "CO", "CQ", "CT",}),
+        # generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",], tile_position=TP.top, images_to_annotate={"CM", "CO",})
+    ]
+        # generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9", tile_position=TP.top, images_to_annotate={"C4", "C6", "C9",}),
     for study in studies:
         run_study(study)
 
