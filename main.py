@@ -1604,10 +1604,10 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
         perturbator=perturbator_none,
         n_steps_major=100,
         n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
-        start_at_major_ratio=0.50,  # 0.42  # 0.38 for TestE, 0.53 for TestF
+        start_at_major_ratio=0.26,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestH-Fine.st7"),
+        source_file_name=pathlib.Path("TestH-FineSingle.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
@@ -1663,7 +1663,7 @@ def load_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
 
 
 if __name__ == "__main__":
-
+    # To run: current and also --init_spacing 0.15, etc
     parser = argparse.ArgumentParser(description="Transformation bands")
     parser.add_argument("--dilation_ratio", default=0.008, type=float)
     parser.add_argument("--actuator", default=Actuator.e_local, type=Actuator.from_string, choices=list(Actuator))
