@@ -1588,6 +1588,7 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
         return num_elems * FINE_ELEM_LEN
 
     no_scaling = NoScaling()
+    single_cent_scaling = SingleHoleCentre(pt=pt, y_depth=0.02, amplitude=0.5, hole_width=elem_len_mod(0.01))
     scaling = SpacedStepScaling(pt=pt, y_depth=0.02, spacing=elem_len_mod(args.init_spacing), amplitude=0.5, hole_width=elem_len_mod(0.01), max_variation=args.init_variation) # 0.011112 is three elements on Fine.
 
     perturbator_none = perturb.NoPerturb()
@@ -1597,17 +1598,17 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
 
     run_params = RunParams(
         actuator=args.actuator,
-        scaling=scaling,
+        scaling=single_cent_scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
         perturbator=perturbator_none,
-        n_steps_major=100,
+        n_steps_major=200,
         n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
-        start_at_major_ratio=0.26,  # 0.42  # 0.38 for TestE, 0.53 for TestF
+        start_at_major_ratio=0.20,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestH-FineSingle.st7"),
+        source_file_name=pathlib.Path("TestH-FineSinglev3.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
