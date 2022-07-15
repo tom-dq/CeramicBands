@@ -190,7 +190,10 @@ def show_table(table: Table):
     plt.show()
 
 
-def _get_last_result_case_num(saved_state: CheckpointState, cases: typing.List[history.ResultCase]) -> history.ResultCase:
+def _get_last_result_case_num(saved_state: CheckpointState, cases: typing.List[history.ResultCase], accept_not_the_last_increment:bool) -> history.ResultCase:
+    if accept_not_the_last_increment:
+        return cases[-1]
+
     last_maj_inc = saved_state.run_params.get_maj_incs(one_based=True)[-1]
 
     if any(c.major_inc > last_maj_inc for c in cases):
@@ -213,7 +216,7 @@ def _get_last_result_case_num(saved_state: CheckpointState, cases: typing.List[h
 
 
 @functools.lru_cache(maxsize=256)
-def make_band_min_maj_comparison(working_dir: T_Path) -> BandSizeRatio:
+def make_band_min_maj_comparison(working_dir: T_Path, accept_not_the_last_increment: bool) -> BandSizeRatio:
 
     working_dir = pathlib.Path(working_dir)
     try:
@@ -225,9 +228,9 @@ def make_band_min_maj_comparison(working_dir: T_Path) -> BandSizeRatio:
 
     with history.DB(working_dir / "history.db") as db:
         cases = list(db.get_all(history.ResultCase))
-        last_case = _get_last_result_case_num(saved_state, cases)
+        last_case = _get_last_result_case_num(saved_state, cases, accept_not_the_last_increment)
 
-        print(working_dir.parts[-1], last_case._replace(name=''), saved_state.run_params.scale_model_y)
+        print(working_dir.parts[-1], last_case._replace(name=''), saved_state.run_params.scale_model_y, saved_state.run_params.scaling._spacing)
 
         band_skeleton = history.TransformationBand._all_nones()._replace(result_case_num=last_case.num)
 
@@ -244,7 +247,8 @@ class PlotType(enum.Enum):
 
     def get_y_axis_limits(self) -> typing.Optional[typing.Tuple[float, float]]:
         if self == PlotType.maj_spacing:
-            return (80.0, 320.0,)
+            #return (80.0, 320.0,)
+            return (0.0, 400.0,)
 
         elif self == PlotType.num_bands:
             return (60.0, 180.0,)
@@ -299,7 +303,7 @@ class Study(typing.NamedTuple):
     tile_position: annotation_tile.TilePosition
 
 
-def _generate_study_data(name, x_axis, images_to_annotate: typing.Optional[typing.Set[str]], tile_position: annotation_tile.TilePosition, gen_relevant_subdirectories) -> Study:
+def _generate_study_data(name, x_axis, images_to_annotate: typing.Optional[typing.Set[str]], tile_position: annotation_tile.TilePosition, gen_relevant_subdirectories, accept_not_the_last_increment: bool) -> Study:
     # Get the relevant subdirectories for inclusion
 
     if images_to_annotate is None:
@@ -309,7 +313,7 @@ def _generate_study_data(name, x_axis, images_to_annotate: typing.Optional[typin
     def make_bsrs():
         for working_dir in gen_relevant_subdirectories():
             try:
-                band_size_ratio = make_band_min_maj_comparison(working_dir)
+                band_size_ratio = make_band_min_maj_comparison(working_dir, accept_not_the_last_increment)
                 if band_size_ratio.result_case_num > 800:
                     yield band_size_ratio
 
@@ -325,7 +329,7 @@ def _generate_study_data(name, x_axis, images_to_annotate: typing.Optional[typin
     )
 
 
-def generate_plot_data_range(name, x_axis, first_considered_subdir: str, last_considered_subdir: str, tile_position: annotation_tile.TilePosition, images_to_annotate: typing.Optional[typing.Set[str]] = None) -> Study:
+def generate_plot_data_range(name, x_axis, first_considered_subdir: str, last_considered_subdir: str, tile_position: annotation_tile.TilePosition, images_to_annotate: typing.Optional[typing.Set[str]] = None, accept_not_the_last_increment:bool=False) -> Study:
     
     def gen_relevant_subdirectories():
         min_hex = int(first_considered_subdir, base=36)
@@ -337,16 +341,16 @@ def generate_plot_data_range(name, x_axis, first_considered_subdir: str, last_co
                 if min_hex <= this_hex <= max_hex:
                     yield working_dir
 
-    return _generate_study_data(name, x_axis, images_to_annotate, tile_position, gen_relevant_subdirectories)
+    return _generate_study_data(name, x_axis, images_to_annotate, tile_position, gen_relevant_subdirectories, accept_not_the_last_increment)
 
 
-def generate_plot_data_specified(name, x_axis, dir_ends: typing.List[str], tile_position: annotation_tile.TilePosition, images_to_annotate: typing.Optional[typing.Set[str]] = None) -> Study:
+def generate_plot_data_specified(name, x_axis, dir_ends: typing.List[str], tile_position: annotation_tile.TilePosition, images_to_annotate: typing.Optional[typing.Set[str]] = None, accept_not_the_last_increment:bool=False) -> Study:
 
     def gen_relevant_subdirectories():
         for de in dir_ends:
             yield plot_data_base / de
 
-    return _generate_study_data(name, x_axis, images_to_annotate, tile_position, gen_relevant_subdirectories)
+    return _generate_study_data(name, x_axis, images_to_annotate, tile_position, gen_relevant_subdirectories, accept_not_the_last_increment)
 
 
 
@@ -410,10 +414,10 @@ def make_main_plot(plot_type: PlotType, study: Study):
     
     DPI = 150
 
-    TILE_N_X = 3
-    TILE_N_Y = 4
+    TILE_N_X = 3  # waas 3
+    TILE_N_Y = 3  # Was 4
 
-    SCALE_DOWN = 1.5
+    SCALE_DOWN = 1.25  # Was 1.5
 
     figsize_inches=(active_config.screenshot_res.width/SCALE_DOWN/DPI, active_config.screenshot_res.height/SCALE_DOWN/DPI)
     figsize_dots = [DPI*i for i in figsize_inches]
@@ -591,7 +595,7 @@ if __name__ == "__main__":
     # cherry_pick = list(generate_plot_data_specified(["CM", "CO", "CT"]))
     # TODO - include the x-range, y-range, etc in these.
     studies = [
-        generate_plot_data_specified("SpacingVariation", XAxis.initiation_spacing, ["C3", "CI", "CK", "CJ", "CL",], tile_position=TP.top | TP.bottom, images_to_annotate={"C3", "CI", "CK", "CJ", "CL",}),
+        generate_plot_data_specified("SpacingVariation4", XAxis.initiation_spacing, ["C3", "CI", "CK", "CJ", "CL", "F8", "F9", "FA", "FB", "FC", "FD", "FE"], tile_position=TP.top | TP.bottom, images_to_annotate={"CJ", "CL", "F8", "FA", "FB", "FC", }, accept_not_the_last_increment=True),
         # generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"], tile_position=TP.top | TP.bottom, images_to_annotate={"C3", "CF", "CG", "CH",}),
         # generate_plot_data_range("SpreadStudy", XAxis.run_index, "DZ", "E5", tile_position=TP.top, images_to_annotate={"DZ", "E1", "E5",}),
 

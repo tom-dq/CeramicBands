@@ -1598,7 +1598,7 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
 
     run_params = RunParams(
         actuator=args.actuator,
-        scaling=single_cent_scaling,
+        scaling=scaling,
         averaging=averaging,
         relaxation=relaxation,
         throttler=throttler,
