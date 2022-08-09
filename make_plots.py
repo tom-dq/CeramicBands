@@ -4,19 +4,17 @@ import statistics
 import typing
 import os
 import enum
-import itertools
+
 import collections
 import hashlib
 import csv
-from matplotlib.patches import Polygon
-from networkx.drawing import layout
-from networkx.readwrite import graph6
 
-import scipy.stats
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker
 import matplotlib.markers
+import matplotlib.cm
+from cycler import cycler
 
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
@@ -40,6 +38,7 @@ from main import Ratchet
 from main import PrestrainUpdate
 from main import ResultFrame
 
+_keep_these_in_for_pickling_ = [CheckpointState, RunParams, ModelFreedomCase, Ratchet, PrestrainUpdate, ResultFrame]
 
 T_Path = typing.Union[pathlib.Path, str]
 
@@ -215,7 +214,7 @@ def _get_last_result_case_num(saved_state: CheckpointState, cases: typing.List[h
     return one_case.pop()
 
 
-@functools.lru_cache(maxsize=256)
+@functools.lru_cache(maxsize=1024)
 def make_band_min_maj_comparison(working_dir: T_Path, accept_not_the_last_increment: bool) -> BandSizeRatio:
 
     working_dir = pathlib.Path(working_dir)
@@ -240,10 +239,16 @@ def make_band_min_maj_comparison(working_dir: T_Path, accept_not_the_last_increm
     return BandSizeRatio(run_params=saved_state.run_params, bands=last_case_bands, result_case_num=last_case.num)
 
 
+class DataSource(enum.Enum):
+    single_study_single_point = enum.auto()
+    single_band_single_point = enum.auto()
+
+
 class PlotType(enum.Enum):
     maj_ratio = "Proportion of major transformation bands"
     maj_spacing = "Average spacing between major bands"
     num_bands = f"Number of bands over {SPECIMEN_NOMINAL_LENGTH_MM} mm length"
+    band_aspect_ratio = "Band depth/thickness comparison"
 
     def get_y_axis_limits(self) -> typing.Optional[typing.Tuple[float, float]]:
         if self == PlotType.maj_spacing:
@@ -256,6 +261,19 @@ class PlotType(enum.Enum):
         elif self == PlotType.maj_ratio:
             return (0.25, 0.65,)
 
+        elif self == PlotType.band_aspect_ratio:
+            return (0.0, 0.1)
+
+        else:
+            raise ValueError(self)
+
+    def get_data_source(self) -> DataSource:
+        if self == PlotType.band_aspect_ratio:
+            return DataSource.single_band_single_point
+
+        elif self in {PlotType.maj_ratio, PlotType.maj_spacing, PlotType.num_bands}:
+            return DataSource.single_study_single_point
+
         else:
             raise ValueError(self)
 
@@ -266,6 +284,7 @@ class XAxis(enum.Enum):
     run_index = enum.auto()  # Just order the simulations one by one.
     initiation_variation = enum.auto()
     initiation_spacing = enum.auto()
+    band_depth_ratio = enum.auto()
 
     def get_x_label(self) -> str:
         d = {
@@ -274,6 +293,8 @@ class XAxis(enum.Enum):
             XAxis.run_index: "Run Index",
             XAxis.initiation_variation: "Initiation Variation",
             XAxis.initiation_spacing: "Initiation Spacing (mm)",
+            XAxis.band_depth_ratio: "Band Depth / Thickenss"
+
         }
         
         return d[self]
@@ -281,6 +302,9 @@ class XAxis(enum.Enum):
     def get_x_range(self) -> typing.Optional[typing.Tuple[float, float]]:
         if self == XAxis.beam_depth:
             return (0.0, 3.5)
+
+        elif self == XAxis.band_depth_ratio:
+            return (0.0, 0.6)
 
         return None
 
@@ -291,9 +315,22 @@ class XAxis(enum.Enum):
             XAxis.run_index: "Run",
             XAxis.initiation_variation: "InitiationVariation",
             XAxis.initiation_spacing: "InitiationSpacing",
+            XAxis.band_depth_ratio: "DepthRatio",
         }
 
         return d[self]
+
+    def get_applicable_plot_types(self) -> typing.Iterable[PlotType]:
+        aspect_plot_types = {PlotType.band_aspect_ratio,}
+        if self == XAxis.band_depth_ratio:
+            # Special case - points on graph all together
+            return aspect_plot_types
+
+        else:
+            # Normal case - one study is one point on the graph.
+            normal_plot_types = [pt for pt in PlotType if pt not in aspect_plot_types]
+            return normal_plot_types
+
 
 class Study(typing.NamedTuple):
     name: str
@@ -387,9 +424,23 @@ def get_x_axis_val_raw(study: Study, bsr: BandSizeRatio):
     elif study.x_axis == XAxis.dilation_max:
         return bsr.run_params.parameter_trend.dilation_ratio.get_single_value_returned()
 
+    elif study.x_axis == XAxis.band_depth_ratio:
+        # This is not actually the x axis but it's not used that way for this plot type.
+        return bsr.get_beam_depth()
+
     else:
         raise ValueError(study.x_axis)
 
+
+def get_multi_point_legend_key(study: Study, bsr: BandSizeRatio):
+    match study.x_axis:
+        case XAxis.band_depth_ratio:
+            beam_thickness = bsr.get_beam_depth()
+            return f"{beam_thickness:1.0g} mm (Simulation)"
+
+        case _:
+            raise ValueError(study.x_axis)
+        
 
 def _get_close_up_subfigure(target_aspect_ratio: float, bsr: BandSizeRatio) -> Image:
     working_dir_end = bsr.run_params.working_dir.parts[-1]
@@ -408,19 +459,106 @@ def _get_close_up_subfigure(target_aspect_ratio: float, bsr: BandSizeRatio) -> I
     return cropped_image
 
 
-
-
-def make_main_plot(plot_type: PlotType, study: Study):
-    
+def _figure_setup(plot_type: PlotType, study: Study):
+    """Common stuff for the figures"""
     DPI = 150
-
-    TILE_N_X = 3  # waas 3
-    TILE_N_Y = 3  # Was 4
-
     SCALE_DOWN = 1.25  # Was 1.5
 
     figsize_inches=(active_config.screenshot_res.width/SCALE_DOWN/DPI, active_config.screenshot_res.height/SCALE_DOWN/DPI)
     figsize_dots = [DPI*i for i in figsize_inches]
+
+    fig, ax = plt.subplots(1, 1, sharex=True, 
+        figsize=figsize_inches, 
+        dpi=DPI,
+    )
+
+    fig_fn = graph_output_base / f"E4-{study.name}-{plot_type.name}-{_bsr_list_hash(study.band_size_ratios)}.png"
+
+    return fig, ax, DPI, figsize_dots, fig_fn
+
+
+def make_multiple_plot_data(plot_type: PlotType, study: Study):
+
+    if plot_type.get_data_source() != DataSource.single_band_single_point:
+        raise ValueError("This is only for single_band_single_point")
+
+    fig, ax, dpi, figsize_dots, fig_fn = _figure_setup(plot_type, study)
+
+    # Cycle markers for each beam thickness, and also cycle the colours
+    
+    cmap_def = matplotlib.cm.get_cmap("tab20")
+    c_cycle = cycler(color=cmap_def.colors)
+    c_cycle = cycler(color='kkbb')
+    m_cycle = cycler(marker=['s', 's', '^', '^'])
+    product_cycle = c_cycle + m_cycle
+    ax.set_prop_cycle(product_cycle)
+
+    def sort_key(band_size_ratio: BandSizeRatio):
+        return get_x_axis_val_raw(study, band_size_ratio)
+
+    # Cycle the marker face colour if there's a duplicate
+    raw_legend_count = collections.Counter()
+
+    for bsr in sorted(study.band_size_ratios, key=sort_key):
+    
+
+        beam_thickness = bsr.get_beam_depth()
+
+        x_points, y_points = [], []
+
+        maj_cutoff = abs(bsr.major_band_threshold())
+
+        major_bands = [band for band in bsr.bands if abs(band.band_size) > maj_cutoff]
+        for transformation_band in major_bands:
+
+            x_points.append(transformation_band.depth / beam_thickness)
+            y_points.append(transformation_band.width / beam_thickness)
+
+        legend_key_raw = get_multi_point_legend_key(study, bsr)
+        raw_legend_count[legend_key_raw] += 1
+        sim_idx = raw_legend_count[legend_key_raw]
+        sim_letter = chr(64 + sim_idx)
+        legend_key = f"{legend_key_raw} {sim_letter}"
+
+        kwargs = {"linestyle": '', "label":legend_key, "markersize": 5}
+        if sim_idx == 1:
+            pass
+
+        elif sim_idx == 2:
+            kwargs["markerfacecolor"] = "none"
+
+        else:
+            raise ValueError("No more markerfacecolor options")
+
+
+        ax.plot(x_points, y_points, **kwargs)
+
+        print(bsr.run_params.working_dir.name, legend_key)
+
+
+    if study.x_axis.get_x_range():
+        plt.xlim(*study.x_axis.get_x_range())
+
+    if plot_type.get_y_axis_limits():
+        plt.ylim(*plot_type.get_y_axis_limits())
+
+    plt.legend()
+    plt.savefig(fig_fn, dpi=2*dpi, bbox_inches='tight',)
+    
+    print(fig_fn)
+
+
+def make_main_plot(plot_type: PlotType, study: Study):
+    
+    if plot_type.get_data_source() != DataSource.single_study_single_point:
+        raise ValueError("This is only for single_study_single_point")
+
+
+    TILE_N_X = 3  # waas 3
+    TILE_N_Y = 3  # Was 4
+
+    
+    fig, ax, dpi, figsize_dots, fig_fn = _figure_setup(plot_type, study)
 
     # Subfigure tiles dimensions
     tile_size_dots = [int(figsize_dots[0] / TILE_N_X), int(figsize_dots[1] / TILE_N_Y)]
@@ -429,10 +567,6 @@ def make_main_plot(plot_type: PlotType, study: Study):
     def sort_key(band_size_ratio: BandSizeRatio):
         return get_x_axis_val_raw(study, band_size_ratio)
 
-    fig, ax = plt.subplots(1, 1, sharex=True, 
-        figsize=figsize_inches, 
-        dpi=DPI,
-    )
 
     plot_type_to_data = collections.defaultdict(list)
     x = []
@@ -475,7 +609,7 @@ def make_main_plot(plot_type: PlotType, study: Study):
             zoom_x = tile_size_dots[0] / cropped_sub_image.width
             zoom_y = tile_size_dots[1] / cropped_sub_image.height
             buffer = 2.0
-            zoom = 0.5 * (zoom_x + zoom_y) * 72.0 / DPI / buffer
+            zoom = 0.5 * (zoom_x + zoom_y) * 72.0 / dpi / buffer
 
             imagebox = OffsetImage(cropped_sub_image, zoom=zoom)
             imagebox.image.axes = ax
@@ -513,8 +647,8 @@ def make_main_plot(plot_type: PlotType, study: Study):
     filter_intersecting = False
     proposed_configurations = annotation_tile.generate_proposed_tiles(TILE_N_X, TILE_N_Y, study.tile_position, filter_intersecting, ax, main_lines, annotation_bboxes)
 
-    fig_fn = graph_output_base / f"E4-{study.name}-{plot_type.name}-{_bsr_list_hash(study.band_size_ratios)}.png"
-    # plt.savefig(fig_fn, dpi=2*DPI, bbox_inches='tight',)
+    
+    # plt.savefig(fig_fn, dpi=2*dpi, bbox_inches='tight',)
 
     annotation_tile.save_best_configuration_to(
         ax,
@@ -523,7 +657,6 @@ def make_main_plot(plot_type: PlotType, study: Study):
         fig_fn,
     )
 
-    # plt.show()
 
 
 def make_cutoff_example(study: Study):
@@ -580,8 +713,18 @@ def print_band_size_info(study: Study):
 
 
 def run_study(study: Study):
-    for plot_type in PlotType:
-        make_main_plot(plot_type, study)
+    for plot_type in study.x_axis.get_applicable_plot_types():
+
+        data_source = plot_type.get_data_source()
+        match data_source:
+            case DataSource.single_study_single_point:
+                make_main_plot(plot_type, study)
+
+            case DataSource.single_band_single_point:
+                make_multiple_plot_data(plot_type, study)
+
+            case _:
+                raise ValueError(data_source)
 
     print_band_size_info(study)
 
@@ -595,7 +738,18 @@ if __name__ == "__main__":
     # cherry_pick = list(generate_plot_data_specified(["CM", "CO", "CT"]))
     # TODO - include the x-range, y-range, etc in these.
     studies = [
-        generate_plot_data_specified("SpacingVariation4", XAxis.initiation_spacing, ["C3", "CI", "CK", "CJ", "CL", "F8", "F9", "FA", "FB", "FC", "FD", "FE"], tile_position=TP.top | TP.bottom, images_to_annotate={"CJ", "CL", "F8", "FA", "FB", "FC", }, accept_not_the_last_increment=True),
+
+        # generate_plot_data_specified("AspectCompareSub2", XAxis.band_depth_ratio, ["DA",], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+
+        # generate_plot_data_specified("AspectCompareSub", XAxis.band_depth_ratio, ["DA", "CU", "CO", "CP", "CQ", "CR", "CS", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        
+        generate_plot_data_specified("AspectComparePaper", XAxis.band_depth_ratio, ["DA", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        generate_plot_data_specified("AspectComparePaperTwo", XAxis.band_depth_ratio, ["DA", "CU", "DO", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+
+        # generate_plot_data_range("AspectCompareAll", XAxis.band_depth_ratio, "CM", "DR", tile_position=TP.top | TP.bottom, images_to_annotate={},),
+
+
+        # generate_plot_data_specified("SpacingVariation4", XAxis.initiation_spacing, ["C3", "CI", "CK", "CJ", "CL", "F8", "F9", "FA", "FB", "FC", "FD", "FE"], tile_position=TP.top | TP.bottom, images_to_annotate={"CJ", "CL", "F8", "FA", "FB", "FC", }, accept_not_the_last_increment=True),
         # generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"], tile_position=TP.top | TP.bottom, images_to_annotate={"C3", "CF", "CG", "CH",}),
         # generate_plot_data_range("SpreadStudy", XAxis.run_index, "DZ", "E5", tile_position=TP.top, images_to_annotate={"DZ", "E1", "E5",}),
 
