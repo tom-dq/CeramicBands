@@ -4,6 +4,7 @@ import statistics
 import typing
 import os
 import enum
+import itertools
 
 import collections
 import hashlib
@@ -72,6 +73,35 @@ def get_last_case_image_fn(path: pathlib.Path) -> pathlib.Path:
 class NoResultException(Exception):
     pass
 
+
+class ResultWithError(typing.NamedTuple):
+    val: float
+    y_sd: typing.Optional[float]
+
+    def __mul__(self, other):
+        if isinstance(other, (float, int)):
+            match self.y_sd:
+                case float():
+                    new_y_sd = other*self.y_sd
+
+                case int():
+                    new_y_sd = other*self.y_sd
+
+                case None:
+                    new_y_sd = None
+
+                case _:
+                    raise TypeError(self.y_sd)
+
+
+            return ResultWithError(val = other*self.val, y_sd = new_y_sd)
+
+        return NotImplemented
+
+    def __rmul__(self, other):
+        # Hacky I'm sorry
+        return self.__mul__(other)
+
 class BandSizeRatio(typing.NamedTuple):
     run_params: RunParams
     bands: typing.List[history.TransformationBand]
@@ -115,13 +145,15 @@ class BandSizeRatio(typing.NamedTuple):
         bs_prop = bs_min + 1/8 * bs_diff
         return bs_prop
 
-    def get_major_band_count_ratio(self) -> float:
+    def get_major_band_count_ratio(self) -> ResultWithError:
         """Proportion of the transformation bands which are "major" bands."""
 
         cutoff = self.major_band_threshold()
 
         maj_bands = [bs for bs in self._abs_band_sizes() if bs > cutoff]
-        return len(maj_bands) / len(self.bands)
+        val = len(maj_bands) / len(self.bands)
+
+        return ResultWithError(val=val, y_sd=None)
 
     def get_major_band_spacing(self) -> float:
         """Average distance between major bands."""
@@ -137,6 +169,32 @@ class BandSizeRatio(typing.NamedTuple):
 
         return maj_band_span / n_band_gaps
 
+    def get_major_band_spacing_sd(self) -> ResultWithError:
+        """Get the mean and SD, to match the A. Liens paper. e.g.:
+        However, for the
+        3 mm-thick samples, a very large SD is observed, leading to the
+        maximum bands' width as large as 120 μm (Figs. 8c and 11)."""
+
+        cutoff = self.major_band_threshold()
+
+        maj_bands = [b for b in self.bands if abs(b.band_size) > cutoff]
+
+        maj_band_x_vals = sorted(bs.x for bs in maj_bands)
+
+        def pairwise(vals):
+            vals1, vals2 = itertools.tee(vals, 2)
+            _ = next(vals2)
+            yield from zip(vals1, vals2)
+
+        spacings = [x2-x1 for x1, x2 in pairwise(maj_band_x_vals)]
+
+        spacing_mean = statistics.mean(spacings)
+        spacing_sd = statistics.stdev(spacings, xbar=spacing_mean)
+
+        return ResultWithError(val=spacing_mean, y_sd=spacing_sd)
+
+
+
     def get_band_and_maj_ratio(self) -> typing.Iterable[typing.Tuple[float, history.TransformationBand]]:
         """Returns the bands in order, with the ratio of the band size. So if larger than one, it's a major band."""
 
@@ -145,11 +203,13 @@ class BandSizeRatio(typing.NamedTuple):
         for band in sorted(self.bands):
             yield abs(band.band_size) / cutoff, band
 
-    def get_num_maj_bands_full_length(self) -> float:
+    def get_num_maj_bands_full_length(self) -> ResultWithError:
         """Assume the major band density seen in the current range is replicated along the full length"""
 
         maj_band_spacing = self.get_major_band_spacing()
-        return SPECIMEN_NOMINAL_LENGTH_MM / maj_band_spacing
+        val = SPECIMEN_NOMINAL_LENGTH_MM / maj_band_spacing
+
+        return ResultWithError(val=val, y_sd=None)
 
     def get_beam_depth(self) -> float:
 
@@ -528,7 +588,8 @@ def make_multiple_plot_data(plot_type: PlotType, study: Study):
             kwargs["markerfacecolor"] = "none"
 
         else:
-            raise ValueError("No more markerfacecolor options")
+            print(f"No more markfacecolor options for {legend_key_raw}")
+            
 
 
         ax.plot(x_points, y_points, **kwargs)
@@ -569,6 +630,7 @@ def make_main_plot(plot_type: PlotType, study: Study):
 
 
     plot_type_to_data = collections.defaultdict(list)
+    plot_type_to_y_error = collections.defaultdict(list)
     x = []
     annotation_bboxes: typing.List[AnnotationBbox] = []
 
@@ -587,19 +649,21 @@ def make_main_plot(plot_type: PlotType, study: Study):
         x.append(x_val)
 
         if plot_type == PlotType.maj_ratio:
-            y_val = bsr.get_major_band_count_ratio()
+            res = bsr.get_major_band_count_ratio()
         
         elif plot_type == PlotType.maj_spacing:
             MM_TO_NM = 1_000
-            y_val = MM_TO_NM * bsr.get_major_band_spacing()
+            res = MM_TO_NM * bsr.get_major_band_spacing_sd()
 
         elif plot_type == PlotType.num_bands:
-            y_val = bsr.get_num_maj_bands_full_length()
+            res = bsr.get_num_maj_bands_full_length()
 
         else:
             raise ValueError(plot_type)
 
-        plot_type_to_data[plot_type].append(y_val)
+        plot_type_to_data[plot_type].append(res.val)
+        if res.y_sd != None:
+            plot_type_to_y_error[plot_type].append(res.y_sd)
 
         # Annotations?
         working_dir_end = bsr.run_params.working_dir.parts[-1]
@@ -614,7 +678,7 @@ def make_main_plot(plot_type: PlotType, study: Study):
             imagebox = OffsetImage(cropped_sub_image, zoom=zoom)
             imagebox.image.axes = ax
 
-            ab = AnnotationBbox(imagebox, (x_val, y_val),
+            ab = AnnotationBbox(imagebox, (x_val, res.val),
                     xybox=(120., -80.),
                     xycoords='data',
                     boxcoords="offset points",
@@ -627,8 +691,18 @@ def make_main_plot(plot_type: PlotType, study: Study):
 
             ax.add_artist(ab)
             annotation_bboxes.append(ab)
+    if plot_type_to_y_error[plot_type]:
+        yerr = plot_type_to_y_error[plot_type]
 
-    main_line, = ax.plot(x, plot_type_to_data[plot_type], marker='.', label=plot_type.value)
+    else:
+        yerr = None
+
+    if yerr:    
+         main_line, caplines, barlinecols = ax.errorbar(x, plot_type_to_data[plot_type], yerr=yerr, marker='.', capsize=4, elinewidth=0.8, label=plot_type.value)
+
+    else:
+        main_line, = ax.plot(x, plot_type_to_data[plot_type], marker='.', label=plot_type.value)
+
     main_lines = [main_line,]
 
 
@@ -739,12 +813,12 @@ if __name__ == "__main__":
     # TODO - include the x-range, y-range, etc in these.
     studies = [
 
-        # generate_plot_data_specified("AspectCompareSub2", XAxis.band_depth_ratio, ["DA",], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        generate_plot_data_specified("AspectCompareSub2", XAxis.band_depth_ratio, ["DA",], tile_position=TP.top | TP.bottom, images_to_annotate={},),
 
-        # generate_plot_data_specified("AspectCompareSub", XAxis.band_depth_ratio, ["DA", "CU", "CO", "CP", "CQ", "CR", "CS", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        generate_plot_data_specified("AspectCompareSub", XAxis.band_depth_ratio, ["DA", "CU", "CO", "CP", "CQ", "CR", "CS", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
         
-        generate_plot_data_specified("AspectComparePaper", XAxis.band_depth_ratio, ["DA", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
-        generate_plot_data_specified("AspectComparePaperTwo", XAxis.band_depth_ratio, ["DA", "CU", "DO", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        # generate_plot_data_specified("AspectComparePaper", XAxis.band_depth_ratio, ["DA", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        # generate_plot_data_specified("AspectComparePaperTwo", XAxis.band_depth_ratio, ["DA", "CU", "DO", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
 
         # generate_plot_data_range("AspectCompareAll", XAxis.band_depth_ratio, "CM", "DR", tile_position=TP.top | TP.bottom, images_to_annotate={},),
 
@@ -753,8 +827,8 @@ if __name__ == "__main__":
         # generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"], tile_position=TP.top | TP.bottom, images_to_annotate={"C3", "CF", "CG", "CH",}),
         # generate_plot_data_range("SpreadStudy", XAxis.run_index, "DZ", "E5", tile_position=TP.top, images_to_annotate={"DZ", "E1", "E5",}),
 
-        # generate_plot_data_range( "BeamDepth", XAxis.beam_depth, "CM", "DR", tile_position=TP.left | TP.right, images_to_annotate={"CM", "CO", "CQ", "CT",}),
-        # generate_plot_data_specified("CherryPick", XAxis.beam_depth, ["CM", "CO",], tile_position=TP.top, images_to_annotate={"CM", "CO",})
+        generate_plot_data_range( "BeamDepth2", XAxis.beam_depth, "CM", "DR", tile_position=TP.edges, images_to_annotate={"CM", "CO", "CQ", "CT",}),
+        generate_plot_data_specified("CherryPick2", XAxis.beam_depth, ["CM", "CO",], tile_position=TP.top, images_to_annotate={"CM", "CO",})
     ]
         # generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9", tile_position=TP.top, images_to_annotate={"C4", "C6", "C9",}),
     for study in studies:
