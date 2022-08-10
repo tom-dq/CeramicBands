@@ -1596,6 +1596,7 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
     perturbator_wedge_sharp = perturb.IndentCentre(50, 0.05)
     perturbator_sphere = perturb.SphericalIndentCenter(0.2, 0.05)
 
+    # TODO - add max load ratio and run more simulations - ones which go further
     run_params = RunParams(
         actuator=args.actuator,
         scaling=scaling,
