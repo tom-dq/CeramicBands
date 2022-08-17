@@ -1557,16 +1557,11 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
     averaging = NoAve()
     throttler = RelaxedIncreaseDecrease()
 
-    # Throttle relaxation
-    exp_0_7 = parameter_trend.ExponetialDecayFunctionMinorInc(-0.7, init_val=0.5, start_at=60)
-    
     # Stress End
     const_401 = parameter_trend.Constant(401)
 
     # Dilation Ratio
     one = parameter_trend.Constant(1.0)
-    const_dilation_ratio_008 =0.008 * one
-    const_dilation_ratio_008_sqrt2 =0.008 / math.sqrt(2) * one
 
     pt = ParameterTrend(
         throttler_relaxation=0.05 * one,
@@ -1604,12 +1599,12 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
         relaxation=relaxation,
         throttler=throttler,
         perturbator=perturbator_none,
-        n_steps_major=int(100 * args.load_ratio),
-        n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
-        start_at_major_ratio=0.50,  # 0.42  # 0.38 for TestE, 0.53 for TestF
+        n_steps_major=args.n_steps_major,
+        n_steps_minor_max=args.n_steps_minor_max,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
+        start_at_major_ratio=0.0,  # 0.42  # 0.38 for TestE, 0.53 for TestF. Was 0.5
         existing_prestrain_priority_factor=None,
         parameter_trend=pt,
-        source_file_name=pathlib.Path("TestH-Fine.st7"),
+        source_file_name=pathlib.Path(f"{args.source_file_name}.st7"),  #  pathlib.Path("TestH-Fine.st7"),
         randomise_orientation=False,
         override_poisson=None,
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
@@ -1675,7 +1670,10 @@ if __name__ == "__main__":
     parser.add_argument("--scale_y", required=False, default=0.5, type=float)
     parser.add_argument("--random_seed", required=False, default=123456, type=int)
     parser.add_argument("--load_ratio", required=False, default=1.0, type=float)
-    
+    parser.add_argument("--n_steps_major", required=False, default=100, type=int)
+    parser.add_argument("--n_steps_minor_max", required=False, default=25, type=int)
+    parser.add_argument("--source_file_name", required=False, default="TestH-Fine", type=str)
+
     args = parser.parse_args()
 
     if args.restart_prefix:

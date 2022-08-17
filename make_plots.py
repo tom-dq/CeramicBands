@@ -698,12 +698,19 @@ def make_main_plot(plot_type: PlotType, study: Study):
         yerr = None
 
     if yerr:    
-         main_line, caplines, barlinecols = ax.errorbar(x, plot_type_to_data[plot_type], yerr=yerr, marker='.', capsize=4, elinewidth=0.8, label=plot_type.value)
+        main_line, caplines, barlinecols = ax.errorbar(x, plot_type_to_data[plot_type], yerr=yerr, marker='.', capsize=4, elinewidth=0.8, label=plot_type.value)
+
+        paths = [main_line.get_path()]
+        for cl in caplines:
+            paths.append(cl.get_path())
+
+        for blc in barlinecols:
+            paths.extend(blc.get_paths())
 
     else:
         main_line, = ax.plot(x, plot_type_to_data[plot_type], marker='.', label=plot_type.value)
+        paths = [main_line.get_path()]
 
-    main_lines = [main_line,]
 
 
     plt.xlabel(study.x_axis.get_x_label())
@@ -719,14 +726,14 @@ def make_main_plot(plot_type: PlotType, study: Study):
     fig.canvas.draw()
 
     filter_intersecting = False
-    proposed_configurations = annotation_tile.generate_proposed_tiles(TILE_N_X, TILE_N_Y, study.tile_position, filter_intersecting, ax, main_lines, annotation_bboxes)
+    proposed_configurations = annotation_tile.generate_proposed_tiles(TILE_N_X, TILE_N_Y, study.tile_position, filter_intersecting, ax, paths, annotation_bboxes)
 
     
     # plt.savefig(fig_fn, dpi=2*dpi, bbox_inches='tight',)
 
     annotation_tile.save_best_configuration_to(
         ax,
-        main_lines,
+        paths,
         proposed_configurations,
         fig_fn,
     )
@@ -815,19 +822,19 @@ if __name__ == "__main__":
 
         generate_plot_data_specified("AspectCompareSub2", XAxis.band_depth_ratio, ["DA",], tile_position=TP.top | TP.bottom, images_to_annotate={},),
 
-        generate_plot_data_specified("AspectCompareSub", XAxis.band_depth_ratio, ["DA", "CU", "CO", "CP", "CQ", "CR", "CS", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        # generate_plot_data_specified("AspectCompareSub", XAxis.band_depth_ratio, ["DA", "CU", "CO", "CP", "CQ", "CR", "CS", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
         
         # generate_plot_data_specified("AspectComparePaper", XAxis.band_depth_ratio, ["DA", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
         # generate_plot_data_specified("AspectComparePaperTwo", XAxis.band_depth_ratio, ["DA", "CU", "DO", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
 
-        # generate_plot_data_range("AspectCompareAll", XAxis.band_depth_ratio, "CM", "DR", tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        generate_plot_data_range("AspectCompareAll", XAxis.band_depth_ratio, "CM", "DR", tile_position=TP.top | TP.bottom, images_to_annotate={},),
 
 
         # generate_plot_data_specified("SpacingVariation4", XAxis.initiation_spacing, ["C3", "CI", "CK", "CJ", "CL", "F8", "F9", "FA", "FB", "FC", "FD", "FE"], tile_position=TP.top | TP.bottom, images_to_annotate={"CJ", "CL", "F8", "FA", "FB", "FC", }, accept_not_the_last_increment=True),
         # generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"], tile_position=TP.top | TP.bottom, images_to_annotate={"C3", "CF", "CG", "CH",}),
         # generate_plot_data_range("SpreadStudy", XAxis.run_index, "DZ", "E5", tile_position=TP.top, images_to_annotate={"DZ", "E1", "E5",}),
 
-        generate_plot_data_range( "BeamDepth2", XAxis.beam_depth, "CM", "DR", tile_position=TP.edges, images_to_annotate={"CM", "CO", "CQ", "CT",}),
+        generate_plot_data_range( "BeamDepth3", XAxis.beam_depth, "CM", "DR", tile_position=TP.edges, images_to_annotate={"CM", "CO", "CQ", "CT",}),
         generate_plot_data_specified("CherryPick2", XAxis.beam_depth, ["CM", "CO",], tile_position=TP.top, images_to_annotate={"CM", "CO",})
     ]
         # generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9", tile_position=TP.top, images_to_annotate={"C4", "C6", "C9",}),

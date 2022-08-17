@@ -77,7 +77,7 @@ class TilePosition(enum.IntFlag):
     corners = 16
     any_position = 32
 
-def generate_proposed_tiles(n_x: int, n_y: int, tile_position: TilePosition, try_filter_intersecting: bool, ax: Axes, main_lines, annotation_bboxes: typing.List[AnnotationBbox], ) -> typing.Iterable[ProposedConfiguration]:
+def generate_proposed_tiles(n_x: int, n_y: int, tile_position: TilePosition, try_filter_intersecting: bool, ax: Axes, paths, annotation_bboxes: typing.List[AnnotationBbox], ) -> typing.Iterable[ProposedConfiguration]:
     
 
     all_tiles = list(itertools.product(range(n_x), range(n_y)))
@@ -108,8 +108,8 @@ def generate_proposed_tiles(n_x: int, n_y: int, tile_position: TilePosition, try
             dummy_proposed_config = ProposedConfiguration(n_x, n_y, ax, [])
             bbox_data = dummy_proposed_config.get_bbox_axis_data_limits(ax, proposed_tile)
             intersect_free = True
-            for main_line in main_lines:
-                line_path = main_line.get_path()
+            for line_path in paths:
+                
                 if line_path.intersects_bbox(bbox_data):
                     intersect_free = False
 
@@ -186,11 +186,10 @@ def _test_close_up_subfigure(target_aspect_ratio: float, working_dir_end) -> Ima
 
 def assess_configuration_badness(
         ax: Axes,
-        main_lines: typing.List[matplotlib.lines.Line2D],
+        paths: typing.List[matplotlib.lines.Line2D],
         proposed_configuration: ProposedConfiguration,
     ) -> AssessedConfiguration:
 
-    line_paths = [main_line.get_path() for main_line in main_lines]
 
     intersects = 0
     total_distance = 0.0
@@ -207,7 +206,7 @@ def assess_configuration_badness(
         dist = math.sqrt(d_x**2 + d_y**2)
         total_distance += dist
 
-        for line_path in line_paths:
+        for line_path in paths:
             line_intersects = line_path.intersects_bbox(bbox_data)
             if line_intersects:
                 intersects += 1
@@ -215,9 +214,9 @@ def assess_configuration_badness(
     return AssessedConfiguration(intersects, total_distance, proposed_configuration)
     
 
-def save_best_configuration_to(ax, main_lines, proposed_configurations: typing.Iterable[ProposedConfiguration], fn_out: str):
+def save_best_configuration_to(ax, paths, proposed_configurations: typing.Iterable[ProposedConfiguration], fn_out: str):
 
-    assessed_configurations = [assess_configuration_badness(ax, main_lines, proposed_configuration) for proposed_configuration in proposed_configurations]
+    assessed_configurations = [assess_configuration_badness(ax, paths, proposed_configuration) for proposed_configuration in proposed_configurations]
 
     assessed_configurations.sort()
 
