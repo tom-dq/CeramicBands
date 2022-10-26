@@ -5,23 +5,25 @@ import pathlib
 import collections
 import itertools
 
-START = "C3"
-END = "E5"
+START = "F8"
+END = "FE"
 
-ALL_FILES = r"C:\Users\Tom Wilson\Documents\CeramicBandData\outputs\all_files.txt"
+ALL_FILES = r"C:\Users\Tom Wilson\Documents\CeramicBandData\outputs\all_files_2.txt"
+
+BASE_PATH = r"http://10.167.16.104:8080/CeramicBands/v7/pics"
 
 def main():
     nums = range(int(START, base=36), int(END, base=36)+1)
     sub_dirs = [directories.base36encode(n, 2) for n in nums]
 
     for sub_dir in sub_dirs:
-        yield f"http://192.168.1.109:8080/v7/pics/{sub_dir}/current_state.pickle"
+        yield f"{BASE_PATH}/{sub_dir}/current_state.pickle"
 
     for sub_dir in sub_dirs:    
-        yield f"http://192.168.1.109:8080/v7/pics/{sub_dir}/history.db"
+        yield f"{BASE_PATH}/{sub_dir}/history.db"
 
     for sub_dir in sub_dirs:
-        yield f"http://192.168.1.109:8080/v7/pics/{sub_dir}/{sub_dir}-x264.mp4"
+        yield f"{BASE_PATH}/{sub_dir}/{sub_dir}-x264.mp4"
 
 
 def last_image_file_in_folder():
@@ -52,7 +54,7 @@ def last_image_file_in_folder():
         max_case = max(case_num_to_path.keys())
         max_case_p = case_num_to_path[max_case]
 
-        yield f"http://192.168.1.109:8080/v7/pics/{sub_dir}/{max_case_p.name}"
+        yield f"{BASE_PATH}/{sub_dir}/{max_case_p.name}"
 
 
 if __name__ == "__main__":

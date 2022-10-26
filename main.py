@@ -1596,6 +1596,7 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
     perturbator_wedge_sharp = perturb.IndentCentre(50, 0.05)
     perturbator_sphere = perturb.SphericalIndentCenter(0.2, 0.05)
 
+    # TODO - add max load ratio and run more simulations - ones which go further
     run_params = RunParams(
         actuator=args.actuator,
         scaling=scaling,
@@ -1603,7 +1604,7 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
         relaxation=relaxation,
         throttler=throttler,
         perturbator=perturbator_none,
-        n_steps_major=100,
+        n_steps_major=int(100 * args.load_ratio),
         n_steps_minor_max=25,  # This needs to be normalised to the element size. So a fine mesh will need more iterations to stabilise.
         start_at_major_ratio=0.50,  # 0.42  # 0.38 for TestE, 0.53 for TestF
         existing_prestrain_priority_factor=None,
@@ -1614,7 +1615,7 @@ def new_checkpoint_state(args: argparse.Namespace) -> CheckpointState:
         freedom_cases=[ModelFreedomCase.restraint, ModelFreedomCase.bending_pure],
         scale_model_x=1.0,  # Changing the model dimentions also scales the load.
         scale_model_y=args.scale_y,  # 0.3 Seems good
-        max_load_ratio=1.0,
+        max_load_ratio=args.load_ratio,
         unload_step=True,
         working_dir=directories.get_unique_sub_dir(config.active_config.fn_working_image_base),
     )
@@ -1673,6 +1674,7 @@ if __name__ == "__main__":
     parser.add_argument("--restart_prefix", required=False, default="", type=str)
     parser.add_argument("--scale_y", required=False, default=0.5, type=float)
     parser.add_argument("--random_seed", required=False, default=123456, type=int)
+    parser.add_argument("--load_ratio", required=False, default=1.0, type=float)
     
     args = parser.parse_args()
 

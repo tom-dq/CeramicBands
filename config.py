@@ -99,7 +99,8 @@ def _get_config():
         return Config(
             fn_st7_base=pathlib.Path(r"C:\Users\Tom Wilson\Dropbox\PhD\Ceramic Bands Source Models\v7-Wedge"),
             fn_working_image_base=pathlib.Path(r"C:\Users\Tom Wilson\Documents\CeramicBandData\pics"),
-            screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
+            # screenshot_res=st7.CanvasSize(2560, 1440),  # QHD
+            screenshot_res=st7.CanvasSize(1.2*810, 1.2*650),
             scratch_dir=pathlib.Path(r"C:\Temp"),
             solver=const.SolverType.stQuasiStatic,
             qsa_steps_per_file=10,

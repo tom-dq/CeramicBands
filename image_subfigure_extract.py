@@ -6,7 +6,7 @@ import pathlib
 from PIL import Image
 
 BASE_IMAGE_PATH = r"C:\Users\Tom Wilson\Documents\CeramicBandData\pics\4A"
-BASE_IMAGE_PATH = r"/Users/tomwilson/Documents/scratch/ceramic-pics/4A"
+# BASE_IMAGE_PATH = r"/Users/tomwilson/Documents/scratch/ceramic-pics/4A"
 BASE_PATH = pathlib.Path(BASE_IMAGE_PATH)
 OUT_CROP_DIR = "cropped"
 
