@@ -313,7 +313,7 @@ class PlotType(enum.Enum):
     def get_y_axis_limits(self) -> typing.Optional[typing.Tuple[float, float]]:
         if self == PlotType.maj_spacing:
             #return (80.0, 320.0,)
-            return (0.0, 400.0,)
+            return (0.0, 650.0,)
 
         elif self == PlotType.num_bands:
             return (60.0, 180.0,)

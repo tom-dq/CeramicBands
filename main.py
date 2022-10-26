@@ -53,6 +53,8 @@ NUM_PLATE_RES_RETRIES = 20
 
 DEBUG_STATE = False
 
+KEEP_EVERY_NTH_RES_FILE: typing.Optional[int] = 5
+
 
 #fn_st7_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3\Test 9C-Contact-SD2.st7")
 #fn_working_image_base = pathlib.Path(r"E:\Simulations\CeramicBands\v3-pics")
@@ -805,7 +807,14 @@ class ResultFrame(typing.NamedTuple):
 
     def delete_old_files_if_needed(self):
         if config.active_config.delete_old_result_files:
-            two_files_ago = self._replace(result_file_index=self.result_file_index-2)
+
+            # Maybe keep it!
+            cadidate_for_deletion_idx = self.result_file_index-2
+            if KEEP_EVERY_NTH_RES_FILE:
+                if cadidate_for_deletion_idx % KEEP_EVERY_NTH_RES_FILE == 0:
+                    return
+            
+            two_files_ago = self._replace(result_file_index=cadidate_for_deletion_idx)
             old_res_file = two_files_ago.result_file
             try:
                 os.remove(str(old_res_file))
