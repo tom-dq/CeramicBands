@@ -861,31 +861,36 @@ def make_cutoff_example(study: Study):
         dpi=DPI,
     )
 
-    for bsr in study.band_size_ratios:
-        band_sizes = bsr._abs_band_sizes()
+    with open(r"C:\Users\Tom Wilson\Dropbox\PhD\Papers\Mike-1-Ceramic Bands\2022-v6\inflection3.csv", "a", newline='', encoding='utf-8') as f_csv:
+        writer = csv.writer(f_csv)
 
-        x, y = [], []
-        for idx, bs in enumerate(band_sizes):
-            x.append(idx / (len(band_sizes) - 1))
-            y.append(bs / bsr.get_scale())
+        for bsr in study.band_size_ratios:
+            band_sizes = bsr._abs_band_sizes()
 
-        de = bsr.run_params.working_dir.name
-        label_value = friendly_str(get_x_axis_val_raw(study, bsr))
-        label = f"{study.x_axis.get_legend_label()}={label_value}"
-        (base_line,) = plt.plot(x, y, label=label)
+            x, y = [], []
+            for idx, bs in enumerate(band_sizes):
+                x.append(idx / (len(band_sizes) - 1))
+                y.append(bs / bsr.get_scale())
 
-        # Add a proposed "cutoff_line"
-        bs_prop = bsr.major_band_threshold() / bsr.get_scale()
-        ax.plot(
-            [-1, 2.0], [bs_prop, bs_prop], color="k", linestyle=":"
-        )  # color=base_line.get_color()
+                writer.writerow([study.name, bsr.run_params.working_dir.name, bsr.get_beam_depth(), idx / (len(band_sizes) - 1),bs / bsr.get_scale(), bs,  ])
 
-        print(
-            label,
-            bsr.get_major_band_count_ratio(),
-            bsr.get_nominal_upper_size() / bsr.get_scale(),
-            bs_prop,
-        )
+            de = bsr.run_params.working_dir.name
+            label_value = friendly_str(get_x_axis_val_raw(study, bsr))
+            label = f"{study.x_axis.get_legend_label()}={label_value}"
+            (base_line,) = plt.plot(x, y, label=label)
+
+            # Add a proposed "cutoff_line"
+            bs_prop = bsr.major_band_threshold() / bsr.get_scale()
+            ax.plot(
+                [-1, 2.0], [bs_prop, bs_prop], color="k", linestyle=":"
+            )  # color=base_line.get_color()
+
+            print(
+                label,
+                bsr.get_major_band_count_ratio(),
+                bsr.get_nominal_upper_size() / bsr.get_scale(),
+                bs_prop,
+            )
 
     plt.xlim(0.0, 1.0)
     # plt.ylim(1.0, 30.0)
@@ -954,7 +959,7 @@ if __name__ == "__main__":
 
         generate_plot_data_specified("AspectCompareSub2", XAxis.band_depth_ratio, ["DA",], tile_position=TP.top | TP.bottom, images_to_annotate={},),
 
-        # generate_plot_data_specified("AspectCompareSub", XAxis.band_depth_ratio, ["DA", "CU", "CO", "CP", "CQ", "CR", "CS", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        generate_plot_data_specified("AspectCompareSub", XAxis.band_depth_ratio, ["DA", "CU", "CO", "CP", "CQ", "CR", "CS", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
         
         # generate_plot_data_specified("AspectComparePaper", XAxis.band_depth_ratio, ["DA", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
         # generate_plot_data_specified("AspectComparePaperTwo", XAxis.band_depth_ratio, ["DA", "CU", "DO", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
@@ -966,8 +971,8 @@ if __name__ == "__main__":
         # generate_plot_data_specified("InitationVariation", XAxis.initiation_variation, ["C3", "CF", "CG", "CH"], tile_position=TP.top | TP.bottom, images_to_annotate={"C3", "CF", "CG", "CH",}),
         # generate_plot_data_range("SpreadStudy", XAxis.run_index, "DZ", "E5", tile_position=TP.top, images_to_annotate={"DZ", "E1", "E5",}),
 
-        generate_plot_data_range( "BeamDepth3", XAxis.beam_depth, "CM", "DR", tile_position=TP.edges, images_to_annotate={"CM", "CO", "CQ", "CT",}),
-        generate_plot_data_specified("CherryPick2", XAxis.beam_depth, ["CM", "CO",], tile_position=TP.top, images_to_annotate={"CM", "CO",})
+        # generate_plot_data_range( "BeamDepth3", XAxis.beam_depth, "CM", "DR", tile_position=TP.edges, images_to_annotate={"CM", "CO", "CQ", "CT",}),
+        # generate_plot_data_specified("CherryPick2", XAxis.beam_depth, ["CM", "CO",], tile_position=TP.top, images_to_annotate={"CM", "CO",})
     ]
     # generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9", tile_position=TP.top, images_to_annotate={"C4", "C6", "C9",}),
     for study in studies:
