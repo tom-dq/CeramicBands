@@ -30,6 +30,7 @@ from config import active_config
 import main
 import history
 import annotation_tile
+import aletha_csv
 
 # To get pickle to unpickle
 from main import CheckpointState, save_state
@@ -629,6 +630,24 @@ def _figure_setup(plot_type: PlotType, study: Study):
 
     return fig, ax, DPI, figsize_dots, fig_fn
 
+def _get_applicable_experimental_results(study: Study):
+    keys = set()
+    for bsr in study.band_size_ratios:
+        keys.add(bsr.run_params.working_dir.name)
+
+    _lookups = {
+        "DA": 0,
+        "CT": 1,
+        "CU": 2,
+        "D0": 3,
+    }
+
+    matched_idxs = [v for k, v in _lookups.items() if k in keys]                          
+    
+    all_res = aletha_csv.read_experimental_data()
+
+    for idx in matched_idxs:
+        yield all_res[idx]
 
 def make_multiple_plot_data(plot_type: PlotType, study: Study):
 
@@ -685,6 +704,13 @@ def make_multiple_plot_data(plot_type: PlotType, study: Study):
         ax.plot(x_points, y_points, **kwargs)
 
         print(bsr.run_params.working_dir.name, legend_key)
+
+    exp_to_plot = list(_get_applicable_experimental_results(study))
+
+    for exp in exp_to_plot:
+        # TODO - up to here
+        kwargs = {"linestyle": "", "label": exp.key, "markersize": 5}
+        ax.plot(exp.x, exp.y, **kwargs)
 
     if study.x_axis.get_x_range():
         plt.xlim(*study.x_axis.get_x_range())
@@ -957,14 +983,17 @@ if __name__ == "__main__":
     # TODO - include the x-range, y-range, etc in these.
     studies = [
 
-        generate_plot_data_specified("AspectCompareSub2", XAxis.band_depth_ratio, ["DA",], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        # generate_plot_data_specified("AspectCompareSub2", XAxis.band_depth_ratio, ["DA",], tile_position=TP.top | TP.bottom, images_to_annotate={},),
 
-        generate_plot_data_specified("AspectCompareSub", XAxis.band_depth_ratio, ["DA", "CU", "CO", "CP", "CQ", "CR", "CS", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        # generate_plot_data_specified("AspectCompareSub", XAxis.band_depth_ratio, ["DA", "CU", "CO", "CP", "CQ", "CR", "CS", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
         
         # generate_plot_data_specified("AspectComparePaper", XAxis.band_depth_ratio, ["DA", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
-        # generate_plot_data_specified("AspectComparePaperTwo", XAxis.band_depth_ratio, ["DA", "CU", "DO", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        generate_plot_data_specified("AspectComparePaper1mm", XAxis.band_depth_ratio, ["DA", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        generate_plot_data_specified("AspectComparePaper3mm", XAxis.band_depth_ratio, ["CU", "DO"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
 
-        generate_plot_data_range("AspectCompareAll", XAxis.band_depth_ratio, "CM", "DR", tile_position=TP.top | TP.bottom, images_to_annotate={},),
+
+
+        # generate_plot_data_range("AspectCompareAll", XAxis.band_depth_ratio, "CM", "DR", tile_position=TP.top | TP.bottom, images_to_annotate={},),
 
 
         # generate_plot_data_specified("SpacingVariation4", XAxis.initiation_spacing, ["C3", "CI", "CK", "CJ", "CL", "F8", "F9", "FA", "FB", "FC", "FD", "FE"], tile_position=TP.top | TP.bottom, images_to_annotate={"CJ", "CL", "F8", "FA", "FB", "FC", }, accept_not_the_last_increment=True),
@@ -976,8 +1005,8 @@ if __name__ == "__main__":
     ]
     # generate_plot_data_range("ELocalMax", XAxis.dilation_max, "C4", "C9", tile_position=TP.top, images_to_annotate={"C4", "C6", "C9",}),
     for study in studies:
-        # run_study(study)
-        make_cutoff_example(study)
+        run_study(study)
+        # make_cutoff_example(study)
 
     exit()
     dir_ends = ["CM", "CN", "CO", "CP", "CQ", "CR", "CS", "CT"]
