@@ -56,7 +56,7 @@ plot_data_base = pathlib.Path(
     r"C:\Users\Tom Wilson\Documents\CeramicBandData\outputs\192.168.1.109+8080\v7\pics"
 )
 graph_output_base = pathlib.Path(
-    r"C:\Users\Tom Wilson\Dropbox\PhD\Papers\Mike-1-Ceramic Bands\2021-v5"
+    r"C:\Users\Tom Wilson\Dropbox\PhD\Papers\Mike-1-Ceramic Bands\2023-v1"
 )
 
 # For comparison with the physical specimen, adjust some graphs with these quantities...
@@ -604,7 +604,7 @@ def _get_close_up_subfigure(target_aspect_ratio: float, bsr: BandSizeRatio) -> I
     return cropped_image
 
 
-def _figure_setup(plot_type: PlotType, study: Study):
+def _figure_setup(plot_type: PlotType, study: Study, fn_override: str | None = None):
     """Common stuff for the figures"""
     DPI = 150
     SCALE_DOWN = 1.25  # Was 1.5
@@ -623,9 +623,15 @@ def _figure_setup(plot_type: PlotType, study: Study):
         dpi=DPI,
     )
 
+    if fn_override:
+        fn = fn_override + ".png"
+
+    else:
+        fn = f"E4-{study.name}-{plot_type.name}-{_bsr_list_hash(study.band_size_ratios)}.png"
+
     fig_fn = (
         graph_output_base
-        / f"E4-{study.name}-{plot_type.name}-{_bsr_list_hash(study.band_size_ratios)}.png"
+        / fn
     )
 
     return fig, ax, DPI, figsize_dots, fig_fn
@@ -636,18 +642,18 @@ def _get_applicable_experimental_results(study: Study):
         keys.add(bsr.run_params.working_dir.name)
 
     _lookups = {
-        "DA": 0,
-        "CT": 1,
-        "CU": 2,
-        "D0": 3,
+        "DA": (0, {}),    # 1mm A
+        "CU": (1, {"markerfacecolor": 'none'}),    # 1mm B
+        "CT": (2, {}),    # 3mm A
+        "DO": (3, {"markerfacecolor": 'none'}) ,    # 3mm B
     }
 
-    matched_idxs = [v for k, v in _lookups.items() if k in keys]                          
+    matched_idxs_args = [v for k, v in _lookups.items() if k in keys]                          
     
     all_res = aletha_csv.read_experimental_data()
 
-    for idx in matched_idxs:
-        yield all_res[idx]
+    for idx, args in matched_idxs_args:
+        yield all_res[idx], args
 
 def make_multiple_plot_data(plot_type: PlotType, study: Study):
 
@@ -705,12 +711,15 @@ def make_multiple_plot_data(plot_type: PlotType, study: Study):
 
         print(bsr.run_params.working_dir.name, legend_key)
 
-    exp_to_plot = list(_get_applicable_experimental_results(study))
 
-    for exp in exp_to_plot:
+    # Experimental results
+    exp_to_plot = list(_get_applicable_experimental_results(study))
+    for exp, args in exp_to_plot:
         # TODO - up to here
         kwargs = {"linestyle": "", "label": exp.key, "markersize": 5}
+        kwargs.update(args)
         ax.plot(exp.x, exp.y, **kwargs)
+
 
     if study.x_axis.get_x_range():
         plt.xlim(*study.x_axis.get_x_range())
@@ -726,6 +735,15 @@ def make_multiple_plot_data(plot_type: PlotType, study: Study):
     )
 
     print(fig_fn)
+
+
+def make_aletha_recreate_paper():
+    for exp_data in aletha_csv.get_band_exp_data():
+        plot_type = PlotType.num_bands
+        fig, ax, dpi, figsize_dots, fig_fn = _figure_setup(plot_type, study, fn_override=exp_data.key)
+
+        ax.plot(exp_data.x, exp_data.y)
+        # TODO - up to here. Error bars etc
 
 
 def make_main_plot(plot_type: PlotType, study: Study):
@@ -988,8 +1006,8 @@ if __name__ == "__main__":
         # generate_plot_data_specified("AspectCompareSub", XAxis.band_depth_ratio, ["DA", "CU", "CO", "CP", "CQ", "CR", "CS", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
         
         # generate_plot_data_specified("AspectComparePaper", XAxis.band_depth_ratio, ["DA", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
-        generate_plot_data_specified("AspectComparePaper1mm", XAxis.band_depth_ratio, ["DA", "CT"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
-        generate_plot_data_specified("AspectComparePaper3mm", XAxis.band_depth_ratio, ["CU", "DO"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        generate_plot_data_specified("AspectComparePaper1mm", XAxis.band_depth_ratio, ["DA", "CU"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
+        generate_plot_data_specified("AspectComparePaper3mm", XAxis.band_depth_ratio, ["CT", "DO"], tile_position=TP.top | TP.bottom, images_to_annotate={},),
 
 
 
